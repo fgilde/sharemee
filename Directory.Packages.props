@@ -18,6 +18,8 @@
     <PackageVersion Include="Coworkee.Mailing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Auditing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Theming" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Realtime" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Notifications" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Bff" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Client.Blazor" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />
@@ -36,6 +38,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />

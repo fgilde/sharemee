@@ -57,6 +57,23 @@ Review findings that were graded Minor and not fixed in their phase. Later plans
 - [ ] Audit filter needs CLR type names (`ThemeDefinition`); unknown theme id renders an empty page; duplicate names between global and tenant themes.
 - [ ] Snapshot and audit growth without retention (logo and CSS per save).
 
+## From P0.3c (realtime, notifications)
+
+- [ ] `/hubs` negotiate outside the X-CSRF rule; no Origin check on WebSocket upgrades (SameSite=Strict is the only guard).
+- [ ] NotificationBell: list not refreshed on push or after mark read; read-all floods N events and N count requests (debounce).
+- [ ] NotificationBell: mark read calls unguarded against ApiException; link check admits `//host`.
+- [ ] Realtime handler exceptions are silently dropped (log them).
+- [ ] Entities with null TenantId (global roles, global themes) publish only to the actor's tenant.
+- [ ] Redis channel prefix fixed to `coworkee` (derive from application name or configuration).
+- [ ] Two sequential sends per change in the request path (dedupe `type:` per save, send in parallel).
+- [ ] `EntityTopicAuthorizer` scans the model on every subscribe (cache the name map).
+- [ ] Soft deleted realtime entities report `Updated` instead of `Deleted`.
+- [ ] `INotifier` only stages entities; document or add a saving overload for jobs.
+- [ ] E2E uses long polling only; WebSocket path through YARP untested.
+- [ ] `ChangedProperties` exposes names of sensitive properties (`PasswordHash`).
+- [ ] Deactivated users keep receiving events until their token expires (at most the access token lifetime).
+- [ ] Spec says realtime goes through the outbox; implementation is best effort after commit (update the spec before `job:` progress or other loss intolerant consumers).
+
 ## From P0.2a and P0.1
 
 See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 on create, unique NormalizedEmail, tenant delete cascade, Redis backed HybridCache, setup token logging, setup rate limit, authorization fail-open without attributes, tenant isolation tests, JwtBearer authority fail-fast, system role update 404 vs 409, duplicate email leak across tenants, Permissions.Manage admin equivalence, Swagger auth in production, outbox cleanup and dead letters.

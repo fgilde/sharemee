@@ -19,6 +19,8 @@ var api = builder.AddProject<Projects.Shareme_Api>("shareme-api")
     .WithEnvironment("Coworkee__Settings__Defaults__Mail.Smtp.Host", infrastructure.Mail.GetEndpoint("smtp").Property(EndpointProperty.Host))
     .WithEnvironment("Coworkee__Settings__Defaults__Mail.Smtp.Port", infrastructure.Mail.GetEndpoint("smtp").Property(EndpointProperty.Port))
     .WaitFor(infrastructure.Mail)
+    .WithReference(infrastructure.Redis)
+    .WaitFor(infrastructure.Redis)
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints();
 
@@ -35,6 +37,7 @@ var web = builder.AddProject<Projects.Shareme_Web>("shareme-web")
     .WithEnvironment("Coworkee__Bff__ApiAddress", "https+http://shareme-api")
     .WithEnvironment("Coworkee__Bff__Scopes__0", "shareme_api")
     .WithEnvironment("Coworkee__Bff__ForwardedPrefixes__0", "/admin/jobs")
+    .WithEnvironment("Coworkee__Bff__ForwardedPrefixes__1", "/hubs")
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints();
 
