@@ -21,5 +21,6 @@ public sealed class ShareMeInfrastructureModule : CoworkeeModule
             npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "cw")));
         context.Services.AddHealthChecks().AddDbContextCheck<ShareMeDbContext>("database");
         context.Services.Configure<SetupGateOptions>(options => options.AllowedPrefixes.Add("/api/v1/system"));
+        context.Services.PostConfigure<Coworkee.BackgroundJobs.BackgroundJobOptions>(options => options.ConnectionStringName = ConnectionStringName);
     }
 }

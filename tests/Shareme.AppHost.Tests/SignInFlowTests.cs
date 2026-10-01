@@ -124,6 +124,41 @@ public sealed partial class SignInFlowTests
         (await browser.GetFromJsonAsync<BffUserDto>("/bff/user", ct))!.IsAuthenticated.ShouldBeFalse();
         var reLogin = await browser.GetAsync("/bff/login?returnUrl=/bff/user", ct);
         reLogin.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/Account/Login");
+
+        var authBase = app.GetEndpoint("shareme-auth", "https");
+        await PostAuthFormAsync(browser, new Uri(authBase, "/Account/ForgotPassword"), new() { ["Input.Email"] = "admin@acme.test" }, ct);
+        string? resetLink = null;
+        var resetDeadline = DateTime.UtcNow.AddSeconds(90);
+        while (resetLink is null)
+        {
+            DateTime.UtcNow.ShouldBeLessThan(resetDeadline, "reset mail did not arrive");
+            var messages = (await mailpit.GetFromJsonAsync<JsonElement>("/api/v1/messages", ct)).GetProperty("messages").EnumerateArray()
+                .Where(m => m.GetProperty("Subject").GetString() == "Reset your password").ToList();
+            if (messages.Count > 0)
+            {
+                var message = await mailpit.GetFromJsonAsync<JsonElement>($"/api/v1/message/{messages[0].GetProperty("ID").GetString()}", ct);
+                resetLink = WebUtility.HtmlDecode(ResetLink().Match(message.GetProperty("HTML").GetString()!).Groups[1].Value);
+            }
+            else
+            {
+                await Task.Delay(500, ct);
+            }
+        }
+
+        (await PostAuthFormAsync(browser, new Uri(resetLink), new() { ["Input.Password"] = "Brand#New123", ["Input.ConfirmPassword"] = "Brand#New123" }, ct))
+            .ShouldContain("Your password was changed");
+        var newLogin = await browser.GetAsync("/bff/login?returnUrl=/bff/user", ct);
+        var newLoginHtml = await newLogin.Content.ReadAsStringAsync(ct);
+        var newAuthorize = await browser.PostAsync(newLogin.RequestMessage!.RequestUri, new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Input.Email"] = "admin@acme.test",
+            ["Input.Password"] = "Brand#New123",
+            ["__RequestVerificationToken"] = AntiforgeryToken().Match(newLoginHtml).Groups[1].Value,
+        }), ct);
+        var newFormPost = await newAuthorize.Content.ReadAsStringAsync(ct);
+        var newCallback = await browser.PostAsync(FormAction().Match(newFormPost).Groups[1].Value,
+            new FormUrlEncodedContent(HiddenField().Matches(newFormPost).ToDictionary(m => WebUtility.HtmlDecode(m.Groups[1].Value), m => WebUtility.HtmlDecode(m.Groups[2].Value))), ct);
+        JsonDocument.Parse(await newCallback.Content.ReadAsStringAsync(ct)).RootElement.GetProperty("isAuthenticated").GetBoolean().ShouldBeTrue();
     }
 
     private static async Task<string> SendJsonAsync(HttpClient client, HttpMethod method, string url, object body, CancellationToken ct)
@@ -134,6 +169,17 @@ public sealed partial class SignInFlowTests
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetString()!;
     }
+
+    private static async Task<string> PostAuthFormAsync(HttpClient browser, Uri url, Dictionary<string, string> fields, CancellationToken ct)
+    {
+        var page = await browser.GetStringAsync(url, ct);
+        fields["__RequestVerificationToken"] = AntiforgeryToken().Match(page).Groups[1].Value;
+        var response = await browser.PostAsync(url, new FormUrlEncodedContent(fields), ct);
+        return await response.Content.ReadAsStringAsync(ct);
+    }
+
+    [GeneratedRegex("href=\"([^\"]*/Account/ResetPassword[^\"]*)\"")]
+    private static partial Regex ResetLink();
 
     [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]
     private static partial Regex AntiforgeryToken();
