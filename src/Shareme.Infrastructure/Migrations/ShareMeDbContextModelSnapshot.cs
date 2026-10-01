@@ -438,6 +438,27 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("AuditEntries", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Infrastructure.DataProtection.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Xml")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataProtectionKeys", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Infrastructure.Outbox.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -586,27 +607,6 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasIndex("TenantId", "QueuedAt");
 
                     b.ToTable("OutgoingMails", "cw");
-                });
-
-            modelBuilder.Entity("Coworkee.Settings.DataProtectionKey", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("FriendlyName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Xml")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("DataProtectionKeys", "cw");
                 });
 
             modelBuilder.Entity("Coworkee.Settings.SettingValue", b =>
