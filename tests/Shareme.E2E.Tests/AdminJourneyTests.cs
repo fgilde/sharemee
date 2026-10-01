@@ -72,6 +72,26 @@ public sealed class AdminJourneyTests
 
         await Assertions.Expect(second.Locator("[data-testid='roles-eve@acme.test'] input, input[data-testid='roles-eve@acme.test']").First)
             .ToHaveValueAsync(new System.Text.RegularExpressions.Regex("Editors"), new() { Timeout = Timeout });
+
+        await first.GotoAsync(web + "/browse");
+        await first.WaitForURLAsync(new System.Text.RegularExpressions.Regex("/browse/[0-9a-f-]{36}$"), new() { Timeout = Timeout });
+        var rootUrl = first.Url;
+        await second.GotoAsync(rootUrl);
+        await second.Locator("[data-testid='create-folder']").WaitForAsync(new() { Timeout = Timeout });
+
+        await first.Locator("input[data-testid='new-folder-name'], [data-testid='new-folder-name'] input").First.FillAsync("Brand assets");
+        await first.Locator("[data-testid='create-folder']").ClickAsync();
+
+        var liveRow = second.Locator("tr[data-node]", new() { HasTextString = "Brand assets" });
+        await liveRow.WaitForAsync(new() { Timeout = Timeout });
+
+        var row = first.Locator("tr[data-node]", new() { HasTextString = "Brand assets" });
+        await row.Locator("[data-testid^='delete-']").ClickAsync();
+        await Assertions.Expect(liveRow).ToHaveCountAsync(0, new() { Timeout = Timeout });
+
+        await first.GotoAsync(web + "/recycle-bin");
+        await first.Locator("tr[data-item]", new() { HasTextString = "Brand assets" }).Locator("[data-testid^='restore-']").ClickAsync();
+        await second.Locator("tr[data-node]", new() { HasTextString = "Brand assets" }).WaitForAsync(new() { Timeout = Timeout });
     }
 
     private static async Task<IPage> NewPageAsync(IBrowser browser)

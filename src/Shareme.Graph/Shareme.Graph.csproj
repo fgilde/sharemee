@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Shareme.Contracts\Shareme.Contracts.csproj" />
+    <CoworkeePackage Include="Coworkee.Identity" />
+    <CoworkeePackage Include="Coworkee.Notifications" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+</Project>

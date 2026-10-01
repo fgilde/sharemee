@@ -24,6 +24,30 @@ public sealed class ApiFixture : PostgresFixture
         await scope.ServiceProvider.GetRequiredService<ShareMeDbContext>().Database.MigrateAsync();
     }
 
+    protected override string[] SchemasToExclude => ["hangfire"];
+
+    protected override IReadOnlyList<(string Schema, string Table)> TablesToKeep => [("sm", "NodeTypes"), ("sm", "EdgeTypes")];
+
+    public async Task ResetAllAsync()
+    {
+        await ResetAsync();
+        Factory.Services.GetRequiredService<Coworkee.Identity.Setup.SystemStateCache>().Reset();
+        var cache = Factory.Services.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>();
+        await cache.RemoveByTagAsync("coworkee:permissions");
+        await cache.RemoveByTagAsync("coworkee:settings");
+    }
+
+    public async Task<Coworkee.Contracts.Identity.SetupResultDto> SetupAsync()
+    {
+        await ResetAllAsync();
+        var response = await System.Net.Http.Json.HttpClientJsonExtensions.PostAsJsonAsync(Factory.CreateClient(), "/api/v1/setup/complete",
+            new Coworkee.Contracts.Identity.CompleteSetupRequest(SetupToken, "Acme", "admin@acme.test", "Admin#12345", "Ada", "Admin"));
+        response.EnsureSuccessStatusCode();
+        return (await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<Coworkee.Contracts.Identity.SetupResultDto>(response.Content))!;
+    }
+
+    public HttpClient As(Guid userId, Guid tenantId) => Factory.CreateClient().AsUser(userId, tenantId);
+
     public override async ValueTask DisposeAsync()
     {
         await Factory.DisposeAsync();

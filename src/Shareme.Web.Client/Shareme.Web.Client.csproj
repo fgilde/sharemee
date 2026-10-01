@@ -6,5 +6,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <CoworkeePackage Include="Coworkee.Client.Blazor" />
+    <ProjectReference Include="..\Shareme.Contracts\Shareme.Contracts.csproj" />
   </ItemGroup>
 </Project>

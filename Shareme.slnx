@@ -4,6 +4,8 @@
     <Project Path="src/Shareme.AppHost/Shareme.AppHost.csproj" />
     <Project Path="src/Shareme.Application/Shareme.Application.csproj" />
     <Project Path="src/Shareme.Auth/Shareme.Auth.csproj" />
+    <Project Path="src/Shareme.Contracts/Shareme.Contracts.csproj" />
+    <Project Path="src/Shareme.Graph/Shareme.Graph.csproj" />
     <Project Path="src/Shareme.Infrastructure/Shareme.Infrastructure.csproj" />
     <Project Path="src/Shareme.Migrations/Shareme.Migrations.csproj" />
     <Project Path="src/Shareme.ServiceDefaults/Shareme.ServiceDefaults.csproj" />
@@ -15,5 +17,6 @@
     <Project Path="tests/Shareme.AppHost.Tests/Shareme.AppHost.Tests.csproj" />
     <Project Path="tests/Shareme.E2E.Tests/Shareme.E2E.Tests.csproj" />
     <Project Path="tests/Shareme.Migrations.Tests/Shareme.Migrations.Tests.csproj" />
+    <Project Path="tests/Shareme.Web.Client.Tests/Shareme.Web.Client.Tests.csproj" />
   </Folder>
 </Solution>

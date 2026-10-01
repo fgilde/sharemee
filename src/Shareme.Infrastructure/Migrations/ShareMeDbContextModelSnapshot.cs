@@ -1144,6 +1144,337 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasAnnotation("Coworkee:NotAudited", true);
                 });
 
+            modelBuilder.Entity("Shareme.Graph.Edge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EdgeTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FromNodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ToNodeId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromNodeId");
+
+                    b.HasIndex("ToNodeId");
+
+                    b.HasIndex("EdgeTypeId", "FromNodeId", "ToNodeId")
+                        .IsUnique();
+
+                    b.ToTable("Edges", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.EdgeType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<string>("AllowedPairs")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("IsDirected")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Semantic")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Key"), false);
+
+                    b.ToTable("EdgeTypes", "sm");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000101"),
+                            AllowedPairs = "[\"folder:*\"]",
+                            IsDirected = true,
+                            IsSystem = true,
+                            Key = "link",
+                            Name = "Link",
+                            Semantic = "Link"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000102"),
+                            AllowedPairs = "[\"asset:asset\"]",
+                            IsDirected = false,
+                            IsSystem = true,
+                            Key = "duplicate",
+                            Name = "Duplicate",
+                            Semantic = "Duplicate"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000103"),
+                            AllowedPairs = "[]",
+                            IsDirected = true,
+                            IsSystem = true,
+                            Key = "variant",
+                            Name = "Variant",
+                            Semantic = "Variant"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000104"),
+                            AllowedPairs = "[]",
+                            IsDirected = true,
+                            IsSystem = true,
+                            Key = "translation",
+                            Name = "Translation",
+                            Semantic = "Translation"
+                        });
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Node", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DeletedWithId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Depth")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("InterruptInheritance")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("Names")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("NodeTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int>("SortIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeletedWithId");
+
+                    b.HasIndex("NodeTypeId");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("Path");
+
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Path"), new[] { "text_pattern_ops" });
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Nodes_Root")
+                        .HasFilter("\"ParentId\" IS NULL");
+
+                    b.HasIndex("TenantId", "ParentId", "SortIndex");
+
+                    b.ToTable("Nodes", "sm");
+
+                    b.HasDiscriminator<string>("Kind").HasValue("Node");
+
+                    b.UseTphMappingStrategy();
+                });
+
+            modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NodeId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("NodeSubscriptions", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.NodeType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Icon")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Semantic")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Key"), false);
+
+                    b.ToTable("NodeTypes", "sm");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000001"),
+                            Icon = "folder",
+                            IsSystem = true,
+                            Key = "folder",
+                            Name = "Folder",
+                            Semantic = "Folder"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000002"),
+                            Icon = "insert_drive_file",
+                            IsSystem = true,
+                            Key = "asset",
+                            Name = "Asset",
+                            Semantic = "Asset"
+                        });
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Asset", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.HasDiscriminator().HasValue("asset");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.CustomNode", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.HasDiscriminator().HasValue("custom");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Folder", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.HasDiscriminator().HasValue("folder");
+                });
+
             modelBuilder.Entity("Coworkee.Identity.Domain.ResourcePermission", b =>
                 {
                     b.HasOne("Coworkee.Identity.Domain.Role", null)
@@ -1305,6 +1636,50 @@ namespace Shareme.Infrastructure.Migrations
                     b.Navigation("Application");
 
                     b.Navigation("Authorization");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Edge", b =>
+                {
+                    b.HasOne("Shareme.Graph.EdgeType", null)
+                        .WithMany()
+                        .HasForeignKey("EdgeTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("FromNodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("ToNodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Node", b =>
+                {
+                    b.HasOne("Shareme.Graph.NodeType", null)
+                        .WithMany()
+                        .HasForeignKey("NodeTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("NodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Coworkee.Identity.Domain.UserGroup", b =>

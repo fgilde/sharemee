@@ -11,6 +11,7 @@ public sealed class SetupFlowTests(ApiFixture api)
     public async Task Identity_api_is_gated_until_setup_then_admin_has_access()
     {
         var ct = TestContext.Current.CancellationToken;
+        await api.ResetAllAsync();
         var anonymous = api.Factory.CreateClient();
         (await anonymous.GetAsync("/api/v1/identity/users", ct)).StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
 
