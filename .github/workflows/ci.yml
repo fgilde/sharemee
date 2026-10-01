@@ -56,4 +56,4 @@ jobs:
 
       - name: Test
         working-directory: shareme
-        run: dotnet test --solution Shareme.slnx -c Release --no-build
+        run: dotnet test --solution Shareme.slnx -c Release --no-build --max-parallel-test-modules 1
