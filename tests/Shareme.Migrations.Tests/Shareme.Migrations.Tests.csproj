@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shareme.Migrations\Shareme.Migrations.csproj" />
+  </ItemGroup>
+</Project>

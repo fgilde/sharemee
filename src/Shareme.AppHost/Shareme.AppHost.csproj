@@ -1,0 +1,12 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>shareme-apphost</UserSecretsId>
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <CoworkeePackage Include="Coworkee.Aspire" />
+    <ProjectReference Include="..\Shareme.Migrations\Shareme.Migrations.csproj" />
+    <ProjectReference Include="..\Shareme.Api\Shareme.Api.csproj" />
+  </ItemGroup>
+</Project>

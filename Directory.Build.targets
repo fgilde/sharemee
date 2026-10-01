@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <CoworkeeReferenceMode Condition="'$(CoworkeeReferenceMode)' == ''">Package</CoworkeeReferenceMode>
+    <CoworkeeRoot Condition="'$(CoworkeeRoot)' == ''">$(MSBuildThisFileDirectory)..\coworkee\</CoworkeeRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(CoworkeeReferenceMode)' == 'Project'">
+    <ProjectReference Include="@(CoworkeePackage->'$(CoworkeeRoot)src\%(Identity)\%(Identity).csproj')" IsAspireProjectResource="false" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(CoworkeeReferenceMode)' != 'Project'">
+    <PackageReference Include="@(CoworkeePackage)" />
+  </ItemGroup>
+</Project>

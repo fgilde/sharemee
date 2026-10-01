@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <CoworkeePackage Include="Coworkee.Application" />
+  </ItemGroup>
+</Project>
