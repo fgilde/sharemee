@@ -43,8 +43,12 @@ namespace Shareme.Infrastructure.Migrations
                     Type = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
                     Payload = table.Column<string>(type: "text", nullable: false),
                     OccurredAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uuid", nullable: true),
+                    ActorId = table.Column<Guid>(type: "uuid", nullable: true),
+                    CorrelationId = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     ProcessedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     Attempts = table.Column<int>(type: "integer", nullable: false),
+                    NextAttemptAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     Error = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
@@ -65,10 +69,10 @@ namespace Shareme.Infrastructure.Migrations
                 column: "OccurredAt");
 
             migrationBuilder.CreateIndex(
-                name: "IX_OutboxMessages_ProcessedAt_OccurredAt",
+                name: "IX_OutboxMessages_ProcessedAt_NextAttemptAt_OccurredAt",
                 schema: "cw",
                 table: "OutboxMessages",
-                columns: new[] { "ProcessedAt", "OccurredAt" });
+                columns: new[] { "ProcessedAt", "NextAttemptAt", "OccurredAt" });
         }
 
         /// <inheritdoc />
