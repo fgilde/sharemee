@@ -26,9 +26,10 @@ public sealed partial class SignInFlowTests
         }
 
         var webBase = app.GetEndpoint("shareme-web", "https");
+        var cookies = new CookieContainer();
         using var browser = new HttpClient(new HttpClientHandler
         {
-            CookieContainer = new CookieContainer(),
+            CookieContainer = cookies,
             AllowAutoRedirect = true,
             ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
         }) { BaseAddress = webBase };
@@ -78,6 +79,35 @@ public sealed partial class SignInFlowTests
         }
 
         (await browser.GetAsync("/admin/jobs", ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        await using (var hub = Microsoft.AspNetCore.SignalR.Client.HubConnectionBuilderHttpExtensions.WithUrl(new Microsoft.AspNetCore.SignalR.Client.HubConnectionBuilder(), new Uri(webBase, "hubs/realtime"), options =>
+            {
+                options.Cookies = cookies;
+                options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = handler =>
+                {
+                    if (handler is HttpClientHandler client)
+                    {
+                        client.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                    }
+
+                    return handler;
+                };
+            })
+            .Build())
+        {
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionExtensions.On<JsonElement>(hub, "OnEvent", e => events.Enqueue(e.GetProperty("topic").GetString()!));
+            await hub.StartAsync(ct);
+            await Microsoft.AspNetCore.SignalR.Client.HubConnectionExtensions.InvokeAsync(hub, "Subscribe", "type:User", ct);
+            await SendJsonAsync(browser, HttpMethod.Post, "/api/v1/identity/users", new { email = "live@acme.test", password = "Passw0rd!x" }, ct);
+            var liveDeadline = DateTime.UtcNow.AddSeconds(30);
+            while (!events.Contains("type:User"))
+            {
+                DateTime.UtcNow.ShouldBeLessThan(liveDeadline, "realtime event did not arrive through the bff");
+                await Task.Delay(200, ct);
+            }
+        }
 
         (await browser.GetFromJsonAsync<JsonElement>("/api/v1/themes/current", ct)).GetProperty("name").GetString().ShouldBe("Coworkee");
         var palette = JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["Primary"] = "#123456" });

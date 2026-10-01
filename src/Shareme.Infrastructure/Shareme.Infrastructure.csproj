@@ -8,6 +8,8 @@
     <CoworkeePackage Include="Coworkee.Mailing" />
     <CoworkeePackage Include="Coworkee.Auditing" />
     <CoworkeePackage Include="Coworkee.Theming" />
+    <CoworkeePackage Include="Coworkee.Realtime" />
+    <CoworkeePackage Include="Coworkee.Notifications" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
