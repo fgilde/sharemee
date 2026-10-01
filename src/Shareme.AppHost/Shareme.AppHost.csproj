@@ -6,6 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <CoworkeePackage Include="Coworkee.Aspire" />
-    <ProjectReference Include="..Shareme.MigrationsShareme.Migrations.csproj" />
+    <ProjectReference Include="..\Shareme.Migrations\Shareme.Migrations.csproj" />
   </ItemGroup>
 </Project>
