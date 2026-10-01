@@ -1,0 +1,258 @@
+@page "/browse"
+@page "/browse/{Id:guid}"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Coworkee.Contracts
+@using Coworkee.Contracts.Identity
+@using Shareme.Contracts.Graph
+@using Shareme.Web.Client.Graph
+@inject ISharemeApi Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
+
+@if (_entryPoints is not null)
+{
+    <MudText Typo="Typo.h4" Class="mb-4">Browse</MudText>
+    @if (_entryPoints.Count == 0)
+    {
+        <MudText>You do not have access to any folder yet.</MudText>
+    }
+    @foreach (var entry in _entryPoints)
+    {
+        <MudLink Href="@($"/browse/{entry.Id}")" Class="d-block">@entry.Name</MudLink>
+    }
+}
+else if (_detail is not null)
+{
+    <RealtimeSubscription @key="_detail.Node.Id" Topic="@($"children:{_detail.Node.Id}")" OnEvent="_ => RefreshAsync()" />
+
+    <div data-testid="breadcrumb"><MudBreadcrumbs Items="_breadcrumb" /></div>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">@_detail.Node.Name</MudText>
+        <MudSpacer />
+        <MudTooltip Text="@(_detail.IsSubscribed ? "Stop notifications" : "Notify me about changes")">
+            <MudIconButton Icon="@(_detail.IsSubscribed ? Icons.Material.Filled.NotificationsActive : Icons.Material.Outlined.NotificationsNone)"
+                           OnClick="ToggleSubscriptionAsync" aria-label="Notifications for this folder" data-testid="subscribe" />
+        </MudTooltip>
+    </MudStack>
+
+    <MudStack Row="true" AlignItems="AlignItems.End" Class="mb-2">
+        <MudTextField T="string" @bind-Value="_newName" Label="New folder" Immediate="true" data-testid="new-folder-name" Style="max-width:320px" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateFolderAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-folder">Create</MudButton>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_search" Placeholder="Filter" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadChildrenAsync()" Style="max-width:240px" />
+    </MudStack>
+
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead><tr><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var child in _children)
+            {
+                <tr data-node="@child.Id">
+                    <td>
+                        @if (_renaming == child.Id)
+                        {
+                            <MudTextField T="string" @bind-Value="_renameValue" Margin="Margin.Dense" Immediate="true" data-testid="rename-input" />
+                            <MudButton Size="Size.Small" OnClick="() => RenameAsync(child)">Save</MudButton>
+                            <MudButton Size="Size.Small" OnClick="() => _renaming = null">Cancel</MudButton>
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@(child.Semantic == "folder" ? Icons.Material.Outlined.Folder : Icons.Material.Outlined.InsertDriveFile)" Size="Size.Small" Class="mr-2" />
+                            <MudLink Href="@($"/browse/{child.Id}")">@child.Name</MudLink>
+                            @if (child.InterruptInheritance)
+                            {
+                                <MudTooltip Text="Permissions are not inherited"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" Class="ml-1" /></MudTooltip>
+                            }
+                        }
+                    </td>
+                    <td>@child.Type</td>
+                    <td>@child.CreatedAt.ToLocalTime().ToString("g")</td>
+                    <td style="text-align:right;white-space:nowrap">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Rename" OnClick="() => StartRename(child)" data-testid="@($"rename-{child.Id}")" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.DriveFileMove" Size="Size.Small" aria-label="Move" OnClick="() => _moving = child" data-testid="@($"move-{child.Id}")" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => DeleteAsync(child)" data-testid="@($"delete-{child.Id}")" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+    @if (_children.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mt-2">This folder is empty.</MudText>
+    }
+
+    @if (_moving is not null)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mt-4">
+            <MudText Typo="Typo.h6">Move "@_moving.Name"</MudText>
+            <FolderPicker StartId="_detail.Node.Id" ExcludeId="_moving.Id" OnPicked="target => MoveAsync(_moving, target)" />
+            <MudButton Class="mt-2" OnClick="() => _moving = null">Cancel</MudButton>
+        </MudPaper>
+    }
+
+    <MudTabs Elevation="0" Outlined="true" Class="mt-6">
+        <MudTabPanel Text="Permissions">
+            <div class="pa-4">
+                <MudSwitch T="bool" Value="@_detail.Node.InterruptInheritance" ValueChanged="SetInheritanceAsync" Color="Color.Secondary"
+                           Label="Do not inherit permissions from parent folders" />
+                <PermissionView Permission="@IdentityPermissions.ResourcePermissions.Manage">
+                    <ResourcePermissionsPanel ResourceType="@NodePermissions.ResourceType" ResourceId="_detail.Node.Id" />
+                </PermissionView>
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Activity">
+            <div class="pa-4"><AuditTimeline EntityType="@(_detail.Node.Semantic == "folder" ? "Folder" : _detail.Node.Semantic == "asset" ? "Asset" : "CustomNode")" EntityId="@_detail.Node.Id.ToString()" /></div>
+        </MudTabPanel>
+    </MudTabs>
+}
+else
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+
+@code {
+    private NodeDetailDto? _detail;
+    private IReadOnlyList<NodeDto>? _entryPoints;
+    private IReadOnlyList<NodeDto> _children = [];
+    private List<BreadcrumbItem> _breadcrumb = [];
+    private string? _newName;
+    private string? _search;
+    private Guid? _renaming;
+    private string? _renameValue;
+    private NodeDto? _moving;
+
+    [Parameter] public Guid? Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _detail = null;
+        _entryPoints = null;
+        _moving = null;
+        _children = [];
+        _search = null;
+        _newName = null;
+        _renaming = null;
+        await RunAsync(async () =>
+        {
+            if (Id is { } id)
+            {
+                await LoadAsync(id);
+                return;
+            }
+
+            await Api.GetRootAsync();
+            var entries = await Api.GetEntryPointsAsync();
+            if (entries.Count == 1)
+            {
+                Nav.NavigateTo($"/browse/{entries[0].Id}", replace: true);
+            }
+            else
+            {
+                _entryPoints = entries;
+            }
+        });
+    }
+
+    private async Task LoadAsync(Guid id)
+    {
+        _detail = await Api.GetNodeAsync(id);
+        _breadcrumb = _detail.Breadcrumb
+            .Select((crumb, index) => new BreadcrumbItem(crumb.Name, index == _detail.Breadcrumb.Count - 1 ? null : $"/browse/{crumb.Id}", disabled: index == _detail.Breadcrumb.Count - 1))
+            .ToList();
+        await LoadChildrenAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await LoadAsync(_detail!.Node.Id);
+        }
+        catch (ApiException exception) when (exception.Status is 403 or 404)
+        {
+            Snackbar.Add("This folder is no longer available.", Severity.Warning);
+            Nav.NavigateTo("/browse");
+        }
+    }
+
+    private async Task LoadChildrenAsync()
+    {
+        if (_detail is null)
+        {
+            return;
+        }
+
+        _children = (await Api.GetChildrenAsync(_detail.Node.Id, new PageRequest(1, 200, _search))).Items;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task CreateFolderAsync() => RunAsync(async () =>
+    {
+        await Api.CreateNodeAsync(new CreateNodeRequest(_detail!.Node.Id, _newName!.Trim()));
+        _newName = null;
+        await LoadChildrenAsync();
+    });
+
+    private void StartRename(NodeDto child)
+    {
+        _renaming = child.Id;
+        _renameValue = child.Name;
+    }
+
+    private Task RenameAsync(NodeDto child) => RunAsync(async () =>
+    {
+        await Api.UpdateNodeAsync(child.Id, new UpdateNodeRequest(_renameValue ?? child.Name));
+        _renaming = null;
+        await LoadChildrenAsync();
+    });
+
+    private Task MoveAsync(NodeDto child, Guid target) => RunAsync(async () =>
+    {
+        await Api.MoveNodeAsync(child.Id, target);
+        _moving = null;
+        await LoadChildrenAsync();
+    });
+
+    private Task DeleteAsync(NodeDto child) => RunAsync(async () =>
+    {
+        await Api.DeleteNodeAsync(child.Id);
+        Snackbar.Add($"\"{child.Name}\" moved to the recycle bin.", Severity.Info);
+        await LoadChildrenAsync();
+    });
+
+    private Task ToggleSubscriptionAsync() => RunAsync(async () =>
+    {
+        await Api.SetSubscriptionAsync(_detail!.Node.Id, !_detail.IsSubscribed);
+        _detail = _detail with { IsSubscribed = !_detail.IsSubscribed };
+    });
+
+    private Task SetInheritanceAsync(bool interrupt) => RunAsync(async () =>
+    {
+        await Api.SetInheritanceAsync(_detail!.Node.Id, interrupt);
+        _detail = _detail with { Node = _detail.Node with { InterruptInheritance = interrupt } };
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (ApiException exception) when (exception.Status == 403)
+        {
+            Snackbar.Add("You do not have permission for this.", Severity.Warning);
+        }
+        catch (ApiException exception) when (exception.Status == 404)
+        {
+            Snackbar.Add("This folder no longer exists.", Severity.Warning);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Errors is { Count: > 0 } errors ? string.Join(" ", errors.SelectMany(e => e.Value)) : exception.Message, Severity.Error);
+        }
+    }
+}

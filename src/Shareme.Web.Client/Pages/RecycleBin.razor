@@ -1,0 +1,56 @@
+@page "/recycle-bin"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Coworkee.Contracts
+@using Shareme.Contracts.Graph
+@using Shareme.Web.Client.Graph
+@inject ISharemeApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Recycle bin</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Recycle bin</MudText>
+<MudSimpleTable Dense="true" Hover="true">
+    <thead><tr><th>Name</th><th>Type</th><th>Deleted</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var item in _items)
+        {
+            <tr data-item="@item.Id">
+                <td>@item.Name</td>
+                <td>@item.Type</td>
+                <td>@item.DeletedAt?.ToLocalTime().ToString("g")</td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" OnClick="() => RunAsync(() => Api.RestoreAsync(item.Id))" data-testid="@($"restore-{item.Id}")">Restore</MudButton>
+                    <PermissionView Permission="@NodePermissions.Admin">
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => RunAsync(() => Api.PurgeAsync(item.Id))" data-testid="@($"purge-{item.Id}")">Delete for good</MudButton>
+                    </PermissionView>
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+@if (_items.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mt-2">The recycle bin is empty.</MudText>
+}
+
+@code {
+    private IReadOnlyList<RecycleBinItemDto> _items = [];
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync() => _items = (await Api.GetRecycleBinAsync(new PageRequest(1, 200))).Items;
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+
+        await ReloadAsync();
+    }
+}

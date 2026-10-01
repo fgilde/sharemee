@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\Shareme.Application\Shareme.Application.csproj" />
+    <ProjectReference Include="..\Shareme.Graph\Shareme.Graph.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <CoworkeePackage Include="Coworkee.Infrastructure" />
     <CoworkeePackage Include="Coworkee.Identity" />
