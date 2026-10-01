@@ -81,5 +81,6 @@ internal sealed class SharemeNavigation : INavigationContributor
     [
         new("Browse", "/browse", MudBlazor.Icons.Material.Outlined.FolderOpen),
         new("Recycle bin", "/recycle-bin", MudBlazor.Icons.Material.Outlined.Delete),
+        new("Metadata", "/admin/metadata", MudBlazor.Icons.Material.Outlined.Label, Shareme.Contracts.Metadata.MetadataPermissions.Manage),
     ];
 }

@@ -4,6 +4,7 @@ using Coworkee.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Shareme.Contracts.Graph;
+using Shareme.Contracts.Metadata;
 
 namespace Shareme.Graph;
 
@@ -57,6 +58,9 @@ public abstract class Node : AuditedAggregateRoot, IMultiTenant, ISoftDelete, IH
     public string Name { get; set; } = string.Empty;
 
     public Dictionary<string, string> Names { get; set; } = [];
+
+    /// <summary>Own property values by definition key; validated by Shareme.Metadata.</summary>
+    public Dictionary<string, List<MetadataValue>> Metadata { get; set; } = [];
 
     public int SortIndex { get; set; }
 
@@ -210,6 +214,12 @@ internal sealed class GraphModelContributor : IModelContributor
             node.Property(n => n.Names).HasColumnType("jsonb")
                 .HasConversion(d => JsonSerializer.Serialize(d, (JsonSerializerOptions?)null), s => JsonSerializer.Deserialize<Dictionary<string, string>>(s, (JsonSerializerOptions?)null) ?? new())
                 .Metadata.SetValueComparer(names);
+            node.Property(n => n.Metadata).HasColumnType("jsonb")
+                .HasConversion(d => JsonSerializer.Serialize(d, (JsonSerializerOptions?)null), s => JsonSerializer.Deserialize<Dictionary<string, List<MetadataValue>>>(s, (JsonSerializerOptions?)null) ?? new())
+                .Metadata.SetValueComparer(new ValueComparer<Dictionary<string, List<MetadataValue>>>(
+                    (a, b) => JsonSerializer.Serialize(a, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(b, (JsonSerializerOptions?)null),
+                    d => JsonSerializer.Serialize(d, (JsonSerializerOptions?)null).GetHashCode(),
+                    d => JsonSerializer.Deserialize<Dictionary<string, List<MetadataValue>>>(JsonSerializer.Serialize(d, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!));
             node.HasIndex(n => n.Path).HasOperators("text_pattern_ops");
             node.HasIndex(n => new { n.TenantId, n.ParentId, n.SortIndex });
             node.HasIndex(n => n.TenantId).IsUnique().HasFilter("\"ParentId\" IS NULL").HasDatabaseName("IX_Nodes_Root");

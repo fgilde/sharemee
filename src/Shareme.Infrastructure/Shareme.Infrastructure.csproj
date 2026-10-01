@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Shareme.Application\Shareme.Application.csproj" />
     <ProjectReference Include="..\Shareme.Graph\Shareme.Graph.csproj" />
+    <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <CoworkeePackage Include="Coworkee.Infrastructure" />
     <CoworkeePackage Include="Coworkee.Identity" />

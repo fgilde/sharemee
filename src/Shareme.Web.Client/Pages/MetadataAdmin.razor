@@ -1,0 +1,291 @@
+@page "/admin/metadata"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Graph
+@using Shareme.Contracts.Metadata
+@inject IMetadataApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Metadata</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Metadata</MudText>
+
+<MudTabs Elevation="0" Outlined="true">
+    <MudTabPanel Text="Properties">
+        <div class="pa-4">
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Key</th><th>Name</th><th>Type</th><th>List</th><th>Options</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var definition in _definitions)
+                    {
+                        <tr data-definition="@definition.Key">
+                            <td>@definition.Key</td>
+                            <td>@definition.Name</td>
+                            <td>@definition.ValueType</td>
+                            <td>@definition.ListMode</td>
+                            <td>@Options(definition)</td>
+                            <td style="text-align:right;white-space:nowrap">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(definition)" Disabled="definition.IsSystem" />
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteDefinitionAsync(definition.Id))" Disabled="definition.IsSystem" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            <MudPaper Outlined="true" Class="pa-4 mt-4">
+                <MudText Typo="Typo.h6">@(_editing is null ? "New property" : $"Edit {_form.Key}")</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Key" Label="Key" Disabled="_editing is not null" data-testid="definition-key" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Name" Label="Name" data-testid="definition-name" /></MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect @bind-Value="_form.ValueType" Label="Value type" Disabled="_editing is not null">
+                            @foreach (var type in PropertyValueTypes.All)
+                            {
+                                <MudSelectItem Value="@type">@type</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect @bind-Value="_form.ListMode" Label="List values">
+                            <MudSelectItem Value="@ListModes.None">none</MudSelectItem>
+                            <MudSelectItem Value="@ListModes.Single">single choice</MudSelectItem>
+                            <MudSelectItem Value="@ListModes.Multi">multiple choice</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="Guid?" @bind-Value="_form.GroupId" Label="Group" Clearable="true">
+                            @foreach (var group in _groups)
+                            {
+                                <MudSelectItem T="Guid?" Value="@group.Id">@group.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="string" Label="Applies to" MultiSelection="true" SelectedValues="_form.NodeTypeKeys" SelectedValuesChanged="v => _form.NodeTypeKeys = v.ToList()" HelperText="Empty = all types">
+                            <MudSelectItem T="string" Value="@NodeTypeKeys.Folder">folder</MudSelectItem>
+                            <MudSelectItem T="string" Value="@NodeTypeKeys.Asset">asset</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Regex" Label="Pattern (regex)" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField T="decimal?" @bind-Value="_form.Min" Label="Min" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField T="decimal?" @bind-Value="_form.Max" Label="Max" /></MudItem>
+                    <MudItem xs="12">
+                        <MudCheckBox @bind-Value="_form.Required" Label="Required" />
+                        <MudCheckBox @bind-Value="_form.MultiValue" Label="Multiple values" />
+                        <MudCheckBox @bind-Value="_form.Localizable" Label="Translatable" />
+                        <MudCheckBox @bind-Value="_form.HasContext" Label="Per user context" />
+                        <MudCheckBox @bind-Value="_form.InheritToChildren" Label="Inherit to children" />
+                        <MudCheckBox @bind-Value="_form.AllowCustomValues" Label="Allow own list values" />
+                        <MudCheckBox @bind-Value="_form.IgnoreOnNewVersion" Label="Do not copy to new versions" />
+                    </MudItem>
+                </MudGrid>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDefinitionAsync" data-testid="save-definition">Save</MudButton>
+                @if (_editing is not null)
+                {
+                    <MudButton OnClick="() => Edit(null)">Cancel</MudButton>
+                }
+            </MudPaper>
+
+            @if (_editing is { ListMode: not ListModes.None })
+            {
+                <MudPaper Outlined="true" Class="pa-4 mt-4">
+                    <MudText Typo="Typo.h6">List values</MudText>
+                    @foreach (var value in _listValues)
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudTextField @bind-Value="value.Key" Label="Key" Margin="Margin.Dense" />
+                            <MudTextField @bind-Value="value.Name" Label="Name" Margin="Margin.Dense" />
+                            <MudCheckBox @bind-Value="value.IsActive" Label="Active" />
+                            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove" OnClick="() => _listValues.Remove(value)" />
+                        </MudStack>
+                    }
+                    <MudButton OnClick="() => _listValues.Add(new ListValueRow())">Add value</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveListValuesAsync">Save list values</MudButton>
+                </MudPaper>
+            }
+        </div>
+    </MudTabPanel>
+    <MudTabPanel Text="Groups">
+        <div class="pa-4">
+            @foreach (var group in _groups)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center">
+                    <MudText>@group.Name (@group.Key)</MudText>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteGroupAsync(group.Id))" />
+                </MudStack>
+            }
+            <MudStack Row="true" AlignItems="AlignItems.End">
+                <MudTextField @bind-Value="_groupKey" Label="Key" />
+                <MudTextField @bind-Value="_groupName" Label="Name" />
+                <MudButton OnClick="() => RunAsync(() => Api.SaveGroupAsync(null, new PropertyGroupRequest(_groupKey ?? string.Empty, _groupName ?? string.Empty, _groups.Count)))">Add</MudButton>
+            </MudStack>
+        </div>
+    </MudTabPanel>
+    <MudTabPanel Text="Languages">
+        <div class="pa-4">
+            @foreach (var language in _languages)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center">
+                    <MudText>@language.Name (@language.Code) @(language.IsDefault ? "– default" : null)</MudText>
+                    @if (!language.IsDefault)
+                    {
+                        <MudButton Size="Size.Small" OnClick="() => RunAsync(() => Api.SaveLanguageAsync(language with { IsDefault = true }))">Make default</MudButton>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteLanguageAsync(language.Code))" />
+                    }
+                </MudStack>
+            }
+            <MudStack Row="true" AlignItems="AlignItems.End">
+                <MudTextField @bind-Value="_languageCode" Label="Code (e.g. de)" />
+                <MudTextField @bind-Value="_languageName" Label="Name" />
+                <MudButton OnClick="() => RunAsync(() => Api.SaveLanguageAsync(new DataLanguageDto(_languageCode ?? string.Empty, _languageName ?? string.Empty, false)))">Add</MudButton>
+            </MudStack>
+        </div>
+    </MudTabPanel>
+    <MudTabPanel Text="Contexts">
+        <div class="pa-4">
+            @foreach (var context in _contexts)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center">
+                    <MudText>@context.Name (@context.Key) @(context.IsDefault ? "– default" : null)</MudText>
+                    @if (!context.IsDefault)
+                    {
+                        <MudButton Size="Size.Small" OnClick="() => RunAsync(() => Api.SaveContextAsync(context with { IsDefault = true }))">Make default</MudButton>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteContextAsync(context.Key))" />
+                    }
+                </MudStack>
+            }
+            <MudStack Row="true" AlignItems="AlignItems.End">
+                <MudTextField @bind-Value="_contextKey" Label="Key (e.g. eu)" />
+                <MudTextField @bind-Value="_contextName" Label="Name" />
+                <MudButton OnClick="() => RunAsync(() => Api.SaveContextAsync(new UserContextDto(_contextKey ?? string.Empty, _contextName ?? string.Empty, false)))">Add</MudButton>
+            </MudStack>
+        </div>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private IReadOnlyList<PropertyDefinitionDto> _definitions = [];
+    private IReadOnlyList<PropertyGroupDto> _groups = [];
+    private IReadOnlyList<DataLanguageDto> _languages = [];
+    private IReadOnlyList<UserContextDto> _contexts = [];
+    private PropertyDefinitionDto? _editing;
+    private DefinitionForm _form = new();
+    private List<ListValueRow> _listValues = [];
+    private string? _groupKey, _groupName, _languageCode, _languageName, _contextKey, _contextName;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _definitions = await Api.GetDefinitionsAsync();
+        _groups = await Api.GetGroupsAsync();
+        _languages = await Api.GetLanguagesAsync();
+        _contexts = await Api.GetContextsAsync();
+        if (_editing is not null)
+        {
+            _editing = _definitions.FirstOrDefault(d => d.Id == _editing.Id);
+        }
+    }
+
+    private void Edit(PropertyDefinitionDto? definition)
+    {
+        _editing = definition;
+        _form = definition is null ? new DefinitionForm() : DefinitionForm.From(definition);
+        _listValues = definition?.ListValues.Select(v => new ListValueRow { Key = v.Key, Name = v.Name, IsActive = v.IsActive }).ToList() ?? [];
+    }
+
+    private Task SaveDefinitionAsync() => RunAsync(async () =>
+    {
+        var saved = await Api.SaveDefinitionAsync(_editing?.Id, _form.ToRequest());
+        await ReloadAsync();
+        Edit(_definitions.FirstOrDefault(d => d.Id == saved.Id));
+    });
+
+    private Task SaveListValuesAsync() => RunAsync(() =>
+        Api.SetListValuesAsync(_editing!.Id, _listValues.Select((v, index) => new PropertyListValueDto(v.Key ?? string.Empty, v.Name ?? string.Empty, index, v.IsActive)).ToList()));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            Snackbar.Add("Saved.", Severity.Success);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Errors is { Count: > 0 } errors ? string.Join(" ", errors.SelectMany(e => e.Value)) : exception.Message, Severity.Error);
+        }
+
+        await ReloadAsync();
+    }
+
+    private static string Options(PropertyDefinitionDto d) => string.Join(", ", new[]
+    {
+        d.Validation.Required ? "required" : null,
+        d.MultiValue ? "multiple" : null,
+        d.Localizable ? "translatable" : null,
+        d.HasContext ? "per context" : null,
+        d.InheritToChildren ? "inherited" : null,
+        d.IsSystem ? "system" : null,
+        d.NodeTypeKeys.Count > 0 ? string.Join("/", d.NodeTypeKeys) : null,
+    }.Where(o => o is not null));
+
+    private sealed class ListValueRow
+    {
+        public string? Key { get; set; }
+
+        public string? Name { get; set; }
+
+        public bool IsActive { get; set; } = true;
+    }
+
+    private sealed class DefinitionForm
+    {
+        public string? Key { get; set; }
+
+        public string? Name { get; set; }
+
+        public string ValueType { get; set; } = PropertyValueTypes.String;
+
+        public string ListMode { get; set; } = ListModes.None;
+
+        public Guid? GroupId { get; set; }
+
+        public List<string> NodeTypeKeys { get; set; } = [];
+
+        public string? Regex { get; set; }
+
+        public decimal? Min { get; set; }
+
+        public decimal? Max { get; set; }
+
+        public bool Required { get; set; }
+
+        public bool MultiValue { get; set; }
+
+        public bool Localizable { get; set; }
+
+        public bool HasContext { get; set; }
+
+        public bool InheritToChildren { get; set; }
+
+        public bool AllowCustomValues { get; set; }
+
+        public bool IgnoreOnNewVersion { get; set; }
+
+        public string? Description { get; set; }
+
+        public static DefinitionForm From(PropertyDefinitionDto d) => new()
+        {
+            Key = d.Key, Name = d.Name, ValueType = d.ValueType, ListMode = d.ListMode, GroupId = d.GroupId, NodeTypeKeys = d.NodeTypeKeys.ToList(),
+            Regex = d.Validation.Regex, Min = d.Validation.Min, Max = d.Validation.Max, Required = d.Validation.Required, MultiValue = d.MultiValue,
+            Localizable = d.Localizable, HasContext = d.HasContext, InheritToChildren = d.InheritToChildren, AllowCustomValues = d.AllowCustomValues,
+            IgnoreOnNewVersion = d.IgnoreOnNewVersion, Description = d.Description,
+        };
+
+        public PropertyDefinitionRequest ToRequest() => new(
+            Key?.Trim() ?? string.Empty, Name?.Trim() ?? string.Empty, ValueType, GroupId, Description, ListMode, AllowCustomValues, MultiValue, Localizable, HasContext,
+            NodeTypeKeys: NodeTypeKeys, Validation: new PropertyValidation(Required, string.IsNullOrWhiteSpace(Regex) ? null : Regex, Min, Max), InheritToChildren: InheritToChildren,
+            IgnoreOnNewVersion: IgnoreOnNewVersion);
+    }
+}
