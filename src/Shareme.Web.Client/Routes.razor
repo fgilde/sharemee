@@ -1,0 +1,13 @@
+<Router AppAssembly="typeof(Program).Assembly" AdditionalAssemblies="new[] { typeof(Coworkee.Client.Blazor.CoworkeeClientOptions).Assembly }">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(CoworkeeLayout)">
+            <NotAuthorized>
+                <MudAlert Severity="Severity.Warning">You need to sign in, or you lack the permission for this page.</MudAlert>
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(CoworkeeLayout)"><MudText>Not found.</MudText></LayoutView>
+    </NotFound>
+</Router>

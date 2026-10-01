@@ -12,6 +12,11 @@
     <PackageVersion Include="Coworkee.Aspire" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Contracts" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Identity" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.AuthServer" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Bff" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Client.Blazor" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />

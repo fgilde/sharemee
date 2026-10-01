@@ -3,9 +3,12 @@
     <Project Path="src/Shareme.Api/Shareme.Api.csproj" />
     <Project Path="src/Shareme.AppHost/Shareme.AppHost.csproj" />
     <Project Path="src/Shareme.Application/Shareme.Application.csproj" />
+    <Project Path="src/Shareme.Auth/Shareme.Auth.csproj" />
     <Project Path="src/Shareme.Infrastructure/Shareme.Infrastructure.csproj" />
     <Project Path="src/Shareme.Migrations/Shareme.Migrations.csproj" />
     <Project Path="src/Shareme.ServiceDefaults/Shareme.ServiceDefaults.csproj" />
+    <Project Path="src/Shareme.Web.Client/Shareme.Web.Client.csproj" />
+    <Project Path="src/Shareme.Web/Shareme.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Shareme.Api.Tests/Shareme.Api.Tests.csproj" />

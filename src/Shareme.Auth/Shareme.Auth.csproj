@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Shareme.Infrastructure\Shareme.Infrastructure.csproj" />
+    <ProjectReference Include="..\Shareme.ServiceDefaults\Shareme.ServiceDefaults.csproj" />
+    <CoworkeePackage Include="Coworkee.AuthServer" />
+  </ItemGroup>
+</Project>

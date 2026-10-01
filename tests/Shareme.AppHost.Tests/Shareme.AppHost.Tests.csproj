@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shareme.AppHost\Shareme.AppHost.csproj" />
     <PackageReference Include="Aspire.Hosting.Testing" />
+    <CoworkeePackage Include="Coworkee.Contracts" />
   </ItemGroup>
 </Project>

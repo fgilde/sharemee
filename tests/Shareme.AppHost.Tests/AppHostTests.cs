@@ -21,4 +21,21 @@ public sealed class AppHostTests
 
         info.GetProperty("product").GetString().ShouldBe("Shareme");
     }
+
+    [Fact]
+    public async Task Web_and_auth_start_and_serve()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true"], ct);
+        await using var app = await appHost.BuildAsync(ct);
+        await app.StartAsync(ct);
+        await app.ResourceNotifications.WaitForResourceHealthyAsync("shareme-web", ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
+        await app.ResourceNotifications.WaitForResourceHealthyAsync("shareme-auth", ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
+
+        using var web = app.CreateHttpClient("shareme-web");
+        (await web.GetAsync("/", ct)).StatusCode.ShouldBe(System.Net.HttpStatusCode.OK);
+        (await web.GetStringAsync("/bff/user", ct)).ShouldContain("\"isAuthenticated\":false");
+        using var auth = app.CreateHttpClient("shareme-auth");
+        (await auth.GetAsync("/.well-known/openid-configuration", ct)).StatusCode.ShouldBe(System.Net.HttpStatusCode.OK);
+    }
 }
