@@ -20,6 +20,7 @@
     <PackageVersion Include="Coworkee.Theming" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Realtime" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Notifications" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Account" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Bff" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Client.Blazor" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />

@@ -21,5 +21,7 @@ public sealed class SetupFlowTests(ApiFixture api)
 
         var admin = api.Factory.CreateClient().AsUser(setup.AdminUserId, setup.TenantId);
         (await admin.GetAsync("/api/v1/identity/users", ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await admin.GetStringAsync("/api/v1/settings/definitions", ct)).ShouldContain("Account.AllowRegistration");
+        (await admin.PostAsync($"/api/v1/identity/users/{setup.AdminUserId}/password-reset", null, ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
     }
 }

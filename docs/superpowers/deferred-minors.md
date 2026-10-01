@@ -74,6 +74,20 @@ Review findings that were graded Minor and not fixed in their phase. Later plans
 - [ ] Deactivated users keep receiving events until their token expires (at most the access token lifetime).
 - [ ] Spec says realtime goes through the outbox; implementation is best effort after commit (update the spec before `job:` progress or other loss intolerant consumers).
 
+## From P0.3d (account flows)
+
+- [ ] Register reveals existing addresses (show the success text and mail the owner instead).
+- [ ] Turning 2FA off needs no password or code and sends no notification.
+- [ ] Security stamp changes on the 2FA page without `RefreshSignInAsync` sign the user out of the auth server within 30 minutes.
+- [ ] ConfirmEmail answers "confirmed" for already confirmed users without validating the token.
+- [ ] Reset and confirmation tokens live 24 hours (shorten `DataProtectionTokenProviderOptions.TokenLifespan`).
+- [ ] No rate limit on ForgotPassword and Register (both send mail to third parties).
+- [ ] ForgotPassword timing differs for known and unknown addresses.
+- [ ] Anonymous setup checks disclose the SMTP host and exception messages and open outbound connections.
+- [ ] Effective permissions hard cast `IPermissionChecker` to `PermissionChecker`.
+- [ ] `PublicAuthUrl` not validated on start.
+- [ ] Admins get no notification about pending registrations; no approval mail on activation.
+
 ## From P0.2a and P0.1
 
 See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 on create, unique NormalizedEmail, tenant delete cascade, Redis backed HybridCache, setup token logging, setup rate limit, authorization fail-open without attributes, tenant isolation tests, JwtBearer authority fail-fast, system role update 404 vs 409, duplicate email leak across tenants, Permissions.Manage admin equivalence, Swagger auth in production, outbox cleanup and dead letters.

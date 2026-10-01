@@ -10,6 +10,7 @@
     <CoworkeePackage Include="Coworkee.Theming" />
     <CoworkeePackage Include="Coworkee.Realtime" />
     <CoworkeePackage Include="Coworkee.Notifications" />
+    <CoworkeePackage Include="Coworkee.Account" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
