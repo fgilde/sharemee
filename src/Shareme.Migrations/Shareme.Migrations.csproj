@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <ProjectReference Include="..\Shareme.Infrastructure\Shareme.Infrastructure.csproj" />
+    <ProjectReference Include="..\Shareme.ServiceDefaults\Shareme.ServiceDefaults.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>
