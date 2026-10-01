@@ -63,6 +63,22 @@ public sealed partial class SignInFlowTests
         var permissions = await browser.GetFromJsonAsync<string[]>("/api/v1/identity/permissions/me", ct);
         permissions.ShouldContain(IdentityPermissions.Users.Manage);
 
+        using (var testMail = new HttpRequestMessage(HttpMethod.Post, "/api/v1/mail/templates/Identity.Welcome/en/test"))
+        {
+            testMail.Headers.Add("X-CSRF", "1");
+            (await browser.SendAsync(testMail, ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+
+        using var mailpit = new HttpClient { BaseAddress = app.GetEndpoint("mail", "http") };
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (!(await mailpit.GetStringAsync("/api/v1/messages", ct)).Contains("admin@acme.test", StringComparison.OrdinalIgnoreCase))
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "welcome test mail did not arrive");
+            await Task.Delay(500, ct);
+        }
+
+        (await browser.GetAsync("/admin/jobs", ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
         using var logout = new HttpRequestMessage(HttpMethod.Post, "/bff/logout");
         logout.Headers.Add("X-CSRF", "1");
         var endSession = await (await browser.SendAsync(logout, ct)).Content.ReadFromJsonAsync<BffLogoutDto>(ct);

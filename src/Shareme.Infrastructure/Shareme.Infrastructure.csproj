@@ -5,6 +5,7 @@
     <CoworkeePackage Include="Coworkee.Infrastructure" />
     <CoworkeePackage Include="Coworkee.Identity" />
     <CoworkeePackage Include="Coworkee.AuthServer" />
+    <CoworkeePackage Include="Coworkee.Mailing" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />

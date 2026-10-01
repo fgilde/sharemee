@@ -13,6 +13,9 @@
     <PackageVersion Include="Coworkee.Contracts" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Identity" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.AuthServer" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Settings" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.BackgroundJobs" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Mailing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Bff" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Client.Blazor" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />
