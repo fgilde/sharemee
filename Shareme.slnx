@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Shareme.AppHost/Shareme.AppHost.csproj" />
+    <Project Path="src/Shareme.ServiceDefaults/Shareme.ServiceDefaults.csproj" />
+  </Folder>
+</Solution>
