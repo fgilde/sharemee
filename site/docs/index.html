@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Shareme docs</title>
-<meta name="description" content="Shareme documentation: setup, architecture, Coworkee modules, persistence conventions, testing and roadmap." />
+<title>Sharemee docs</title>
+<meta name="description" content="Sharemee documentation: setup, architecture, Coworkee modules, persistence conventions, testing and roadmap." />
 <link rel="icon" href="../logo.svg" type="image/svg+xml" />
 <link rel="alternate" hreflang="de" href="../de/docs/" />
 <link rel="stylesheet" href="../assets/style.css" />
@@ -12,13 +12,14 @@
 </head>
 <body>
 
-<header class="site">
+<header class="masthead">
   <div class="wrap">
-    <a class="brand" href="../"><img src="../logo.svg" alt="" /><span>Shareme</span></a>
-    <nav class="top">
+    <a class="wordmark" href="../">Share<i>mee</i></a>
+    <nav>
       <a href="../">Home</a>
-      <a href="https://github.com/fgilde/shareme">GitHub</a>
-      <span class="lang"><a class="on" href="./">EN</a><a href="../de/docs/">DE</a></span>
+      <a href="https://github.com/fgilde/sharemee">GitHub</a>
+      <a class="on" href="./">EN</a>
+      <a href="../de/docs/">DE</a>
     </nav>
   </div>
 </header>
@@ -44,10 +45,11 @@
   </aside>
 
   <article>
+    <h1>Documentation</h1>
     <h2 id="status">Status &amp; roadmap</h2>
-    <p>Shareme is in early development. The foundation is done: the Coworkee core packages and a Shareme
+    <p>Sharemee is in early development. The foundation is done: the Coworkee core packages and a Sharemee
        Aspire application with database, migrations and an API. Features follow in phases.</p>
-    <div class="table-scroll">
+    <div class="scroll">
       <table>
         <thead><tr><th>Phase</th><th>Scope</th></tr></thead>
         <tbody>
@@ -69,7 +71,7 @@
     <ul>
       <li>.NET SDK 10.0.300 or later (pinned in <code>global.json</code>)</li>
       <li>Docker, for the Aspire containers and the integration tests</li>
-      <li>The Coworkee repository checked out next to Shareme as <code>../coworkee</code>, until its packages are published</li>
+      <li>The Coworkee repository checked out next to Sharemee as <code>../coworkee</code>, until its packages are published</li>
     </ul>
 
     <h2 id="quickstart">Quick start</h2>
@@ -80,7 +82,7 @@ dotnet run --project src/Shareme.AppHost</code></pre>
        migrations once and then starts the API. Swagger is at <code>/swagger</code> on the API.</p>
 
     <h2 id="layout">Repository layout</h2>
-    <div class="table-scroll">
+    <div class="scroll">
       <table>
         <thead><tr><th>Project</th><th>Purpose</th></tr></thead>
         <tbody>
@@ -96,7 +98,7 @@ dotnet run --project src/Shareme.AppHost</code></pre>
     </div>
 
     <h2 id="packages">Coworkee packages</h2>
-    <div class="table-scroll">
+    <div class="scroll">
       <table>
         <thead><tr><th>Package</th><th>Contains</th></tr></thead>
         <tbody>
@@ -138,7 +140,7 @@ public sealed class ShareMeApplicationModule : CoworkeeModule
 internal sealed class GetSystemInfoHandler : IHandler&lt;GetSystemInfo, Result&lt;SystemInfo&gt;&gt;
 {
     public Task&lt;Result&lt;SystemInfo&gt;&gt; HandleAsync(GetSystemInfo request, CancellationToken ct) =&gt;
-        Task.FromResult&lt;Result&lt;SystemInfo&gt;&gt;(new SystemInfo("Shareme", "0.1.0"));
+        Task.FromResult&lt;Result&lt;SystemInfo&gt;&gt;(new SystemInfo("Sharemee", "0.1.0"));
 }</code></pre>
     <p>FluentValidation validators in the same assembly are picked up automatically. A failed validation
        returns a validation error instead of calling the handler.</p>
@@ -146,7 +148,7 @@ internal sealed class GetSystemInfoHandler : IHandler&lt;GetSystemInfo, Result&l
     <h2 id="persistence">Persistence conventions</h2>
     <p>Derive the database context from <code>CoworkeeDbContext</code> and register it with
        <code>AddCoworkeeDbContext&lt;T&gt;()</code>. Marker interfaces on entities switch on behaviour:</p>
-    <div class="table-scroll">
+    <div class="scroll">
       <table>
         <thead><tr><th>Marker</th><th>Effect</th></tr></thead>
         <tbody>
@@ -174,7 +176,7 @@ internal sealed class GetSystemInfoHandler : IHandler&lt;GetSystemInfo, Result&l
        not found 404, conflict 409, anything else 500. Each problem carries the error <code>code</code>.</p>
 
     <h2 id="configuration">Configuration</h2>
-    <div class="table-scroll">
+    <div class="scroll">
       <table>
         <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
         <tbody>
@@ -192,34 +194,34 @@ internal sealed class GetSystemInfoHandler : IHandler&lt;GetSystemInfo, Result&l
   </article>
 </div>
 
-<footer class="site">
+<footer>
   <div class="wrap">
-    <span>Shareme</span>
-    <a href="../">Home</a>
-    <a href="https://github.com/fgilde/shareme">GitHub</a>
-    <a href="../de/docs/">Deutsch</a>
-    <span class="spacer">
-      <a class="partner" href="https://gilde.org" target="_blank" rel="noopener" title="gilde.org">
-        <svg class="gilde-mark" viewBox="0 0 512 512" aria-hidden="true">
-          <defs>
-            <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#ffe6a8"></stop>
-              <stop offset=".45" stop-color="#e0a24e"></stop>
-              <stop offset="1" stop-color="#a9761f"></stop>
-            </linearGradient>
-            <filter id="gGlow" x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="10" result="b"></feGaussianBlur>
-              <feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
-            </filter>
-          </defs>
-          <g fill="none" stroke="url(#gGold)" stroke-width="56" stroke-linecap="square" stroke-linejoin="miter" filter="url(#gGlow)">
-            <path d="M376 88H112v264l144 112 144-112v-96H280" pathLength="1" stroke-dasharray="1px 1px"></path>
-            <path d="M280 216h120" pathLength="1" stroke-dasharray="1px 1px"></path>
-          </g>
-        </svg>
-        gilde.org
-      </a>
-    </span>
+    <a class="wordmark" href="../">Share<i>mee</i></a>
+    <div class="links">
+      <a href="../">Home</a>
+      <a href="https://github.com/fgilde/sharemee">GitHub</a>
+      <a href="../de/docs/">Deutsch</a>
+    </div>
+    <a class="partner" href="https://gilde.org" target="_blank" rel="noopener" title="gilde.org">
+      <svg class="gilde-mark" viewBox="0 0 512 512" aria-hidden="true">
+        <defs>
+          <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ffe6a8"></stop>
+            <stop offset=".45" stop-color="#e0a24e"></stop>
+            <stop offset="1" stop-color="#a9761f"></stop>
+          </linearGradient>
+          <filter id="gGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="10" result="b"></feGaussianBlur>
+            <feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+          </filter>
+        </defs>
+        <g fill="none" stroke="url(#gGold)" stroke-width="56" stroke-linecap="square" stroke-linejoin="miter" filter="url(#gGlow)">
+          <path d="M376 88H112v264l144 112 144-112v-96H280" pathLength="1" stroke-dasharray="1px 1px"></path>
+          <path d="M280 216h120" pathLength="1" stroke-dasharray="1px 1px"></path>
+        </g>
+      </svg>
+      gilde.org
+    </a>
   </div>
 </footer>
 

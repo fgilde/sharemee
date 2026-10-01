@@ -1,10 +1,10 @@
-# Shareme
+# Sharemee
 
 Digital asset management, document management, knowledge base and intranet on one .NET 10 platform: versioned, audited, permissioned per item, realtime, with a REST API and an MCP endpoint.
 
 > Early development. The foundation is in place; features land phase by phase.
 
-**Website & docs:** https://fgilde.github.io/shareme/
+**Website & docs:** https://fgilde.github.io/sharemee/
 
 ## Quick start
 
