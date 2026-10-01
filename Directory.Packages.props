@@ -10,6 +10,9 @@
     <PackageVersion Include="Coworkee.AspNetCore" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Testing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Aspire" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Contracts" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Identity" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
