@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shareme.AppHost\Shareme.AppHost.csproj" />
+    <PackageReference Include="Aspire.Hosting.Testing" />
+  </ItemGroup>
+</Project>

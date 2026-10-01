@@ -9,5 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Shareme.Api.Tests/Shareme.Api.Tests.csproj" />
+    <Project Path="tests/Shareme.AppHost.Tests/Shareme.AppHost.Tests.csproj" />
   </Folder>
 </Solution>
