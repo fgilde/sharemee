@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master, "feat/**"]
+    paths-ignore:
+      - "site/**"
+      - "docs/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SSL_CERT_DIR: /home/runner/.aspnet/dev-certs/trust:/usr/lib/ssl/certs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: shareme
+
+      - uses: actions/checkout@v4
+        with:
+          repository: fgilde/CoworkeeLib
+          ref: main
+          path: coworkee
+          token: ${{ secrets.COWORKEE_REPO_TOKEN }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: shareme/global.json
+
+      - name: Pack Coworkee into the local feed
+        shell: pwsh
+        run: ./coworkee/build/pack-local.ps1
+
+      - name: Trust the development certificate
+        run: dotnet dev-certs https --trust
+
+      - name: Build
+        working-directory: shareme
+        run: dotnet build Shareme.slnx -c Release
+
+      - name: Install Playwright browsers
+        working-directory: shareme
+        shell: pwsh
+        run: ./tests/Shareme.E2E.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+
+      - name: Test
+        working-directory: shareme
+        run: dotnet test --solution Shareme.slnx -c Release --no-build

@@ -1,0 +1,91 @@
+using Aspire.Hosting;
+using Aspire.Hosting.Testing;
+using Microsoft.Playwright;
+
+namespace Shareme.E2E.Tests;
+
+public sealed class AdminJourneyTests
+{
+    private const string SetupToken = "e2e-browser-token";
+    private const string AdminEmail = "admin@acme.test";
+    private const string AdminPassword = "Admin#12345";
+    private static readonly float Timeout = (float)TimeSpan.FromSeconds(60).TotalMilliseconds;
+
+    [Fact]
+    public async Task Setup_sign_in_create_user_assign_role_and_a_second_browser_sees_it_live()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>(
+            [$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true", $"--Shareme:SetupToken={SetupToken}"], ct);
+        await using var app = await appHost.BuildAsync(ct);
+        await app.StartAsync(ct);
+        foreach (var resource in new[] { "shareme-web", "shareme-auth", "shareme-api" })
+        {
+            await app.ResourceNotifications.WaitForResourceHealthyAsync(resource, ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
+        }
+
+        var web = app.GetEndpoint("shareme-web", "https").ToString().TrimEnd('/');
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+
+        var first = await NewPageAsync(browser);
+        await first.GotoAsync(web + "/");
+        await first.WaitForURLAsync("**/setup", new() { Timeout = Timeout });
+        await first.Locator("input[data-testid='setup-token']").FillAsync(SetupToken);
+        await first.Locator("[data-testid='next']").ClickAsync();
+        await first.Locator("[data-check='Database']").WaitForAsync(new() { Timeout = Timeout });
+        await first.Locator("[data-testid='next']").ClickAsync();
+        await first.Locator("input[data-testid='tenant-name']").FillAsync("Acme");
+        await first.Locator("[data-testid='next']").ClickAsync();
+        await first.Locator("input[data-testid='admin-email']").FillAsync(AdminEmail);
+        await first.Locator("input[data-testid='admin-password']").FillAsync(AdminPassword);
+        await first.Locator("[data-testid='next']").ClickAsync();
+        await first.Locator("[data-testid='finish']").ClickAsync();
+        await first.GetByText("The system is ready").WaitForAsync(new() { Timeout = Timeout });
+        await first.Locator("a[href*='returnUrl=/admin/users']").ClickAsync();
+        await SignInAsync(first);
+        await first.WaitForURLAsync("**/admin/users", new() { Timeout = Timeout });
+
+        await first.GotoAsync(web + "/admin/roles");
+        await first.Locator("input[data-testid='new-role-name'], [data-testid='new-role-name'] input").First.FillAsync("Editors");
+
+        await first.Locator("[data-testid='add-role']").ClickAsync();
+        await first.GetByRole(AriaRole.Link, new() { Name = "Editors" }).WaitForAsync(new() { Timeout = Timeout });
+
+        var second = await NewPageAsync(browser);
+        await second.GotoAsync(web + "/bff/login?returnUrl=/admin/users");
+        await SignInAsync(second);
+        await second.WaitForURLAsync("**/admin/users", new() { Timeout = Timeout });
+        await second.Locator($"[data-user='{AdminEmail}']").WaitForAsync(new() { Timeout = Timeout });
+
+        await first.GotoAsync(web + "/admin/users");
+        await first.Locator("[data-testid='new-user']").ClickAsync();
+        await first.Locator("input[data-testid='new-user-email']").FillAsync("eve@acme.test");
+        await first.Locator("input[data-testid='new-user-password']").FillAsync("Passw0rd!x");
+        await first.Locator("[data-testid='create-user']").ClickAsync();
+
+        await second.Locator("[data-user='eve@acme.test']").WaitForAsync(new() { Timeout = Timeout });
+
+        await first.Locator("[data-testid='roles-eve@acme.test']").ClickAsync();
+        await first.Locator(".mud-popover-open .mud-list-item", new() { HasTextString = "Editors" }).ClickAsync();
+        await first.Keyboard.PressAsync("Escape");
+
+        await Assertions.Expect(second.Locator("[data-testid='roles-eve@acme.test'] input, input[data-testid='roles-eve@acme.test']").First)
+            .ToHaveValueAsync(new System.Text.RegularExpressions.Regex("Editors"), new() { Timeout = Timeout });
+    }
+
+    private static async Task<IPage> NewPageAsync(IBrowser browser)
+    {
+        var context = await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true });
+        var page = await context.NewPageAsync();
+        page.SetDefaultTimeout(Timeout);
+        return page;
+    }
+
+    private static async Task SignInAsync(IPage page)
+    {
+        await page.Locator("#email").FillAsync(AdminEmail);
+        await page.Locator("#password").FillAsync(AdminPassword);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+    }
+}
