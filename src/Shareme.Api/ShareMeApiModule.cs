@@ -3,6 +3,7 @@ using Coworkee.AspNetCore;
 using Coworkee.AspNetCore.Http;
 using Coworkee.Core.Modularity;
 using Coworkee.Infrastructure.Outbox;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Shareme.Application.System;
 using Shareme.Infrastructure;
 
@@ -11,8 +12,21 @@ namespace Shareme.Api;
 [DependsOn(typeof(ShareMeInfrastructureModule))]
 public sealed class ShareMeApiModule : CoworkeeModule, IWebModule
 {
-    public override void ConfigureServices(ModuleServiceContext context) =>
+    public const string Audience = "shareme_api";
+
+    public override void ConfigureServices(ModuleServiceContext context)
+    {
         context.Services.AddCoworkeeOutboxProcessing<ShareMeDbContext>();
+        context.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                var authority = context.Configuration["Auth:Authority"];
+                options.Authority = authority;
+                options.Audience = Audience;
+                options.MapInboundClaims = false;
+                options.RequireHttpsMetadata = authority?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) != true;
+            });
+    }
 
     public void ConfigureApplication(WebApplication app)
     {
