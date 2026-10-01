@@ -79,6 +79,13 @@ public sealed partial class SignInFlowTests
 
         (await browser.GetAsync("/admin/jobs", ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
+        (await browser.GetFromJsonAsync<JsonElement>("/api/v1/themes/current", ct)).GetProperty("name").GetString().ShouldBe("Coworkee");
+        var palette = JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["Primary"] = "#123456" });
+        var themeId = await SendJsonAsync(browser, HttpMethod.Post, "/api/v1/themes", new { name = "Brand", paletteLight = palette, paletteDark = palette }, ct);
+        await SendJsonAsync(browser, HttpMethod.Put, $"/api/v1/themes/{themeId}", new { name = "Brand 2", paletteLight = palette, paletteDark = palette }, ct);
+        (await browser.GetFromJsonAsync<JsonElement>($"/api/v1/versions/Theme/{themeId}", ct)).GetArrayLength().ShouldBe(2);
+        (await browser.GetFromJsonAsync<JsonElement>($"/api/v1/audit?entityType=ThemeDefinition&entityId={themeId}", ct)).GetProperty("items").GetArrayLength().ShouldBe(2);
+
         using var logout = new HttpRequestMessage(HttpMethod.Post, "/bff/logout");
         logout.Headers.Add("X-CSRF", "1");
         var endSession = await (await browser.SendAsync(logout, ct)).Content.ReadFromJsonAsync<BffLogoutDto>(ct);
@@ -87,6 +94,15 @@ public sealed partial class SignInFlowTests
         (await browser.GetFromJsonAsync<BffUserDto>("/bff/user", ct))!.IsAuthenticated.ShouldBeFalse();
         var reLogin = await browser.GetAsync("/bff/login?returnUrl=/bff/user", ct);
         reLogin.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/Account/Login");
+    }
+
+    private static async Task<string> SendJsonAsync(HttpClient client, HttpMethod method, string url, object body, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(method, url) { Content = JsonContent.Create(body) };
+        request.Headers.Add("X-CSRF", "1");
+        var response = await client.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetString()!;
     }
 
     [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]

@@ -39,6 +39,24 @@ Review findings that were graded Minor and not fixed in their phase. Later plans
 - [ ] Data protection keys stored unencrypted next to ciphertexts (`ProtectKeysWithCertificate` in production).
 - [ ] Mail stuck in `Sending` after a crash between SMTP and status write (reconciler).
 
+## From P0.3b (audit, versions, themes)
+
+- [ ] Concurrent edits of versioned entities end in 500 (mark `Revision` as concurrency token for `IVersioned`).
+- [ ] Restore with incompatible payload types throws 500 (catch, return conflict).
+- [ ] `VersionHistory` reloads on every parent render; timeline not refreshed after restore.
+- [ ] Theme name uniqueness: trim before check, check on update; returned DTO revision is stale.
+- [ ] Validator accepts `hsl()`/`transparent` which `MudColor` cannot parse (tighten or parse with MudColor on the server).
+- [ ] Dark mode: toggle not persisted, mode read once, system observation overrides explicit choice; fire-and-forget reload in `ThemeDetail.Dispose`.
+- [ ] Snapshot payload ignores the `[NotAudited]` property attribute (share one helper with the audit trail).
+- [ ] Audit records `Revision: 0` on create; `Restored` entry has no correlation id; no-op restore still audited.
+- [ ] CustomCss allows `url(` (external loads, attribute selector exfiltration within the tenant).
+- [ ] Mail template editor has no version history; reset deletes the override and orphans its history.
+- [ ] Auth host login page does not use the tenant theme yet.
+- [ ] Typography is stored but not applied and wiped by the editor.
+- [ ] Missing index `(TenantId, OccurredAt)` on audit entries.
+- [ ] Audit filter needs CLR type names (`ThemeDefinition`); unknown theme id renders an empty page; duplicate names between global and tenant themes.
+- [ ] Snapshot and audit growth without retention (logo and CSS per save).
+
 ## From P0.2a and P0.1
 
 See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 on create, unique NormalizedEmail, tenant delete cascade, Redis backed HybridCache, setup token logging, setup rate limit, authorization fail-open without attributes, tenant isolation tests, JwtBearer authority fail-fast, system role update 404 vs 409, duplicate email leak across tenants, Permissions.Manage admin equivalence, Swagger auth in production, outbox cleanup and dead letters.

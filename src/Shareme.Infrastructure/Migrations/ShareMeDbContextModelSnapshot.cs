@@ -506,6 +506,49 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("OutboxMessages", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Infrastructure.Versioning.EntitySnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntityType", "EntityId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("EntitySnapshots", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Mailing.MailTemplateOverride", b =>
                 {
                     b.Property<Guid>("Id")
@@ -537,6 +580,9 @@ namespace Shareme.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Subject")
                         .IsRequired()
@@ -652,6 +698,84 @@ namespace Shareme.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("Name", "Scope", "ScopeKey"), false);
 
                     b.ToTable("SettingValues", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Theming.TenantTheme", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ThemeId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("TenantId");
+
+                    b.HasIndex("ThemeId");
+
+                    b.ToTable("TenantThemes", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Theming.ThemeDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CustomCss")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LayoutProperties")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("LogoSvg")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaletteDark")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("PaletteLight")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Typography")
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Name"), false);
+
+                    b.ToTable("Themes", "cw");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -1055,6 +1179,15 @@ namespace Shareme.Infrastructure.Migrations
                         });
 
                     b.Navigation("Changes");
+                });
+
+            modelBuilder.Entity("Coworkee.Theming.TenantTheme", b =>
+                {
+                    b.HasOne("Coworkee.Theming.ThemeDefinition", null)
+                        .WithMany()
+                        .HasForeignKey("ThemeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
