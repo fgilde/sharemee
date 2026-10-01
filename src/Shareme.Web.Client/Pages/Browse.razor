@@ -26,7 +26,7 @@
 }
 else if (_detail is not null)
 {
-    <RealtimeSubscription @key="_detail.Node.Id" Topic="@($"children:{_detail.Node.Id}")" OnEvent="_ => LoadChildrenAsync()" />
+    <RealtimeSubscription @key="_detail.Node.Id" Topic="@($"children:{_detail.Node.Id}")" OnEvent="_ => RefreshAsync()" />
 
     <div data-testid="breadcrumb"><MudBreadcrumbs Items="_breadcrumb" /></div>
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
@@ -89,7 +89,7 @@ else if (_detail is not null)
     {
         <MudPaper Outlined="true" Class="pa-4 mt-4">
             <MudText Typo="Typo.h6">Move "@_moving.Name"</MudText>
-            <FolderPicker StartId="_detail.Node.Id" OnPicked="target => MoveAsync(_moving, target)" />
+            <FolderPicker StartId="_detail.Node.Id" ExcludeId="_moving.Id" OnPicked="target => MoveAsync(_moving, target)" />
             <MudButton Class="mt-2" OnClick="() => _moving = null">Cancel</MudButton>
         </MudPaper>
     }
@@ -132,6 +132,10 @@ else
         _detail = null;
         _entryPoints = null;
         _moving = null;
+        _children = [];
+        _search = null;
+        _newName = null;
+        _renaming = null;
         await RunAsync(async () =>
         {
             if (Id is { } id)
@@ -160,6 +164,19 @@ else
             .Select((crumb, index) => new BreadcrumbItem(crumb.Name, index == _detail.Breadcrumb.Count - 1 ? null : $"/browse/{crumb.Id}", disabled: index == _detail.Breadcrumb.Count - 1))
             .ToList();
         await LoadChildrenAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await LoadAsync(_detail!.Node.Id);
+        }
+        catch (ApiException exception) when (exception.Status is 403 or 404)
+        {
+            Snackbar.Add("This folder is no longer available.", Severity.Warning);
+            Nav.NavigateTo("/browse");
+        }
     }
 
     private async Task LoadChildrenAsync()

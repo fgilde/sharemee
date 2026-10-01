@@ -74,7 +74,11 @@ public abstract class Node : AuditedAggregateRoot, IMultiTenant, ISoftDelete, IH
 
     public uint Version { get; set; }
 
-    public IEnumerable<string> RealtimeTopics => ParentId is { } parent ? [GraphTopics.Children(parent)] : [];
+    public Guid? PreviousParentId { get; private set; }
+
+    public IEnumerable<string> RealtimeTopics =>
+        // own id too: viewers of this folder learn about its rename, move or deletion
+        new[] { ParentId, PreviousParentId, Id }.OfType<Guid>().Distinct().Select(GraphTopics.Children);
 
     public IReadOnlyList<Guid> PathIds => NodePaths.Ids(Path);
 
@@ -82,15 +86,10 @@ public abstract class Node : AuditedAggregateRoot, IMultiTenant, ISoftDelete, IH
 
     public void PlaceUnder(Node? parent)
     {
+        PreviousParentId = ParentId;
         ParentId = parent?.Id;
         Path = (parent?.Path ?? "/") + Id + "/";
         Depth = parent is null ? 0 : parent.Depth + 1;
-    }
-
-    public void Rebase(string oldPrefix, string newPrefix, int depthDelta)
-    {
-        Path = newPrefix + Path[oldPrefix.Length..];
-        Depth += depthDelta;
     }
 
     public void MarkChanged(string kind) => Raise(new NodeChanged(Id, kind));
@@ -204,6 +203,7 @@ internal sealed class GraphModelContributor : IModelContributor
             node.Property<string>("Kind").HasMaxLength(20);
             node.Ignore(n => n.RealtimeTopics);
             node.Ignore(n => n.PathIds);
+            node.Ignore(n => n.PreviousParentId);
             node.Ignore(n => n.Semantic);
             node.Property(n => n.Name).HasMaxLength(400);
             node.Property(n => n.Path).HasMaxLength(4000);

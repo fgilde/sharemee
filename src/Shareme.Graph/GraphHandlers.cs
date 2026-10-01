@@ -3,6 +3,7 @@ using Coworkee.Application.Messaging;
 using Coworkee.Contracts;
 using Coworkee.Core.Results;
 using Coworkee.Core.Security;
+using Coworkee.Identity.Domain;
 using Coworkee.Infrastructure.Persistence;
 using Coworkee.Notifications;
 using Microsoft.EntityFrameworkCore;
@@ -54,15 +55,34 @@ internal sealed class EdgeHandlers(CoworkeeDbContext db, NodeAccess access)
                            where edge.FromNodeId == query.NodeId || edge.ToNodeId == query.NodeId
                            orderby type.Key, target.Name
                            select new EdgeDto(edge.Id, type.Key, edge.FromNodeId, edge.ToNodeId, source.Name, target.Name)).ToListAsync(cancellationToken);
-        return Result<IReadOnlyList<EdgeDto>>.Success(edges);
+        if (await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
+        {
+            return edges;
+        }
+
+        var visible = new List<EdgeDto>();
+        foreach (var edge in edges)
+        {
+            if (await access.CanAsync(NodePermissions.Read, edge.FromNodeId == query.NodeId ? edge.ToNodeId : edge.FromNodeId, cancellationToken))
+            {
+                visible.Add(edge);
+            }
+        }
+
+        return visible;
     }
 
     public async Task<Result<EdgeDto>> HandleAsync(CreateEdge command, CancellationToken cancellationToken)
     {
         var from = await db.Set<Node>().SingleOrDefaultAsync(n => n.Id == command.FromNodeId, cancellationToken);
         var to = await db.Set<Node>().SingleOrDefaultAsync(n => n.Id == command.Request.ToNodeId, cancellationToken);
-        var type = await db.Set<EdgeType>().SingleOrDefaultAsync(t => t.Key == command.Request.Type, cancellationToken);
-        if (from is null || to is null || type is null)
+        if (from is null || to is null)
+        {
+            return NodeErrors.NotFound;
+        }
+
+        var type = await db.Set<EdgeType>().SingleOrDefaultAsync(t => t.Key == command.Request.Type && (t.TenantId == null || t.TenantId == from.TenantId), cancellationToken);
+        if (type is null)
         {
             return NodeErrors.NotFound;
         }
@@ -139,41 +159,44 @@ internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser curr
             return Error.Forbidden("auth.forbidden", "Only the person who deleted this or an administrator can restore it.");
         }
 
-        var members = await Deleted().Where(n => n.DeletedWithId == node.Id).ToListAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var parentExists = node.ParentId is { } parentId && await db.Set<Node>().AnyAsync(n => n.Id == parentId, cancellationToken);
         if (!parentExists)
         {
-            var root = await db.Set<Node>().SingleAsync(n => n.ParentId == null, cancellationToken);
             var oldPrefix = node.Path;
-            var depthDelta = root.Depth + 1 - node.Depth;
-            node.PlaceUnder(root);
-            foreach (var member in members.Where(m => m.Id != node.Id))
-            {
-                member.Rebase(oldPrefix, node.Path, depthDelta);
-            }
+            node.PlaceUnder(await db.Set<Node>().SingleAsync(n => n.ParentId == null, cancellationToken));
+            await NodeCommandHandlers.RebaseDescendantsAsync(db, node, oldPrefix, cancellationToken);
         }
 
-        foreach (var member in members)
-        {
-            member.IsDeleted = false;
-            member.DeletedAt = null;
-            member.DeletedBy = null;
-            member.DeletedWithId = null;
-        }
-
+        await Deleted().Where(n => n.DeletedWithId == node.Id && n.Id != node.Id).ExecuteUpdateAsync(s => s
+            .SetProperty(n => n.IsDeleted, false).SetProperty(n => n.DeletedAt, (DateTimeOffset?)null)
+            .SetProperty(n => n.DeletedBy, (Guid?)null).SetProperty(n => n.DeletedWithId, (Guid?)null), cancellationToken);
+        node.IsDeleted = false;
+        node.DeletedAt = null;
+        node.DeletedBy = null;
+        node.DeletedWithId = null;
         node.MarkChanged("restored");
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Result.Success();
     }
 
     public async Task<Result> HandleAsync(PurgeNode command, CancellationToken cancellationToken)
     {
-        if (!await Deleted().AnyAsync(n => n.Id == command.Id && n.DeletedWithId == n.Id, cancellationToken))
+        var path = await Deleted().Where(n => n.Id == command.Id && n.DeletedWithId == n.Id).Select(n => n.Path).SingleOrDefaultAsync(cancellationToken);
+        if (path is null)
         {
             return NodeErrors.NotFound;
         }
 
         // ponytail: hard delete bypasses audit and blob cleanup; P1c adds a purge job that removes stored files first
-        await Deleted().Where(n => n.DeletedWithId == command.Id).ExecuteDeleteAsync(cancellationToken);
+        // earlier bin entries inside the subtree go with it, their parent is gone afterwards
+        var subtree = Deleted().Where(n => n.Path.StartsWith(path));
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Set<ResourcePermission>().Where(p => p.ResourceType == NodePermissions.ResourceType && subtree.Select(n => n.Id).Contains(p.ResourceId))
+            .ExecuteDeleteAsync(cancellationToken);
+        await subtree.ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Result.Success();
     }
 
@@ -232,7 +255,7 @@ internal sealed class NotifySubscribers(CoworkeeDbContext db, ICurrentUser curre
             return;
         }
 
-        await notifier.NotifyAsync(recipients, "node." + domainEvent.Kind, $"{node.Name} was {domainEvent.Kind}", null, $"/browse/{node.ParentId ?? node.Id}", cancellationToken);
+        await notifier.NotifyAsync(recipients, "node." + domainEvent.Kind, $"{(node.Name.Length > 200 ? node.Name[..200] + "…" : node.Name)} was {domainEvent.Kind}", null, $"/browse/{node.ParentId ?? node.Id}", cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }
 }

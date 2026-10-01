@@ -195,6 +195,79 @@ public sealed class GraphTests(ApiFixture api) : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Restoring_an_earlier_bin_entry_follows_a_later_move_of_its_ancestor()
+    {
+        var root = await RootAsync();
+        var a = await CreateAsync(root.Id, "A");
+        var b = await CreateAsync(a.Id, "B");
+        var c = await CreateAsync(b.Id, "C");
+        var d = await CreateAsync(root.Id, "D");
+        var bob = await UserWithFolderRoleAsync(a.Id, NodePermissions.Read);
+        (await Admin.DeleteAsync($"/api/v1/nodes/{c.Id}", Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsJsonAsync($"/api/v1/nodes/{b.Id}/move", new MoveNodeRequest(d.Id), Ct)).EnsureSuccessStatusCode();
+
+        (await Admin.PostAsync($"/api/v1/recycle-bin/{c.Id}/restore", null, Ct)).EnsureSuccessStatusCode();
+
+        (await Admin.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{c.Id}", Ct))!.Breadcrumb.Select(x => x.Name).ShouldBe(["Root", "D", "B", "C"]);
+        (await bob.GetAsync($"/api/v1/nodes/{c.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Purging_also_removes_earlier_bin_entries_inside_the_subtree()
+    {
+        var root = await RootAsync();
+        var a = await CreateAsync(root.Id, "A");
+        var x = await CreateAsync(a.Id, "X");
+        (await Admin.DeleteAsync($"/api/v1/nodes/{x.Id}", Ct)).EnsureSuccessStatusCode();
+        (await Admin.DeleteAsync($"/api/v1/nodes/{a.Id}", Ct)).EnsureSuccessStatusCode();
+
+        (await Admin.DeleteAsync($"/api/v1/recycle-bin/{a.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        (await RecycleBinAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_breadcrumb_starts_at_the_first_readable_folder()
+    {
+        var root = await RootAsync();
+        var a = await CreateAsync(root.Id, "A");
+        var b = await CreateAsync(a.Id, "B");
+        var bob = await UserWithFolderRoleAsync(a.Id, NodePermissions.Read);
+
+        (await bob.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{b.Id}", Ct))!.Breadcrumb.Select(x => x.Name).ShouldBe(["A", "B"]);
+    }
+
+    [Fact]
+    public async Task A_grant_below_an_interrupted_folder_is_an_entry_point()
+    {
+        var root = await RootAsync();
+        var a = await CreateAsync(root.Id, "A");
+        var b = await CreateAsync(a.Id, "B");
+        var c = await CreateAsync(b.Id, "C");
+        var (bob, client) = await UserAsync();
+        await GrantAsync(a.Id, bob.UserId, NodePermissions.Read);
+        await GrantAsync(c.Id, bob.UserId, NodePermissions.Read);
+
+        (await Admin.PutAsJsonAsync($"/api/v1/nodes/{b.Id}/inheritance", new InheritanceRequest(Interrupt: true), Ct)).EnsureSuccessStatusCode();
+
+        (await client.GetFromJsonAsync<NodeDto[]>("/api/v1/nodes/entry-points", Ct))!.Select(n => n.Id).ShouldBe([a.Id, c.Id]);
+        (await client.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{c.Id}", Ct))!.Breadcrumb.Select(x => x.Name).ShouldBe(["C"]);
+    }
+
+    [Fact]
+    public async Task Relations_to_unreadable_nodes_are_hidden()
+    {
+        var root = await RootAsync();
+        var a = await CreateAsync(root.Id, "A");
+        var secret = await CreateAsync(root.Id, "Secret");
+        (await Admin.PostAsJsonAsync($"/api/v1/nodes/{secret.Id}/edges", new CreateEdgeRequest(EdgeTypeKeys.Link, a.Id), Ct)).EnsureSuccessStatusCode();
+        var bob = await UserWithFolderRoleAsync(a.Id, NodePermissions.Read);
+
+        (await bob.GetFromJsonAsync<EdgeDto[]>($"/api/v1/nodes/{a.Id}/edges", Ct))!.ShouldBeEmpty();
+        (await Admin.GetFromJsonAsync<EdgeDto[]>($"/api/v1/nodes/{a.Id}/edges", Ct))!.ShouldHaveSingleItem();
+    }
+
     private async Task<NodeDto> RootAsync() => (await Admin.GetFromJsonAsync<NodeDto>("/api/v1/nodes/root", Ct))!;
 
     private async Task<NodeDto> CreateAsync(Guid parentId, string name)

@@ -80,6 +80,21 @@ public sealed class BrowseTests : BunitContext
         page.WaitForAssertion(() => _api.Received(2).GetChildrenAsync(_folder, Arg.Any<PageRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()));
     }
 
+    [Fact]
+    public async Task The_folder_picker_can_go_up_and_hides_the_moved_node()
+    {
+        _api.GetNodeAsync(_root, Arg.Any<CancellationToken>()).Returns(new NodeDetailDto(Node(_root, "Root", null), [new(_root, "Root")], false));
+        _api.GetChildrenAsync(_root, Arg.Any<PageRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PagedResult<NodeDto>([Node(_folder, "Marketing", _root), Node(_child, "Campaigns", _root)], 2, 1, 200));
+        var picker = Render<FolderPicker>(p => p.Add(f => f.StartId, _folder).Add(f => f.ExcludeId, _child));
+
+        await picker.WaitForElement("[data-testid='picker-crumb']").ClickAsync(new());
+
+        picker.WaitForAssertion(() => picker.Markup.ShouldContain("Move here: Root"));
+        picker.Markup.ShouldContain("Marketing");
+        picker.Markup.ShouldNotContain("Campaigns");
+    }
+
     private static NodeDto Node(Guid id, string name, Guid? parent) =>
         new(id, parent, NodeTypeKeys.Folder, "folder", name, new Dictionary<string, string>(), 0, false, DateTimeOffset.UtcNow, null);
 

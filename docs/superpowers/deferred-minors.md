@@ -2,6 +2,21 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P1a (graph)
+
+- [ ] `GET /nodes/root` creates the root lazily without a permission and two first calls race on `IX_Nodes_Root` (create in setup or catch the unique violation).
+- [ ] Children search does not escape `%`/`_`; name sort has no tiebreaker for paging.
+- [ ] `CreateNodeType` does not validate `Name`; `Names` dictionaries are unbounded; subscribing to a missing id by a global reader hits the FK (500).
+- [ ] One resource check per interrupted child in `GetChildren`; `GetGrantedResourcesAsync` loads grants per role; resource checks are uncached; entry points build `IN` over all grants.
+- [ ] Delete still loads the subtree into memory and emits realtime and audit per descendant.
+- [ ] Node resource permission panel sits behind the global `Identity.ResourcePermissions.Manage`; `Nodes.ManagePermissions` does not imply it.
+- [ ] Interrupting inheritance with only an inherited `ManagePermissions` locks the user out of the node.
+- [ ] Restore checks no right on the destination; delete has no confirmation dialog.
+- [ ] DTOs from create carry `CreatedAt` = default (stamped after the handler).
+- [ ] Undirected `duplicate` edges can be stored in both directions.
+- [ ] Purge bypasses realtime and audit.
+- [ ] Concurrent create under a folder that is being moved can persist the old path prefix.
+
 ## From P0.2b (auth, BFF, admin UI)
 
 - [ ] `prompt=login` loops on `/connect/authorize` (exclude `prompt`/`max_age` when rebuilding the challenge query).

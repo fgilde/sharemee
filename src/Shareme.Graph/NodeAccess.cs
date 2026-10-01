@@ -36,6 +36,18 @@ internal sealed class NodeHierarchy(CoworkeeDbContext db) : IResourceHierarchy
 
 internal sealed class NodeAccess(IPermissionChecker permissions)
 {
+    /// <summary>For each node on a path (root first): readable through a direct grant or inherited from a readable parent.</summary>
+    public static bool[] Readable(IReadOnlyList<Guid> pathIds, IReadOnlySet<Guid> granted, IReadOnlySet<Guid> interrupted)
+    {
+        var readable = new bool[pathIds.Count];
+        for (var index = 0; index < pathIds.Count; index++)
+        {
+            readable[index] = granted.Contains(pathIds[index]) || (index > 0 && readable[index - 1] && !interrupted.Contains(pathIds[index]));
+        }
+
+        return readable;
+    }
+
     public Task<bool> CanAsync(string permission, Guid nodeId, CancellationToken cancellationToken) =>
         permissions.IsGrantedAsync(permission, NodePermissions.ResourceType, nodeId, cancellationToken);
 

@@ -145,7 +145,9 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
 
         var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
         var nodes = await db.Set<Node>().AsNoTracking().Where(n => granted.Contains(n.Id)).ToListAsync(cancellationToken);
-        var topMost = nodes.Where(n => !n.PathIds.SkipLast(1).Any(granted.Contains)).OrderBy(n => n.Name).ToList();
+        var interrupted = await InterruptedAsync(nodes.SelectMany(n => n.PathIds).Distinct().ToList(), cancellationToken);
+        var topMost = nodes.Where(n => n.PathIds is var ids && (ids.Count == 1 || interrupted.Contains(n.Id) || !NodeAccess.Readable(ids, granted, interrupted)[^2]))
+            .OrderBy(n => n.Name).ToList();
         return Result<IReadOnlyList<NodeDto>>.Success(await mapper.MapAsync(topMost, cancellationToken));
     }
 
@@ -158,11 +160,28 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
         }
 
         var ids = node.PathIds;
-        var names = await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).Select(n => new { n.Id, n.Name }).ToDictionaryAsync(n => n.Id, n => n.Name, cancellationToken);
-        var breadcrumb = ids.Where(names.ContainsKey).Select(id => new BreadcrumbDto(id, names[id])).ToList();
+        var path = await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).Select(n => new { n.Id, n.Name, n.InterruptInheritance })
+            .ToDictionaryAsync(n => n.Id, cancellationToken);
+        var first = 0;
+        if (!await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
+        {
+            // the trail starts where the caller's access starts, names above it stay hidden
+            var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
+            var readable = NodeAccess.Readable(ids, granted, path.Values.Where(p => p.InterruptInheritance).Select(p => p.Id).ToHashSet());
+            first = ids.Count - 1;
+            while (first > 0 && readable[first - 1])
+            {
+                first--;
+            }
+        }
+
+        var breadcrumb = ids.Skip(first).Where(path.ContainsKey).Select(id => new BreadcrumbDto(id, path[id].Name)).ToList();
         var subscribed = await db.Set<NodeSubscription>().AnyAsync(s => s.NodeId == node.Id && s.UserId == currentUser.UserId, cancellationToken);
         return new NodeDetailDto(await mapper.MapAsync(node, cancellationToken), breadcrumb, subscribed);
     }
+
+    private async Task<HashSet<Guid>> InterruptedAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken) =>
+        (await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id) && n.InterruptInheritance).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
 
     public async Task<Result<PagedResult<NodeDto>>> HandleAsync(GetChildren query, CancellationToken cancellationToken)
     {
@@ -307,18 +326,24 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return Result.Success();
         }
 
-        // ponytail: loads the moved subtree into memory; switch to a set based UPDATE when subtrees reach tens of thousands of nodes
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var oldPrefix = node.Path;
-        var depthDelta = target.Depth + 1 - node.Depth;
-        var descendants = await db.Set<Node>().Where(n => n.Path.StartsWith(oldPrefix) && n.Id != node.Id).ToListAsync(cancellationToken);
         node.PlaceUnder(target);
-        foreach (var descendant in descendants)
-        {
-            descendant.Rebase(oldPrefix, node.Path, depthDelta);
-        }
-
+        await RebaseDescendantsAsync(db, node, oldPrefix, cancellationToken);
         node.MarkChanged("moved");
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Result.Success();
+    }
+
+    /// <summary>Moves every descendant of the node, earlier deleted ones included, from the old prefix to the node's current path.</summary>
+    internal static Task RebaseDescendantsAsync(CoworkeeDbContext db, Node node, string oldPrefix, CancellationToken cancellationToken)
+    {
+        var newPrefix = node.Path;
+        var depthDelta = node.PathIds.Count - NodePaths.Ids(oldPrefix).Count;
+        return db.Set<Node>().IgnoreQueryFilters([CoworkeeDbContext.SoftDeleteFilter])
+            .Where(n => n.Path.StartsWith(oldPrefix) && n.Id != node.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.Path, n => newPrefix + n.Path.Substring(oldPrefix.Length)).SetProperty(n => n.Depth, n => n.Depth + depthDelta), cancellationToken);
     }
 
     public async Task<Result> HandleAsync(SetInheritance command, CancellationToken cancellationToken)
