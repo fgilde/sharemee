@@ -1,0 +1,242 @@
+/* Shareme site — one stylesheet for the landing pages and the docs. */
+
+:root {
+  --bg: #070b16;
+  --bg-soft: #0d1424;
+  --panel: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.10);
+  --text: #e8edf7;
+  --text-dim: #9aa7bd;
+  --accent: #2dd4bf;
+  --accent-2: #818cf8;
+  --accent-3: #f472b6;
+  --code-bg: #0a1020;
+  --max: 1120px;
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f7f9fc;
+    --bg-soft: #ffffff;
+    --panel: rgba(10, 20, 40, 0.03);
+    --border: rgba(10, 20, 40, 0.12);
+    --text: #101828;
+    --text-dim: #55617a;
+    --code-bg: #eef2f8;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+
+header.site {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+header.site .wrap {
+  display: flex; align-items: center; gap: 20px;
+  height: 64px;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.01em; }
+.brand img { height: 30px; width: auto; display: block; }
+.brand span { font-size: 18px; color: var(--text); }
+nav.top { margin-left: auto; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+nav.top a { color: var(--text-dim); font-size: 14px; }
+nav.top a:hover { color: var(--text); text-decoration: none; }
+.lang {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 999px;
+  overflow: hidden;
+}
+.lang a { padding: 4px 12px; font-size: 13px; color: var(--text-dim); }
+.lang a.on { background: var(--accent); color: #04121f; font-weight: 600; }
+
+/* ── Hero ───────────────────────────────────────────────────────────── */
+
+.hero { padding: 84px 0 56px; position: relative; overflow: hidden; }
+.hero::before {
+  content: ""; position: absolute; inset: -40% 20% auto -10%; height: 620px;
+  background:
+    radial-gradient(closest-side, rgba(45, 212, 191, 0.20), transparent),
+    radial-gradient(closest-side, rgba(129, 140, 248, 0.18), transparent);
+  filter: blur(20px); pointer-events: none;
+}
+.hero h1 {
+  position: relative;
+  font-size: clamp(34px, 5.2vw, 60px); line-height: 1.06; margin: 0 0 18px;
+  letter-spacing: -0.03em; font-weight: 800;
+}
+.hero h1 em {
+  font-style: normal;
+  background: linear-gradient(100deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero p.lead {
+  position: relative;
+  font-size: clamp(17px, 2.1vw, 21px); color: var(--text-dim);
+  max-width: 680px; margin: 0 0 30px;
+}
+.cta { position: relative; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 999px; font-weight: 600; font-size: 15px;
+  border: 1px solid transparent;
+}
+.btn.primary { background: linear-gradient(100deg, var(--accent), var(--accent-2)); color: #04121f; }
+.btn.primary:hover { text-decoration: none; filter: brightness(1.08); }
+.btn.ghost { border-color: var(--border); color: var(--text); }
+.btn.ghost:hover { text-decoration: none; border-color: var(--accent); }
+
+.shot {
+  position: relative; margin: 46px 0 0;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+.shot img { display: block; width: 100%; height: auto; }
+
+/* ── Sections ───────────────────────────────────────────────────────── */
+
+section { padding: 64px 0; border-top: 1px solid var(--border); }
+section h2 {
+  font-size: clamp(24px, 3.2vw, 34px); letter-spacing: -0.02em;
+  margin: 0 0 10px; font-weight: 750;
+}
+section .sub { color: var(--text-dim); margin: 0 0 34px; max-width: 720px; }
+
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 22px;
+}
+.card h3 { margin: 0 0 8px; font-size: 17px; letter-spacing: -0.01em; }
+.card p { margin: 0; color: var(--text-dim); font-size: 15px; }
+.card .tag {
+  display: inline-block; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--accent); margin-bottom: 10px;
+}
+
+.split { display: grid; gap: 30px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: center; }
+.split figure { margin: 0; }
+.split img {
+  width: 100%; height: auto; display: block;
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.split figcaption { color: var(--text-dim); font-size: 14px; margin-top: 10px; }
+
+pre {
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; overflow-x: auto;
+  font-size: 14px; line-height: 1.6;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+:not(pre) > code {
+  background: var(--code-bg); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 6px;
+}
+
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+table th, table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table th { color: var(--text-dim); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; }
+.table-scroll { overflow-x: auto; }
+
+.stats { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+.stat b { display: block; font-size: 30px; letter-spacing: -0.02em; }
+.stat span { color: var(--text-dim); font-size: 13px; }
+
+/* ── Docs layout ────────────────────────────────────────────────────── */
+
+.docs { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 44px; padding: 44px 0 90px; }
+.docs aside { position: sticky; top: 88px; align-self: start; max-height: calc(100vh - 110px); overflow-y: auto; }
+.docs aside h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin: 22px 0 8px; }
+.docs aside h4:first-child { margin-top: 0; }
+.docs aside a { display: block; padding: 5px 0; color: var(--text-dim); font-size: 14px; }
+.docs aside a:hover { color: var(--text); text-decoration: none; }
+.docs article h2 { margin-top: 46px; scroll-margin-top: 84px; }
+.docs article h2:first-child { margin-top: 0; }
+.docs article h3 { margin-top: 30px; scroll-margin-top: 84px; font-size: 18px; }
+.docs article p, .docs article li { color: var(--text-dim); }
+.docs article strong { color: var(--text); }
+
+.note {
+  border-left: 3px solid var(--accent); background: var(--panel);
+  padding: 14px 18px; border-radius: 0 10px 10px 0; margin: 20px 0;
+}
+.note.warn { border-left-color: var(--accent-3); }
+
+footer.site { border-top: 1px solid var(--border); padding: 40px 0 60px; color: var(--text-dim); font-size: 14px; }
+footer.site .wrap { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+footer.site .spacer { margin-left: auto; }
+
+@media (max-width: 860px) {
+  .docs { grid-template-columns: 1fr; gap: 24px; }
+  .docs aside { position: static; max-height: none; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  nav.top { gap: 14px; }
+  nav.top a.hide-sm { display: none; }
+}
+
+/* ── Connect widgets ────────────────────────────────────────────────── */
+/* The gilde Connect elements render their own surface, so the page only
+   provides the grid and a frame that matches the cards around them. */
+
+.connect {
+  display: grid; gap: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+/* The widgets draw their own bordered card, so the grid cell stays bare —
+   a wrapper with its own border framed each one twice. */
+.connect > div { min-width: 0; }
+/* Inline widgets fill their grid cell; the button variant is a button and
+   must stay on the text baseline beside its sibling. */
+.connect gilde-contact, .connect gilde-support { display: block; width: 100%; }
+.connect-buttons gilde-contact, .connect-buttons gilde-support {
+  display: inline-block; width: auto;
+}
+
+/* Until the module has defined the elements they are empty inline boxes;
+   reserving height stops the section from jumping when they appear. */
+.connect gilde-contact:not(:defined), .connect gilde-support:not(:defined) { min-height: 240px; }
+
+.connect-buttons { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+/* ── gilde.org mark ─────────────────────────────────────────────────── */
+
+.partner { display: inline-flex; align-items: center; gap: 10px; color: var(--text-dim); font-weight: 600; }
+.partner:hover { text-decoration: none; color: var(--text); }
+.gilde-mark { width: 30px; height: 30px; flex: none; }
+.gilde-mark path { stroke-dashoffset: 0px; }
+.gilde-mark.draw path { animation: gdraw 1.5s ease-out forwards; }
+.gilde-mark.draw path:nth-child(2) { animation-delay: .5s; }
+.partner:hover .gilde-mark path { animation: gdraw 1.1s ease-out forwards; }
+.partner:hover .gilde-mark path:nth-child(2) { animation-delay: .35s; }
+@keyframes gdraw { from { stroke-dashoffset: 1px; } to { stroke-dashoffset: 0px; } }
+@media (prefers-reduced-motion: reduce) { .gilde-mark path { stroke-dashoffset: 0px !important; animation: none !important; } }
+
+.status {
+  display: inline-block; margin-bottom: 18px; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-dim); font-size: 13px; position: relative;
+}
+.status b { color: var(--accent); }

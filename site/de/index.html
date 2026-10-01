@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shareme – Assets, Dokumente, Wissen und Intranet an einem Ort</title>
+<meta name="description" content="Shareme ist eine offene .NET-Plattform für digitale Assets, Dokumente, eine Knowledge Base und ein Intranet: versioniert, auditiert, Rechte bis auf einzelne Dateien, in Echtzeit, mit REST-API und MCP-Schnittstelle." />
+<meta property="og:title" content="Shareme" />
+<meta property="og:description" content="Assets, Dokumente, Knowledge Base und Intranet auf einer versionierten, auditierten Echtzeit-Plattform für .NET." />
+<link rel="icon" href="../logo.svg" type="image/svg+xml" />
+<link rel="alternate" hreflang="en" href="../" />
+<link rel="stylesheet" href="../assets/style.css" />
+<script type="module" src="https://connect.gilde.org/widgets/v1.js"></script>
+<script src="../assets/site.js"></script>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../logo.svg" alt="" /><span>Shareme</span></a>
+    <nav class="top">
+      <a href="#what" class="hide-sm">Funktionen</a>
+      <a href="#architecture" class="hide-sm">Architektur</a>
+      <a href="#start">Loslegen</a>
+      <a href="#connect" class="hide-sm">Kontakt</a>
+      <a href="docs/">Doku</a>
+      <a href="https://github.com/fgilde/shareme">GitHub</a>
+      <span class="lang"><a href="../">EN</a><a class="on" href="./">DE</a></span>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="status"><b>Frühe Entwicklung</b> · Fundament steht, Funktionen kommen Phase für Phase</span>
+    <h1>Assets, Dokumente, Wissen<br />und Intranet — <em>eine Plattform</em>.</h1>
+    <p class="lead">
+      Shareme hält jede Datei, jede Seite und jeden Datensatz in einem typisierten Graphen:
+      versioniert, feldgenau auditiert, mit Rechten bis auf ein einzelnes Asset und live in
+      jedem Browser. Bedienbar über die Weboberfläche, per REST oder durch einen KI-Agenten über MCP.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#start">Loslegen</a>
+      <a class="btn ghost" href="docs/">Zur Doku</a>
+      <a class="btn ghost" href="https://github.com/fgilde/shareme">Auf GitHub ansehen</a>
+    </div>
+  </div>
+</div>
+
+<section id="what">
+  <div class="wrap">
+    <h2>Wofür Shareme gebaut wird</h2>
+    <p class="sub">
+      Ziel ist alles, was ein ausgereiftes Digital-Asset-Management kann – plus Dokumentenablage,
+      Wiki und Intranet, die dieselben Rechte, Metadaten und dieselbe Suche teilen.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Assets</span>
+        <h3>Versionen und Renditions</h3>
+        <p>Chunked Upload, Dateiversionen, Thumbnails, Vorschauen und Druckvarianten,
+           Wasserzeichen, Zuschnitte, Video- und 3D-Vorschau – jede Datei angezeigt mit MudExFileDisplay.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Metadaten</span>
+        <h3>Eigenes Datenmodell</h3>
+        <p>Eigene Entitätstypen, Relationen und Felder mit Listen, Sprachen und Kontexten.
+           Property-Sets mit Pflichtfeldern, Vererbung aus Ordnern, Massenbearbeitung, Import und Export.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Rechte</span>
+        <h3>Bis auf die einzelne Datei</h3>
+        <p>Rollen, Gruppen und feingranulare Rechte, vergeben und entzogen an jedem Ordner und
+           Asset, nach unten vererbt und dort unterbrechbar, wo es nötig ist.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Audit</span>
+        <h3>Jede Änderung, feldgenau</h3>
+        <p>Wer hat was von welchem auf welchen Wert geändert – für jede Entität, mit
+           wiederherstellbaren Versionen für Seiten, Vorlagen und Einstellungen.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Zusammenarbeit</span>
+        <h3>Workspaces und Freigaben</h3>
+        <p>Kanban-Workspaces mit Status und Aufgaben, Kommentare mit Erwähnungen, Beobachter,
+           Benachrichtigungen und ablaufende externe Freigaben.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Wissen &amp; Intranet</span>
+        <h3>Seiten, News, Personen</h3>
+        <p>Versionierte Wiki-Seiten mit Diff, News, eine persönliche Startseite mit Widgets und ein
+           Personenverzeichnis – gemeinsam mit allen Assets durchsuchbar.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Echtzeit</span>
+        <h3>Überall live</h3>
+        <p>Jede Änderung erreicht jeden offenen Browser über einen generischen SignalR-Kanal –
+           Listen, Details, Jobs und Benachrichtigungen aktualisieren sich ohne Neuladen.</p>
+      </div>
+      <div class="card">
+        <span class="tag">API &amp; KI</span>
+        <h3>REST, Swagger und MCP</h3>
+        <p>Alles ist zuerst API, dokumentiert mit OpenAPI. Eine eingebaute MCP-Schnittstelle und ein
+           konfigurierbarer Assistent handeln strikt im Rahmen der Rechte des aufrufenden Users.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="wrap">
+    <h2>Architektur</h2>
+    <p class="sub">
+      Eine modulare .NET-10-Anwendung, orchestriert mit Aspire und gebaut auf <strong>Coworkee</strong> –
+      einem kleinen Framework aus NuGet-Paketen für Module, Rechte, Einstellungen, Mail-Vorlagen,
+      Audit und Echtzeit.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Dienst</th><th>Aufgabe</th></tr></thead>
+        <tbody>
+          <tr><td><code>shareme-web</code></td><td>Blazor Web App mit MudBlazor, Backend für den Browser</td></tr>
+          <tr><td><code>shareme-auth</code></td><td>OpenID-Connect-Server für User, Mandanten und externe Logins</td></tr>
+          <tr><td><code>shareme-api</code></td><td>REST, SignalR-Hub und MCP-Schnittstelle</td></tr>
+          <tr><td><code>shareme-processing</code></td><td>Hintergrundjobs für Renditions, Metadaten-Extraktion und Importe</td></tr>
+          <tr><td>Postgres · Redis · Elasticsearch</td><td>Daten, Cache und Echtzeit-Backplane, Suche</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <h2>Loslegen</h2>
+    <p class="sub">Du brauchst das .NET-10-SDK und Docker. Bis die Coworkee-Pakete auf NuGet liegen, liegt das Coworkee-Repository neben Shareme in einem Ordner <code>coworkee</code>.</p>
+    <pre><code>git clone https://github.com/fgilde/shareme.git
+pwsh coworkee/build/pack-local.ps1
+dotnet run --project shareme/src/Shareme.AppHost</code></pre>
+    <p class="sub">Das Aspire-Dashboard öffnet sich und startet Postgres, Redis, Mailpit, die Migrationen und die API.</p>
+  </div>
+</section>
+
+<section id="connect">
+  <div class="wrap">
+    <h2>Kontakt &amp; Unterstützung</h2>
+    <p class="sub">Fragen, Ideen oder Interesse am Einsatz von Shareme? Schreib direkt – oder unterstütze das Projekt, wenn es dir hilft.</p>
+    <div class="connect">
+      <div>
+        <gilde-contact project="fgilde/shareme" widget="contact" inline theme="dark"
+          accent="#2dd4bf" language="de" title="Shareme kontaktieren"
+          width="560" radius="18" padding="28"
+          show-logo="true" show-description="false" show-homepage="false"
+          show-preview-notice="false" show-footer="false"
+          footer-brand="Shareme" footer-tagline="gilde.org">Shareme kontaktieren</gilde-contact>
+      </div>
+      <div>
+        <gilde-support project="fgilde/shareme" widget="support" inline theme="dark"
+          accent="#818cf8" language="de" title="Shareme unterstützen"
+          width="560" radius="18" padding="28"
+          show-logo="true" show-description="false" show-homepage="false"
+          show-preview-notice="false" show-footer="false"
+          footer-brand="Shareme" footer-tagline="gilde.org"
+          show-support-hint="false" support-layout="rows"
+          show-support-icons="true" show-support-qr="true">Shareme unterstützen</gilde-support>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <span>Shareme</span>
+    <a href="docs/">Dokumentation</a>
+    <a href="https://github.com/fgilde/shareme">GitHub</a>
+    <a href="../">English</a>
+    <span class="spacer">
+      <a class="partner" href="https://gilde.org" target="_blank" rel="noopener" title="gilde.org">
+        <svg class="gilde-mark" viewBox="0 0 512 512" aria-hidden="true">
+          <defs>
+            <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffe6a8"></stop>
+              <stop offset=".45" stop-color="#e0a24e"></stop>
+              <stop offset="1" stop-color="#a9761f"></stop>
+            </linearGradient>
+            <filter id="gGlow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="10" result="b"></feGaussianBlur>
+              <feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+            </filter>
+          </defs>
+          <g fill="none" stroke="url(#gGold)" stroke-width="56" stroke-linecap="square" stroke-linejoin="miter" filter="url(#gGlow)">
+            <path d="M376 88H112v264l144 112 144-112v-96H280" pathLength="1" stroke-dasharray="1px 1px"></path>
+            <path d="M280 216h120" pathLength="1" stroke-dasharray="1px 1px"></path>
+          </g>
+        </svg>
+        gilde.org
+      </a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

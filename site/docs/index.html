@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shareme docs</title>
+<meta name="description" content="Shareme documentation: setup, architecture, Coworkee modules, persistence conventions, testing and roadmap." />
+<link rel="icon" href="../logo.svg" type="image/svg+xml" />
+<link rel="alternate" hreflang="de" href="../de/docs/" />
+<link rel="stylesheet" href="../assets/style.css" />
+<script src="../assets/site.js"></script>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../logo.svg" alt="" /><span>Shareme</span></a>
+    <nav class="top">
+      <a href="../">Home</a>
+      <a href="https://github.com/fgilde/shareme">GitHub</a>
+      <span class="lang"><a class="on" href="./">EN</a><a href="../de/docs/">DE</a></span>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap docs">
+  <aside>
+    <h4>Start</h4>
+    <a href="#status">Status &amp; roadmap</a>
+    <a href="#requirements">Requirements</a>
+    <a href="#quickstart">Quick start</a>
+    <a href="#layout">Repository layout</a>
+    <h4>Coworkee</h4>
+    <a href="#packages">Packages</a>
+    <a href="#reference-mode">Package or project references</a>
+    <a href="#modules">Modules</a>
+    <a href="#dispatcher">Commands and queries</a>
+    <a href="#persistence">Persistence conventions</a>
+    <a href="#outbox">Domain events and outbox</a>
+    <a href="#http">HTTP results</a>
+    <h4>Operations</h4>
+    <a href="#configuration">Configuration</a>
+    <a href="#testing">Testing</a>
+  </aside>
+
+  <article>
+    <h2 id="status">Status &amp; roadmap</h2>
+    <p>Shareme is in early development. The foundation is done: the Coworkee core packages and a Shareme
+       Aspire application with database, migrations and an API. Features follow in phases.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Phase</th><th>Scope</th></tr></thead>
+        <tbody>
+          <tr><td>P0</td><td>Foundation: modules, dispatcher, audit, outbox, auth server, users, roles, permissions, settings, mail templates, themes, realtime, setup wizard</td></tr>
+          <tr><td>P1</td><td>Graph, metadata and assets: folders, custom types, uploads, versions, renditions, file display, per-item permissions</td></tr>
+          <tr><td>P2</td><td>Search with facets, saved searches, reindex</td></tr>
+          <tr><td>P3</td><td>Full rendition pipeline: video, office, PDF, 3D, watermarks, crop, archives, zip downloads</td></tr>
+          <tr><td>P4</td><td>Collaboration: workspaces, states, tasks, comments, shares, notifications</td></tr>
+          <tr><td>P5</td><td>Automation: rules, mass edit, import and export, AI tagging</td></tr>
+          <tr><td>P6</td><td>Licensing and rights management</td></tr>
+          <tr><td>P7</td><td>Knowledge base and intranet</td></tr>
+          <tr><td>P8</td><td>AI assistant and MCP tools</td></tr>
+          <tr><td>P9</td><td>Data migration and public packages</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="requirements">Requirements</h2>
+    <ul>
+      <li>.NET SDK 10.0.300 or later (pinned in <code>global.json</code>)</li>
+      <li>Docker, for the Aspire containers and the integration tests</li>
+      <li>The Coworkee repository checked out next to Shareme as <code>../coworkee</code>, until its packages are published</li>
+    </ul>
+
+    <h2 id="quickstart">Quick start</h2>
+<pre><code>pwsh ../coworkee/build/pack-local.ps1
+dotnet run --project src/Shareme.AppHost</code></pre>
+    <p>The script packs Coworkee into <code>../coworkee/artifacts/nuget</code>, a local feed that
+       <code>nuget.config</code> already knows. The AppHost starts Postgres, Redis, Mailpit, runs the
+       migrations once and then starts the API. Swagger is at <code>/swagger</code> on the API.</p>
+
+    <h2 id="layout">Repository layout</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Project</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>Shareme.AppHost</code></td><td>Aspire orchestration of all resources and services</td></tr>
+          <tr><td><code>Shareme.ServiceDefaults</code></td><td>OpenTelemetry, health checks, service discovery, resilience</td></tr>
+          <tr><td><code>Shareme.Application</code></td><td>Use cases as commands and queries</td></tr>
+          <tr><td><code>Shareme.Infrastructure</code></td><td>Database context, EF Core migrations, module wiring</td></tr>
+          <tr><td><code>Shareme.Migrations</code></td><td>Applies migrations and exits non-zero on failure</td></tr>
+          <tr><td><code>Shareme.Api</code></td><td>HTTP API host</td></tr>
+          <tr><td><code>tests/*</code></td><td>Integration tests against real Postgres and an Aspire smoke test</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="packages">Coworkee packages</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Package</th><th>Contains</th></tr></thead>
+        <tbody>
+          <tr><td><code>Coworkee.Core</code></td><td>Module system, <code>Result</code> and <code>Error</code>, current-user abstraction</td></tr>
+          <tr><td><code>Coworkee.Domain</code></td><td>Entity and aggregate base classes, domain events, audit and tenant markers</td></tr>
+          <tr><td><code>Coworkee.Application</code></td><td>Dispatcher with logging, validation and unit-of-work middleware</td></tr>
+          <tr><td><code>Coworkee.Infrastructure</code></td><td>EF Core base context, interceptors, audit trail, transactional outbox</td></tr>
+          <tr><td><code>Coworkee.AspNetCore</code></td><td>Web host integration, problem details, OpenAPI and Swagger UI</td></tr>
+          <tr><td><code>Coworkee.Testing</code></td><td>Postgres test container fixture, test user, web application factory</td></tr>
+          <tr><td><code>Coworkee.Aspire</code></td><td>One call that adds Postgres, Redis and Mailpit to an AppHost</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="reference-mode">Package or project references</h2>
+    <p>Projects declare what they need with <code>&lt;CoworkeePackage Include="Coworkee.Application" /&gt;</code>.
+       By default these become NuGet package references to the local feed. To debug into Coworkee or change it
+       without repacking, switch to project references:</p>
+<pre><code>dotnet build -p:CoworkeeReferenceMode=Project</code></pre>
+
+    <h2 id="modules">Modules</h2>
+    <p>Every library and every feature is a module. A module registers its services and names the
+       modules it depends on; the loader orders them so dependencies run first and detects cycles.</p>
+<pre><code>[DependsOn(typeof(CoworkeeApplicationModule))]
+public sealed class ShareMeApplicationModule : CoworkeeModule
+{
+    public override void ConfigureServices(ModuleServiceContext context) =>
+        context.Services.AddMessagingFromAssembly(typeof(ShareMeApplicationModule).Assembly);
+}</code></pre>
+    <p>A web host registers one root module with <code>builder.AddCoworkee&lt;TRoot&gt;()</code> and calls
+       <code>app.UseCoworkee()</code>. Modules that map endpoints implement <code>IWebModule</code>.</p>
+
+    <h2 id="dispatcher">Commands and queries</h2>
+    <p>Use cases are requests handled by exactly one handler. The dispatcher runs a fixed middleware
+       pipeline around every request: logging, then validation, then the unit of work, which saves changes
+       only for successful commands. Authorization takes its reserved slot in the pipeline with phase P0.</p>
+<pre><code>public sealed record GetSystemInfo : IQuery&lt;Result&lt;SystemInfo&gt;&gt;;
+
+internal sealed class GetSystemInfoHandler : IHandler&lt;GetSystemInfo, Result&lt;SystemInfo&gt;&gt;
+{
+    public Task&lt;Result&lt;SystemInfo&gt;&gt; HandleAsync(GetSystemInfo request, CancellationToken ct) =&gt;
+        Task.FromResult&lt;Result&lt;SystemInfo&gt;&gt;(new SystemInfo("Shareme", "0.1.0"));
+}</code></pre>
+    <p>FluentValidation validators in the same assembly are picked up automatically. A failed validation
+       returns a validation error instead of calling the handler.</p>
+
+    <h2 id="persistence">Persistence conventions</h2>
+    <p>Derive the database context from <code>CoworkeeDbContext</code> and register it with
+       <code>AddCoworkeeDbContext&lt;T&gt;()</code>. Marker interfaces on entities switch on behaviour:</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Marker</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>IAuditable</code></td><td>Created and modified time and user are set on save</td></tr>
+          <tr><td><code>ISoftDelete</code></td><td>Delete becomes a flag; deleted rows are hidden from queries</td></tr>
+          <tr><td><code>IMultiTenant</code></td><td>Tenant is set from the current user; other tenants' rows are invisible and cannot be written</td></tr>
+          <tr><td><code>IHasConcurrencyToken</code></td><td>Optimistic concurrency; conflicts surface as HTTP 409</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Every insert, update and delete writes an audit entry with old and new values per field, including
+       changes inside JSON-mapped owned objects. Mark properties with <code>[Sensitive]</code> to mask values
+       or with <code>[NotAudited]</code> to leave them out.</p>
+
+    <h2 id="outbox">Domain events and outbox</h2>
+    <p>Aggregates raise domain events. On save they are written to an outbox table in the same transaction.
+       A background processor delivers them to <code>IDomainEventHandler&lt;T&gt;</code> implementations, as the user
+       and tenant that raised them, retries failures with exponential backoff and gives up after five attempts.
+       Handlers should be idempotent: delivery is at least once.</p>
+
+    <h2 id="http">HTTP results</h2>
+<pre><code>group.MapGet("/info", (IDispatcher dispatcher, CancellationToken ct) =&gt;
+    dispatcher.SendAsync(new GetSystemInfo(), ct).ToHttpResult());</code></pre>
+    <p>Successful results return 200 or 204. Errors become problem details: validation 400, forbidden 403,
+       not found 404, conflict 409, anything else 500. Each problem carries the error <code>code</code>.</p>
+
+    <h2 id="configuration">Configuration</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>ConnectionStrings:shareme</code></td><td>Postgres connection; Aspire sets it for every service</td></tr>
+          <tr><td><code>Coworkee:EphemeralInfrastructure</code></td><td><code>true</code> starts containers without volumes and persistence, used by tests</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="testing">Testing</h2>
+<pre><code>dotnet test --solution Shareme.slnx</code></pre>
+    <p>Tests use xUnit v3 on Microsoft.Testing.Platform. Integration tests run against a real Postgres in
+       a container and reset it between tests. The AppHost smoke test starts the whole Aspire application and
+       calls the API.</p>
+  </article>
+</div>
+
+<footer class="site">
+  <div class="wrap">
+    <span>Shareme</span>
+    <a href="../">Home</a>
+    <a href="https://github.com/fgilde/shareme">GitHub</a>
+    <a href="../de/docs/">Deutsch</a>
+    <span class="spacer">
+      <a class="partner" href="https://gilde.org" target="_blank" rel="noopener" title="gilde.org">
+        <svg class="gilde-mark" viewBox="0 0 512 512" aria-hidden="true">
+          <defs>
+            <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffe6a8"></stop>
+              <stop offset=".45" stop-color="#e0a24e"></stop>
+              <stop offset="1" stop-color="#a9761f"></stop>
+            </linearGradient>
+            <filter id="gGlow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="10" result="b"></feGaussianBlur>
+              <feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+            </filter>
+          </defs>
+          <g fill="none" stroke="url(#gGold)" stroke-width="56" stroke-linecap="square" stroke-linejoin="miter" filter="url(#gGlow)">
+            <path d="M376 88H112v264l144 112 144-112v-96H280" pathLength="1" stroke-dasharray="1px 1px"></path>
+            <path d="M280 216h120" pathLength="1" stroke-dasharray="1px 1px"></path>
+          </g>
+        </svg>
+        gilde.org
+      </a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

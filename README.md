@@ -1,21 +1,21 @@
 # Shareme
 
-Asset Management, Dokumentenmanagement, Knowledge Base und Intranet auf Basis von Coworkee.
+Digital asset management, document management, knowledge base and intranet on one .NET 10 platform: versioned, audited, permissioned per item, realtime, with a REST API and an MCP endpoint.
 
-## Voraussetzungen
-- .NET SDK 10.0.300, Docker
-- Coworkee-Repo daneben: `../coworkee`
+> Early development. The foundation is in place; features land phase by phase.
 
-## Starten
-1. `pwsh ../coworkee/build/pack-local.ps1` (Coworkee-Pakete in den lokalen Feed)
-2. `dotnet run --project src/Shareme.AppHost` → Aspire-Dashboard
+**Website & docs:** https://fgilde.github.io/shareme/
 
-Entwicklung gegen Coworkee-Quellen statt Pakete: `-p:CoworkeeReferenceMode=Project` an `dotnet build/run/test` anhängen.
+## Quick start
 
-## Tests
-`dotnet test --solution Shareme.slnx` (Docker erforderlich)
+Requires the .NET 10 SDK, Docker and the Coworkee repository checked out next to this one as `../coworkee`.
 
-## Dokumentation
-- Architektur: `docs/superpowers/specs/`
-- Pläne: `docs/superpowers/plans/`
-- Sharedien-Analyse: `docs/analysis/`
+```bash
+pwsh ../coworkee/build/pack-local.ps1
+dotnet run --project src/Shareme.AppHost
+dotnet test --solution Shareme.slnx
+```
+
+Add `-p:CoworkeeReferenceMode=Project` to build against the Coworkee sources instead of the local packages.
+
+Built by [gilde.org](https://gilde.org)
