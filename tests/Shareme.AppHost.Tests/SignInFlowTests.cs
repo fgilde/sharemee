@@ -62,6 +62,15 @@ public sealed partial class SignInFlowTests
 
         var permissions = await browser.GetFromJsonAsync<string[]>("/api/v1/identity/permissions/me", ct);
         permissions.ShouldContain(IdentityPermissions.Users.Manage);
+
+        using var logout = new HttpRequestMessage(HttpMethod.Post, "/bff/logout");
+        logout.Headers.Add("X-CSRF", "1");
+        var endSession = await (await browser.SendAsync(logout, ct)).Content.ReadFromJsonAsync<BffLogoutDto>(ct);
+        (await browser.GetAsync(endSession!.Redirect, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await browser.GetFromJsonAsync<BffUserDto>("/bff/user", ct))!.IsAuthenticated.ShouldBeFalse();
+        var reLogin = await browser.GetAsync("/bff/login?returnUrl=/bff/user", ct);
+        reLogin.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/Account/Login");
     }
 
     [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]
