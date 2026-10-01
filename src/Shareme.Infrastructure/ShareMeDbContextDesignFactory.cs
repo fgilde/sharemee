@@ -15,7 +15,7 @@ public sealed class ShareMeDbContextDesignFactory : IDesignTimeDbContextFactory<
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IConfiguration>(configuration);
-        services.AddCoworkeeModules<ShareMeInfrastructureModule>(configuration);
+        services.AddCoworkeeModules<ShareMeDatabaseModule>(configuration);
         return services.BuildServiceProvider().CreateScope().ServiceProvider.GetRequiredService<ShareMeDbContext>();
     }
 }
