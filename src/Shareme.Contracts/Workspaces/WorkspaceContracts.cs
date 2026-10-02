@@ -68,3 +68,8 @@ public sealed record TaskRequest(string Title, string? Description = null, DateO
 
 /// <summary>Moves a task into a state at a position; <see cref="Version"/> is the task version the client saw, so concurrent moves are noticed.</summary>
 public sealed record MoveTaskRequest(Guid StateId, int Index, uint Version);
+
+/// <summary>A comment on a workspace, task or asset; <see cref="MentionIds"/> are people who are told about it.</summary>
+public sealed record CommentDto(Guid Id, Guid NodeId, Guid AuthorId, string AuthorName, string Text, IReadOnlyList<Guid> MentionIds, DateTimeOffset CreatedAt, DateTimeOffset? EditedAt, bool CanEdit);
+
+public sealed record CommentRequest(string Text, IReadOnlyList<Guid>? MentionIds = null);

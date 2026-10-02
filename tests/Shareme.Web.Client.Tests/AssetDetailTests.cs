@@ -35,6 +35,7 @@ public sealed class AssetDetailTests : BunitContext
             new DerivationTypeDto(Guid.CreateVersion7(), "slides", "Slides", 800, 800, DerivationFormats.WebP, 85, true, true, false, null, [AssetTypeKeys.Document]),
         ]);
         Services.AddSingleton(_renditions);
+        Services.AddSingleton(Substitute.For<Shareme.Web.Client.Workspaces.IWorkspacesApi>());
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetNodeMetadataAsync(default, default).ReturnsForAnyArgs(new NodeMetadataDto(_asset, "asset", new Dictionary<string, EffectivePropertyDto>()));
         metadata.GetDefinitionsAsync(default, default).ReturnsForAnyArgs([]);

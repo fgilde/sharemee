@@ -56,6 +56,13 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
         workspaces.MapGet("/{id:guid}/tasks", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetTasks(id), ct).ToHttpResult());
         workspaces.MapPost("/{id:guid}/tasks", (Guid id, TaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateTask(id, body), ct).ToHttpResult());
 
+        var nodes = app.MapGroup("/api/v1/nodes").WithTags("Comments").RequireAuthorization();
+        nodes.MapGet("/{id:guid}/comments", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetComments(id), ct).ToHttpResult());
+        nodes.MapPost("/{id:guid}/comments", (Guid id, CommentRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new AddComment(id, body), ct).ToHttpResult());
+        var comments = app.MapGroup("/api/v1/comments").WithTags("Comments").RequireAuthorization();
+        comments.MapPut("/{id:guid}", (Guid id, CommentRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new EditComment(id, body), ct).ToHttpResult());
+        comments.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteComment(id), ct).ToHttpResult());
+
         var tasks = app.MapGroup("/api/v1/tasks").WithTags("Workspaces").RequireAuthorization();
         tasks.MapPut("/{id:guid}", (Guid id, TaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new UpdateTask(id, body), ct).ToHttpResult());
         tasks.MapPost("/{id:guid}/move", (Guid id, MoveTaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new MoveTask(id, body), ct).ToHttpResult());
@@ -92,6 +99,16 @@ internal sealed class WorkspaceModelContributor : IModelContributor
             binding.ToTable("WorkspaceRoleBindings", "sm");
             binding.Property(b => b.Key).HasMaxLength(20);
             binding.HasIndex(b => new { b.TenantId, b.Key }).IsUnique();
+        });
+
+        modelBuilder.Entity<Comment>(comment =>
+        {
+            comment.ToTable("Comments", "sm");
+            comment.Ignore(c => c.RealtimeTopics);
+            comment.Property(c => c.Text).HasMaxLength(CommentHandlers.MaxLength);
+            comment.Property(c => c.MentionIds).HasColumnType("jsonb");
+            comment.HasIndex(c => new { c.NodeId, c.CreatedAt });
+            comment.HasOne<Node>().WithMany().HasForeignKey(c => c.NodeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WorkflowState>(state =>
@@ -196,7 +213,7 @@ public sealed record UnlinkAsset(Guid Id, Guid AssetId) : WorkspaceRequest(Id, N
 
 public sealed record FinalizeWorkspace(Guid Id) : WorkspaceRequest(Id, WorkspacePermissions.Finalize), ICommand<Result<FinalizeResultDto>>;
 
-internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, NodeMapper mapper, WorkspaceRoleStore roles, TimeProvider clock)
+internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, NodeMapper mapper, WorkspaceRoleStore roles, Coworkee.Notifications.INotifier notifier, TimeProvider clock)
     : IHandler<GetWorkspaces, Result<IReadOnlyList<WorkspaceDto>>>,
       IHandler<CreateWorkspace, Result<WorkspaceDto>>,
       IHandler<GetWorkspace, Result<WorkspaceDto>>,
@@ -297,6 +314,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         var ownerRole = await roles.RoleIdAsync(WorkspaceRoles.Owner, cancellationToken);
         var collaboratorRole = await roles.RoleIdAsync(WorkspaceRoles.Collaborator, cancellationToken);
         db.Add(new ResourcePermission { ResourceType = NodePermissions.ResourceType, ResourceId = workspace.Id, PrincipalType = PrincipalType.User, PrincipalId = userId, RoleId = ownerRole });
+        db.Add(new NodeSubscription { NodeId = workspace.Id, UserId = userId });
         if (template is not null)
         {
             var copied = await db.Set<ResourcePermission>().AsNoTracking()
@@ -442,6 +460,12 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         if (existing.Any(p => p.RoleId == roleId))
         {
             return Result.Success();
+        }
+
+        if (existing.Count == 0 && command.Request.UserId != currentUser.UserId)
+        {
+            var name = await db.Set<Workspace>().Where(w => w.Id == command.Id).Select(w => w.Name).SingleAsync(cancellationToken);
+            await notifier.NotifyAsync([command.Request.UserId], "workspace.member", $"You were added to {name}", null, $"/workspaces/{command.Id}", cancellationToken);
         }
 
         db.Add(new ResourcePermission { ResourceType = NodePermissions.ResourceType, ResourceId = command.Id, PrincipalType = PrincipalType.User, PrincipalId = command.Request.UserId, RoleId = roleId });

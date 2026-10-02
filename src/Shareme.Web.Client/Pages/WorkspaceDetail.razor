@@ -33,6 +33,9 @@ else
             <MudChip T="string" Size="Size.Small" Color="Color.Success">finalised @finalized.ToLocalTime().ToString("d")</MudChip>
         }
         <MudSpacer />
+        <MudTooltip Text="@(_subscribed ? "Stop notifications" : "Notify me about changes")">
+            <MudIconButton Icon="@(_subscribed ? Icons.Material.Filled.NotificationsActive : Icons.Material.Outlined.NotificationsNone)" OnClick="ToggleWatchAsync" aria-label="Watch this workspace" data-testid="watch" />
+        </MudTooltip>
         @if (_workspace is { CanFinalize: true, IsTemplate: false, FinalizedAt: null } && _workspace.Kind != WorkspaceKinds.Collection)
         {
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.TaskAlt" OnClick="FinalizeAsync" data-testid="finalize">Finalise</MudButton>
@@ -116,6 +119,9 @@ else
                 }
             </div>
         </MudTabPanel>
+        <MudTabPanel Text="Comments">
+            <div class="pa-4"><CommentsPanel NodeId="_workspace.Id" Members="_members" /></div>
+        </MudTabPanel>
         <MudTabPanel Text="Metadata">
             <div class="pa-4"><Shareme.Web.Client.Metadata.MetadataEditor @key="_workspace.Id" NodeId="_workspace.Id" /></div>
         </MudTabPanel>
@@ -153,6 +159,7 @@ else
     private string? _name, _folderName;
     private Guid? _folderId, _rootId;
     private bool _copyMetadata;
+    private bool _subscribed;
 
     [Parameter] public Guid Id { get; set; }
 
@@ -196,6 +203,7 @@ else
         try
         {
             _workspace = await Api.GetAsync(Id);
+            _subscribed = (await Graph.GetNodeAsync(Id)).IsSubscribed;
             _items = await Api.GetItemsAsync(Id);
             _members = await Api.GetMembersAsync(Id);
         }
@@ -220,6 +228,8 @@ else
             return [];
         }
     }
+
+    private Task ToggleWatchAsync() => RunAsync(() => Graph.SetSubscriptionAsync(Id, !_subscribed));
 
     private Task AddMemberAsync() => RunAsync(async () =>
     {

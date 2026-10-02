@@ -274,7 +274,15 @@ internal sealed class NotifySubscribers(CoworkeeDbContext db, ICurrentUser curre
             return;
         }
 
-        await notifier.NotifyAsync(recipients, "node." + domainEvent.Kind, $"{(node.Name.Length > 200 ? node.Name[..200] + "…" : node.Name)} was {domainEvent.Kind}", null, $"/browse/{node.ParentId ?? node.Id}", cancellationToken);
+        var link = node switch
+        {
+            Workspace => $"/workspaces/{node.Id}",
+            WorkTask => $"/workspaces/{node.ParentId}",
+            Asset => $"/assets/{node.Id}",
+            _ when node.PathIds.Count > 0 && await db.Set<Workspace>().AnyAsync(w => w.Id == node.PathIds[0], cancellationToken) => $"/workspaces/{node.PathIds[0]}",
+            _ => $"/browse/{node.ParentId ?? node.Id}",
+        };
+        await notifier.NotifyAsync(recipients, "node." + domainEvent.Kind, $"{(node.Name.Length > 200 ? node.Name[..200] + "…" : node.Name)} was {domainEvent.Kind}", null, link, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }
 }

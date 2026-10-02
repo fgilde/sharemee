@@ -68,6 +68,8 @@
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SaveAsync(task)" data-testid="save-task">Save</MudButton>
             <MudButton OnClick="() => _editing = null">Cancel</MudButton>
         </MudStack>
+        <MudText Typo="Typo.subtitle2" Class="mt-4">Comments</MudText>
+        <CommentsPanel NodeId="task.Id" Members="Members" />
     </MudPaper>
 }
 

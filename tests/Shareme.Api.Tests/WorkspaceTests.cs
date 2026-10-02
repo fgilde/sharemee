@@ -181,6 +181,55 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         (await stranger.PutAsJsonAsync($"/api/v1/tasks/{second.Id}", new TaskRequest("Hijack"), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task Comments_mentions_assignments_and_moves_reach_the_people_concerned()
+    {
+        var (owner, ownerId) = await UserAsync(WorkspacePermissions.Create);
+        var (member, memberId) = await UserAsync();
+        var (stranger, strangerId) = await UserAsync();
+        var workspace = (await (await owner.PostAsJsonAsync("/api/v1/workspaces", new CreateWorkspaceRequest("Launch"), Ct)).Content.ReadFromJsonAsync<WorkspaceDto>(Ct))!;
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(memberId), Ct)).EnsureSuccessStatusCode();
+        await NotifiedAsync(member, "workspace.member");
+
+        var task = await TaskAsync(owner, workspace.Id, new TaskRequest("Brief", AssigneeIds: [memberId]));
+        await NotifiedAsync(member, "task.assigned");
+
+        // the member answers on the task and mentions the owner, who watches the workspace but is told once, as mentioned
+        (await member.PostAsJsonAsync($"/api/v1/nodes/{task.Id}/comments", new CommentRequest("Draft is up", [strangerId]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var comment = (await (await member.PostAsJsonAsync($"/api/v1/nodes/{task.Id}/comments", new CommentRequest("Draft is up", [ownerId]), Ct)).Content.ReadFromJsonAsync<CommentDto>(Ct))!;
+        await NotifiedAsync(owner, "comment.mention");
+        (await owner.GetFromJsonAsync<PagedResult<Coworkee.Contracts.Notifications.NotificationDto>>("/api/v1/notifications", Ct))!.Items.ShouldNotContain(n => n.Type == "comment");
+        (await stranger.GetAsync($"/api/v1/nodes/{task.Id}/comments", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await owner.GetFromJsonAsync<CommentDto[]>($"/api/v1/nodes/{task.Id}/comments", Ct))!.Single().CanEdit.ShouldBeTrue("owners moderate");
+
+        (await member.PutAsJsonAsync($"/api/v1/comments/{comment.Id}", new CommentRequest("Draft v2 is up", [ownerId]), Ct)).EnsureSuccessStatusCode();
+        (await owner.PutAsJsonAsync($"/api/v1/comments/{comment.Id}", new CommentRequest("Not mine"), Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound, "only authors edit");
+        var mine = (await (await owner.PostAsJsonAsync($"/api/v1/nodes/{workspace.Id}/comments", new CommentRequest("Kick-off monday"), Ct)).Content.ReadFromJsonAsync<CommentDto>(Ct))!;
+        (await member.DeleteAsync($"/api/v1/comments/{mine.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await owner.DeleteAsync($"/api/v1/comments/{comment.Id}", Ct)).EnsureSuccessStatusCode();
+
+        // assignees learn where their task went
+        var states = (await owner.GetFromJsonAsync<StateDto[]>($"/api/v1/workspaces/{workspace.Id}/states", Ct))!;
+        (await MoveAsync(owner, task, states[1].Id, 0)).EnsureSuccessStatusCode();
+        (await NotifiedAsync(member, "task.moved")).Title.ShouldContain("In progress");
+    }
+
+    private static async Task<Coworkee.Contracts.Notifications.NotificationDto> NotifiedAsync(HttpClient client, string type)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var list = (await client.GetFromJsonAsync<PagedResult<Coworkee.Contracts.Notifications.NotificationDto>>("/api/v1/notifications", Ct))!;
+            if (list.Items.FirstOrDefault(n => n.Type == type) is { } found)
+            {
+                return found;
+            }
+
+            DateTime.UtcNow.ShouldBeLessThan(deadline, $"no {type} notification arrived");
+            await Task.Delay(250, Ct);
+        }
+    }
+
     private static async Task<TaskDto> TaskAsync(HttpClient client, Guid workspace, TaskRequest request)
     {
         var response = await client.PostAsJsonAsync($"/api/v1/workspaces/{workspace}/tasks", request, Ct);
