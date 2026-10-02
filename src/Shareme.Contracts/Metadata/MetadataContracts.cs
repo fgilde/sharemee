@@ -51,10 +51,10 @@ public static class FillModes
 
 /// <summary>One stored value of a property: optional data language, optional user context, the typed value and the list value key.</summary>
 public sealed record MetadataValue(
-    [property: JsonPropertyName("lang")] string? Lang = null,
-    [property: JsonPropertyName("ctx")] string? Ctx = null,
-    [property: JsonPropertyName("v")] JsonElement? V = null,
-    [property: JsonPropertyName("list")] string? List = null);
+    [property: JsonPropertyName("lang"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Lang = null,
+    [property: JsonPropertyName("ctx"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Ctx = null,
+    [property: JsonPropertyName("v"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? V = null,
+    [property: JsonPropertyName("list"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? List = null);
 
 public sealed record PropertyValidation(bool Required = false, string? Regex = null, decimal? Min = null, decimal? Max = null);
 

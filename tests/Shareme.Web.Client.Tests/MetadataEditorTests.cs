@@ -53,7 +53,7 @@ public sealed class MetadataEditorTests : BunitContext
         await editor.Find("[data-testid='save-metadata']").ClickAsync(new());
 
         await _api.Received(1).SetNodeMetadataAsync(_node, Arg.Is<IReadOnlyDictionary<string, List<MetadataValue>?>>(values =>
-            values["note"]!.Single().V!.Value.GetString() == "changed" && values["client"]!.Count == 0), Arg.Any<CancellationToken>());
+            values["note"]!.Single().V!.Value.GetString() == "changed" && !values.ContainsKey("client")), Arg.Any<CancellationToken>());
     }
 
     private static PropertyDefinitionDto Definition(string key, string name) => new(

@@ -68,6 +68,9 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
 
         // keys without a definition are dropped, values of read only properties are kept as they are
         var next = node.Metadata.Where(p => all.TryGetValue(p.Key, out var d) && (!command.Replace || !IsWritable(d))).ToDictionary(p => p.Key, p => p.Value);
+        var languages = (await catalog.LanguagesAsync(cancellationToken)).Select(l => l.Code).ToHashSet();
+        var contexts = (await catalog.ContextsAsync(cancellationToken)).Select(c => c.Key).ToHashSet();
+        var references = new Dictionary<Guid, string>();
         foreach (var (key, values) in command.Values)
         {
             if (!all.TryGetValue(key, out var definition) || !definition.AppliesTo(typeKey))
@@ -90,22 +93,22 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             if (values is null or { Count: 0 })
             {
                 next.Remove(key);
+                continue;
             }
-            else
-            {
-                next[key] = values;
-            }
-        }
 
-        var languages = (await catalog.LanguagesAsync(cancellationToken)).Select(l => l.Code).ToHashSet();
-        var contexts = (await catalog.ContextsAsync(cancellationToken)).Select(c => c.Key).ToHashSet();
-        var references = new Dictionary<Guid, string>();
-        foreach (var key in command.Values.Keys.Where(next.ContainsKey))
-        {
-            foreach (var message in Check(all[key], next[key], languages, contexts, references))
+            if (values.Any(v => v is null))
+            {
+                Fail(key, "Empty entries are not allowed.");
+                continue;
+            }
+
+            var normalized = new List<MetadataValue>();
+            foreach (var message in Check(definition, values, current, languages, contexts, references, normalized))
             {
                 Fail(key, message);
             }
+
+            next[key] = normalized;
         }
 
         if (references.Count > 0)
@@ -118,7 +121,8 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             }
         }
 
-        var required = all.Values.Where(d => d.AppliesTo(typeKey) && d.Validation.Required && (command.Replace || command.Values.ContainsKey(d.Key)) && !next.ContainsKey(d.Key)).ToList();
+        // read only values are written by the system (P1c mirroring), so Required does not apply to them here
+        var required = all.Values.Where(d => d.AppliesTo(typeKey) && IsWritable(d) && d.Validation.Required && (command.Replace || command.Values.ContainsKey(d.Key)) && !next.ContainsKey(d.Key)).ToList();
         if (required.Count > 0)
         {
             var inherited = await InheritedAsync(node, required, cancellationToken);
@@ -128,13 +132,24 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             }
         }
 
+        var serialized = JsonSerializer.Serialize(next);
+        if (serialized.Length > MaxMetadataLength)
+        {
+            Fail("Metadata", $"All values together may take up to {MaxMetadataLength / 1024} KB.");
+        }
+
         if (errors.Count > 0)
         {
             return Error.Validation(errors.ToDictionary(e => e.Key, e => e.Value.ToArray(), StringComparer.Ordinal));
         }
 
+        if (serialized == JsonSerializer.Serialize(node.Metadata))
+        {
+            return Result.Success();
+        }
+
         node.Metadata = next;
-        node.MarkChanged("updated");
+        node.MarkChanged("metadata changed");
         return Result.Success();
     }
 
@@ -166,7 +181,12 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
         return result;
     }
 
-    private static IEnumerable<string> Check(PropertyDefinition definition, List<MetadataValue> values, HashSet<string> languages, HashSet<string> contexts, Dictionary<Guid, string> references)
+    private const int MaxMetadataLength = 1024 * 1024;
+
+    /// <summary>Validates the values of one property and adds their canonical form to <paramref name="normalized"/>.</summary>
+    private static IEnumerable<string> Check(
+        PropertyDefinition definition, List<MetadataValue> values, List<MetadataValue> current, HashSet<string> languages, HashSet<string> contexts,
+        Dictionary<Guid, string> references, List<MetadataValue> normalized)
     {
         if (definition.ListMode != ListModes.Multi && !definition.MultiValue && values.GroupBy(v => (v.Lang, v.Ctx)).Any(g => g.Count() > 1))
         {
@@ -204,34 +224,48 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             if (definition.ListMode == ListModes.None && value.List is not null)
             {
                 yield return "This property has no list values.";
+                continue;
             }
-            else if (value.List is { } listKey)
+
+            if (value.List is { } listKey)
             {
-                if (!definition.ListValues.Any(v => v.Key == listKey && v.IsActive))
+                if (value.V is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined })
                 {
+                    yield return "A list value carries no own value.";
+                }
+                else if (!definition.ListValues.Any(v => v.Key == listKey && v.IsActive) && !current.Any(c => c.List == listKey && c.Lang == value.Lang && c.Ctx == value.Ctx))
+                {
+                    // deactivated values stop new assignments but stay valid where they are already used
                     yield return $"'{listKey}' is not an active list value.";
                 }
 
+                normalized.Add(value with { V = null });
                 continue;
             }
-            else if (definition.ListMode != ListModes.None && !definition.AllowCustomValues)
+
+            if (definition.ListMode != ListModes.None && !definition.AllowCustomValues)
             {
                 yield return "Choose one of the list values.";
                 continue;
             }
 
-            if (CheckValue(definition, value.V, references) is { } problem)
+            var (problem, canonical) = CheckValue(definition, value.V, references);
+            if (problem is not null)
             {
                 yield return problem;
+                continue;
             }
+
+            normalized.Add(value with { V = canonical });
         }
     }
 
-    private static string? CheckValue(PropertyDefinition definition, JsonElement? element, Dictionary<Guid, string> references)
+    /// <summary>Returns an error or the value in the form it is stored and searched in.</summary>
+    private static (string? Problem, JsonElement? Value) CheckValue(PropertyDefinition definition, JsonElement? element, Dictionary<Guid, string> references)
     {
         if (element is not { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } v)
         {
-            return "A value is required.";
+            return ("A value is required.", null);
         }
 
         var rule = definition.Validation;
@@ -241,44 +275,88 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             case PropertyValueTypes.String or PropertyValueTypes.Text or PropertyValueTypes.RichText or PropertyValueTypes.Url:
                 if (text is null)
                 {
-                    return "Text is expected.";
+                    return ("Text is expected.", null);
+                }
+
+                var limit = definition.ValueType switch
+                {
+                    PropertyValueTypes.String => 1_000,
+                    PropertyValueTypes.Url => 2_048,
+                    PropertyValueTypes.Text => 64_000,
+                    _ => 512_000,
+                };
+                if (text.Length > limit)
+                {
+                    return ($"Up to {limit} characters are allowed.", null);
                 }
 
                 if (definition.ValueType == PropertyValueTypes.Url && !(Uri.TryCreate(text, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"))
                 {
-                    return "An absolute http or https address is expected.";
+                    return ("An absolute http or https address is expected.", null);
                 }
 
-                if (rule.Regex is { } pattern && !Regex.IsMatch(text, pattern, RegexOptions.None, TimeSpan.FromMilliseconds(100)))
+                if (rule.Regex is { } pattern && !Matches(text, pattern))
                 {
-                    return "The value does not match the required pattern.";
+                    return ("The value does not match the required pattern.", null);
                 }
 
-                return OutOfRange(text.Length, rule, "characters");
+                return (OutOfRange(text.Length, rule, "characters"), v);
             case PropertyValueTypes.Date:
-                return text is not null && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _) ? null : "A date (yyyy-MM-dd) is expected.";
+                return text is not null && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+                    ? (null, v)
+                    : ("A date (yyyy-MM-dd) is expected.", null);
             case PropertyValueTypes.DateTime:
-                return text is not null && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _) ? null : "An ISO 8601 date and time is expected.";
+                return text is not null && DateTimeOffset.TryParseExact(text, ["yyyy-MM-ddTHH:mm:ssK", "yyyy-MM-ddTHH:mm:ss.FFFFFFFK", "yyyy-MM-ddTHH:mmK"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var moment)
+                    ? (null, JsonSerializer.SerializeToElement(moment.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)))
+                    : ("An ISO 8601 date and time with offset is expected.", null);
             case PropertyValueTypes.Time:
-                return text is not null && TimeOnly.TryParse(text, CultureInfo.InvariantCulture, out _) ? null : "A time (HH:mm) is expected.";
+                return text is not null && TimeOnly.TryParseExact(text, ["H:mm", "HH:mm", "H:mm:ss", "HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+                    ? (null, JsonSerializer.SerializeToElement(time.ToString("HH:mm:ss", CultureInfo.InvariantCulture)))
+                    : ("A time (HH:mm) is expected.", null);
             case PropertyValueTypes.Integer:
-                return v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var integer) ? OutOfRange(integer, rule) : "A whole number is expected.";
+                return v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var integer) ? (OutOfRange(integer, rule), v) : ("A whole number is expected.", null);
             case PropertyValueTypes.Decimal:
-                return v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var number) ? OutOfRange(number, rule) : "A number is expected.";
+                return v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var number) ? (OutOfRange(number, rule), v) : ("A number is expected.", null);
             case PropertyValueTypes.Boolean:
-                return v.ValueKind is JsonValueKind.True or JsonValueKind.False ? null : "true or false is expected.";
+                return v.ValueKind is JsonValueKind.True or JsonValueKind.False ? (null, v) : ("true or false is expected.", null);
             case PropertyValueTypes.Duration:
-                return text is not null && TryDuration(text) ? null : "An ISO 8601 duration (for example PT1H30M) is expected.";
+                return text is not null && TryDuration(text, out var duration)
+                    ? (null, JsonSerializer.SerializeToElement(XmlConvert.ToString(duration)))
+                    : ("An ISO 8601 duration of days, hours, minutes or seconds (for example PT1H30M) is expected.", null);
             case PropertyValueTypes.Reference:
                 if (text is null || !Guid.TryParse(text, out var id))
                 {
-                    return "A node id is expected.";
+                    return ("A node id is expected.", null);
                 }
 
                 references[id] = definition.Key;
-                return null;
+                return (null, JsonSerializer.SerializeToElement(id.ToString()));
             default:
-                return "Unknown value type.";
+                return ("Unknown value type.", null);
+        }
+    }
+
+    /// <summary>Admin supplied patterns run without backtracking where possible and give up after 100 ms otherwise.</summary>
+    internal static bool Matches(string text, string pattern)
+    {
+        try
+        {
+            return Regex.IsMatch(text, pattern, RegexOptions.NonBacktracking, TimeSpan.FromMilliseconds(100));
+        }
+        catch (NotSupportedException)
+        {
+            try
+            {
+                return Regex.IsMatch(text, pattern, RegexOptions.None, TimeSpan.FromMilliseconds(100));
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return false;
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
         }
     }
 
@@ -287,11 +365,18 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             ? $"Expected between {rule.Min?.ToString(CultureInfo.InvariantCulture) ?? "-"} and {rule.Max?.ToString(CultureInfo.InvariantCulture) ?? "-"} {unit}".TrimEnd() + "."
             : null;
 
-    private static bool TryDuration(string text)
+    // years and months have no fixed length, so durations stick to days and below
+    private static bool TryDuration(string text, out TimeSpan duration)
     {
+        duration = default;
+        if (text.Contains('Y') || (text.IndexOf('T') is var t && text.IndexOf('M') is var m && m >= 0 && (t < 0 || m < t)))
+        {
+            return false;
+        }
+
         try
         {
-            XmlConvert.ToTimeSpan(text);
+            duration = XmlConvert.ToTimeSpan(text);
             return true;
         }
         catch (FormatException)

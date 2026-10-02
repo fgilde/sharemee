@@ -307,7 +307,8 @@ internal sealed class CatalogHandlers(CoworkeeDbContext db, MetadataCatalog cata
     public async Task<Result> HandleAsync(SaveDataLanguage command, CancellationToken cancellationToken)
     {
         var request = command.Language;
-        if ((CatalogErrors.Key(request.Code, "Code") ?? CatalogErrors.Name(request.Name)) is { } invalid)
+        var codeError = request.Code is { Length: > 20 } ? Error.Validation("Code", "Up to 20 characters.") : CatalogErrors.Key(request.Code, "Code");
+        if ((codeError ?? CatalogErrors.Name(request.Name)) is { } invalid)
         {
             return invalid;
         }
@@ -427,6 +428,11 @@ internal sealed class CatalogHandlers(CoworkeeDbContext db, MetadataCatalog cata
         var definitions = (await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key);
         var conditions = request.Conditions ?? [];
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var duplicate in request.Items.GroupBy(i => i.DefinitionKey).Where(g => g.Count() > 1))
+        {
+            errors[duplicate.Key] = ["Each property may appear only once in a set."];
+        }
+
         foreach (var item in request.Items)
         {
             if (!definitions.TryGetValue(item.DefinitionKey, out var definition) || !definition.AppliesTo(request.NodeTypeKey))
@@ -514,8 +520,18 @@ internal sealed class CatalogHandlers(CoworkeeDbContext db, MetadataCatalog cata
             return Error.Validation("Searchable", "Use none, filter, fulltext or both.");
         }
 
+        if (request.Validation is { Min: { } min, Max: { } max } && min > max)
+        {
+            return Error.Validation("Validation.Min", "Min must not be greater than Max.");
+        }
+
         if (request.Validation?.Regex is { } pattern)
         {
+            if (pattern.Length > 500)
+            {
+                return Error.Validation("Validation.Regex", "Patterns may have up to 500 characters.");
+            }
+
             try
             {
                 _ = new System.Text.RegularExpressions.Regex(pattern, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));

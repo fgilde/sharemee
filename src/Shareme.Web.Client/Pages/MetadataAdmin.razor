@@ -77,6 +77,16 @@
                         <MudCheckBox @bind-Value="_form.InheritToChildren" Label="Inherit to children" />
                         <MudCheckBox @bind-Value="_form.AllowCustomValues" Label="Allow own list values" />
                         <MudCheckBox @bind-Value="_form.IgnoreOnNewVersion" Label="Do not copy to new versions" />
+                        <MudCheckBox @bind-Value="_form.Editable" Label="Editable" />
+                        <MudCheckBox @bind-Value="_form.Facet" Label="Search facet" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect @bind-Value="_form.Searchable" Label="Search">
+                            <MudSelectItem Value="@SearchModes.None">not searchable</MudSelectItem>
+                            <MudSelectItem Value="@SearchModes.Filter">filter</MudSelectItem>
+                            <MudSelectItem Value="@SearchModes.Fulltext">full text</MudSelectItem>
+                            <MudSelectItem Value="@SearchModes.Both">filter and full text</MudSelectItem>
+                        </MudSelect>
                     </MudItem>
                 </MudGrid>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDefinitionAsync" data-testid="save-definition">Save</MudButton>
@@ -275,17 +285,25 @@
 
         public string? Description { get; set; }
 
+        public bool Editable { get; set; } = true;
+
+        public string Searchable { get; set; } = SearchModes.None;
+
+        public bool Facet { get; set; }
+
+        public int SortIndex { get; set; }
+
         public static DefinitionForm From(PropertyDefinitionDto d) => new()
         {
             Key = d.Key, Name = d.Name, ValueType = d.ValueType, ListMode = d.ListMode, GroupId = d.GroupId, NodeTypeKeys = d.NodeTypeKeys.ToList(),
             Regex = d.Validation.Regex, Min = d.Validation.Min, Max = d.Validation.Max, Required = d.Validation.Required, MultiValue = d.MultiValue,
             Localizable = d.Localizable, HasContext = d.HasContext, InheritToChildren = d.InheritToChildren, AllowCustomValues = d.AllowCustomValues,
-            IgnoreOnNewVersion = d.IgnoreOnNewVersion, Description = d.Description,
+            IgnoreOnNewVersion = d.IgnoreOnNewVersion, Description = d.Description, Editable = d.Editable, Searchable = d.Searchable, Facet = d.Facet, SortIndex = d.SortIndex,
         };
 
         public PropertyDefinitionRequest ToRequest() => new(
             Key?.Trim() ?? string.Empty, Name?.Trim() ?? string.Empty, ValueType, GroupId, Description, ListMode, AllowCustomValues, MultiValue, Localizable, HasContext,
-            NodeTypeKeys: NodeTypeKeys, Validation: new PropertyValidation(Required, string.IsNullOrWhiteSpace(Regex) ? null : Regex, Min, Max), InheritToChildren: InheritToChildren,
+            Editable, Searchable, Facet, NodeTypeKeys: NodeTypeKeys, SortIndex: SortIndex, Validation: new PropertyValidation(Required, string.IsNullOrWhiteSpace(Regex) ? null : Regex, Min, Max), InheritToChildren: InheritToChildren,
             IgnoreOnNewVersion: IgnoreOnNewVersion);
     }
 }

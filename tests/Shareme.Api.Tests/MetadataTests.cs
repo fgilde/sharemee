@@ -150,6 +150,66 @@ public sealed class MetadataTests(ApiFixture api) : IAsyncLifetime
         sets!.Single().Items.Single().FillMode.ShouldBe(FillModes.Mandatory);
     }
 
+    [Fact]
+    public async Task Catastrophic_patterns_fail_as_validation_not_as_server_error()
+    {
+        await DefineAsync(new PropertyDefinitionRequest("code", "Code", Validation: new PropertyValidation(Regex: "^(a+)+$")));
+        var folder = await FolderAsync("A");
+
+        (await PutAsync(folder, new() { ["code"] = [Value(new string('a', 40) + "!")] })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Deactivated_list_values_stay_valid_where_they_are_already_used()
+    {
+        var status = await DefineAsync(new PropertyDefinitionRequest("status", "Status", ListMode: ListModes.Single));
+        (await Admin.PutAsJsonAsync($"/api/v1/metadata/definitions/{status.Id}/list-values", new[] { new PropertyListValueDto("draft", "Draft", 0, true) }, Ct)).EnsureSuccessStatusCode();
+        var a = await FolderAsync("A");
+        var b = await FolderAsync("B");
+        (await PutAsync(a, new() { ["status"] = [new MetadataValue(List: "draft")] })).EnsureSuccessStatusCode();
+        (await Admin.PutAsJsonAsync($"/api/v1/metadata/definitions/{status.Id}/list-values", new[] { new PropertyListValueDto("draft", "Draft", 0, false) }, Ct)).EnsureSuccessStatusCode();
+
+        (await PutAsync(a, new() { ["status"] = [new MetadataValue(List: "draft")] })).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await PutAsync(b, new() { ["status"] = [new MetadataValue(List: "draft")] })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Oversized_values_list_values_with_payload_and_empty_entries_are_rejected()
+    {
+        var status = await DefineAsync(new PropertyDefinitionRequest("status", "Status", ListMode: ListModes.Single));
+        (await Admin.PutAsJsonAsync($"/api/v1/metadata/definitions/{status.Id}/list-values", new[] { new PropertyListValueDto("draft", "Draft", 0, true) }, Ct)).EnsureSuccessStatusCode();
+        await DefineAsync(new PropertyDefinitionRequest("note", "Note"));
+        var folder = await FolderAsync("A");
+
+        (await PutAsync(folder, new() { ["note"] = [Value(new string('x', 1001))] })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await PutAsync(folder, new() { ["status"] = [new MetadataValue(null, null, JsonSerializer.SerializeToElement("payload"), "draft")] })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PutAsync($"/api/v1/nodes/{folder}/metadata", new StringContent("{\"note\":[null]}", System.Text.Encoding.UTF8, "application/json"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Dates_and_times_are_stored_in_canonical_form()
+    {
+        await DefineAsync(new PropertyDefinitionRequest("due", "Due", PropertyValueTypes.DateTime));
+        await DefineAsync(new PropertyDefinitionRequest("at", "At", PropertyValueTypes.Time));
+        var folder = await FolderAsync("A");
+
+        (await PutAsync(folder, new() { ["due"] = [Value("2026-10-02T16:30:00+02:00")], ["at"] = [Value("9:05")] })).EnsureSuccessStatusCode();
+
+        var stored = (await MetadataAsync(folder)).Properties;
+        stored["due"].Values.Single().V!.Value.GetString().ShouldBe("2026-10-02T14:30:00.0000000+00:00");
+        stored["at"].Values.Single().V!.Value.GetString().ShouldBe("09:05:00");
+    }
+
+    [Fact]
+    public async Task Required_read_only_properties_do_not_block_saving()
+    {
+        await DefineAsync(new PropertyDefinitionRequest("checksum", "Checksum", Editable: false, Validation: new PropertyValidation(Required: true)));
+        await DefineAsync(new PropertyDefinitionRequest("note", "Note"));
+        var folder = await FolderAsync("A");
+
+        (await PutAsync(folder, new() { ["note"] = [Value("fine")] })).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+    }
+
     private static MetadataValue Value<T>(T value, string? lang = null) => new(lang, null, JsonSerializer.SerializeToElement(value));
 
     private async Task<PropertyDefinitionDto> DefineAsync(PropertyDefinitionRequest request)
