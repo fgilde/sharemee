@@ -255,7 +255,7 @@ internal sealed class NodeTypeHandlers(CoworkeeDbContext db, ICurrentUser curren
     private static NodeTypeDto Map(NodeType type) => new(type.Key, type.Semantic.ToString().ToLowerInvariant(), type.Name, type.Icon, type.IsSystem);
 }
 
-internal sealed class NotifySubscribers(CoworkeeDbContext db, ICurrentUser currentUser, INotifier notifier) : IDomainEventHandler<NodeChanged>
+internal sealed class NotifySubscribers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, INotifier notifier) : IDomainEventHandler<NodeChanged>
 {
     public async Task HandleAsync(NodeChanged domainEvent, CancellationToken cancellationToken)
     {
@@ -267,14 +267,25 @@ internal sealed class NotifySubscribers(CoworkeeDbContext db, ICurrentUser curre
         }
 
         var watched = node.PathIds;
-        var recipients = await db.Set<NodeSubscription>().Where(s => watched.Contains(s.NodeId) && s.UserId != currentUser.UserId)
+        var watchers = await db.Set<NodeSubscription>().Where(s => watched.Contains(s.NodeId) && s.UserId != currentUser.UserId)
             .Select(s => s.UserId).Distinct().ToListAsync(cancellationToken);
+
+        // a watcher of a folder above a node with its own permissions, or who lost access, is not told about it
+        var recipients = node.IsDeleted ? watchers : await access.ReadersAmongAsync(watchers, node.Id, node.TenantId, cancellationToken);
         if (recipients.Count == 0)
         {
             return;
         }
 
-        await notifier.NotifyAsync(recipients, "node." + domainEvent.Kind, $"{(node.Name.Length > 200 ? node.Name[..200] + "…" : node.Name)} was {domainEvent.Kind}", null, $"/browse/{node.ParentId ?? node.Id}", cancellationToken);
+        var link = node switch
+        {
+            Workspace => $"/workspaces/{node.Id}",
+            WorkTask => $"/workspaces/{node.ParentId}",
+            Asset => $"/assets/{node.Id}",
+            _ when node.PathIds.Count > 0 && await db.Set<Workspace>().AnyAsync(w => w.Id == node.PathIds[0], cancellationToken) => $"/workspaces/{node.PathIds[0]}",
+            _ => $"/browse/{node.ParentId ?? node.Id}",
+        };
+        await notifier.NotifyAsync(recipients, "node." + domainEvent.Kind, $"{(node.Name.Length > 200 ? node.Name[..200] + "…" : node.Name)} was {domainEvent.Kind}", null, link, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }
 }

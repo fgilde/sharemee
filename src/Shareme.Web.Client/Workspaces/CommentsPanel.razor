@@ -1,0 +1,117 @@
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Workspaces
+@inject IWorkspacesApi Api
+@inject ISnackbar Snackbar
+
+<RealtimeSubscription @key="NodeId" Topic="@($"children:{NodeId}")" OnEvent="_ => ReloadSoonAsync()" />
+<MudStack Spacing="2" data-testid="comments">
+    @foreach (var comment in _comments)
+    {
+        <MudPaper Outlined="true" Class="pa-2" data-comment="@comment.Id">
+            <MudStack Row="true" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.subtitle2">@comment.AuthorName</MudText>
+                <MudText Typo="Typo.caption">@comment.CreatedAt.ToLocalTime().ToString("g")@(comment.EditedAt is null ? null : " · edited")</MudText>
+                <MudSpacer />
+                @if (comment.CanEdit)
+                {
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete comment" OnClick="() => RunAsync(() => Api.DeleteCommentAsync(comment.Id))" />
+                }
+            </MudStack>
+            @* plain text, no markup from users in the page *@
+            <MudText Typo="Typo.body2" Style="white-space:pre-wrap">@comment.Text</MudText>
+            @if (comment.MentionIds.Count > 0)
+            {
+                <MudText Typo="Typo.caption">@string.Join(", ", comment.MentionIds.Select(id => "@" + MemberName(id)))</MudText>
+            }
+        </MudPaper>
+    }
+    @if (_comments.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No comments yet.</MudText>
+    }
+    <MudTextField @bind-Value="_text" Label="Write a comment" Lines="3" Immediate="true" data-testid="comment-text" />
+    @if (Members.Count > 0)
+    {
+        <MudSelect T="Guid" @bind-SelectedValues="_mentions" MultiSelection="true" Label="Mention" ToStringFunc="@(id => MemberName(id))" Clearable="true">
+            @foreach (var member in Members)
+            {
+                <MudSelectItem T="Guid" Value="@member.UserId">@(string.IsNullOrWhiteSpace(member.Name) ? member.Email : member.Name)</MudSelectItem>
+            }
+        </MudSelect>
+    }
+    <div><MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_text)" OnClick="AddAsync" data-testid="add-comment">Comment</MudButton></div>
+</MudStack>
+
+@code {
+    private IReadOnlyList<CommentDto> _comments = [];
+    private string? _text;
+    private IReadOnlyCollection<Guid> _mentions = [];
+    private Guid _loaded;
+
+    [Parameter, EditorRequired] public Guid NodeId { get; set; }
+
+    /// <summary>Members who may be mentioned (inside workspaces).</summary>
+    [Parameter] public IReadOnlyList<WorkspaceMemberDto> Members { get; set; } = [];
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (_loaded == NodeId)
+        {
+            return Task.CompletedTask;
+        }
+
+        _loaded = NodeId;
+        return LoadAsync();
+    }
+
+    private bool _reloadPending;
+
+    /// <summary>Workspace events (task moves) also arrive here; a burst of them is answered with one reload.</summary>
+    private async Task ReloadSoonAsync()
+    {
+        if (_reloadPending)
+        {
+            return;
+        }
+
+        _reloadPending = true;
+        await Task.Delay(500);
+        _reloadPending = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _comments = await Api.GetCommentsAsync(NodeId);
+        }
+        catch (ApiException)
+        {
+            _comments = [];
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task AddAsync() => RunAsync(async () =>
+    {
+        await Api.AddCommentAsync(NodeId, new CommentRequest(_text!.Trim(), _mentions.ToList()));
+        (_text, _mentions) = (null, []);
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not comment here." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private string MemberName(Guid id) => Members.FirstOrDefault(m => m.UserId == id) is { } member ? (string.IsNullOrWhiteSpace(member.Name) ? member.Email : member.Name!) : "someone";
+}

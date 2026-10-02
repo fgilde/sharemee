@@ -194,6 +194,9 @@ else
                 }
             </div>
         </MudTabPanel>
+        <MudTabPanel Text="Comments">
+            <div class="pa-4"><Shareme.Web.Client.Workspaces.CommentsPanel NodeId="_asset.Id" /></div>
+        </MudTabPanel>
         <MudTabPanel Text="Permissions">
             <div class="pa-4">
                 <MudSwitch T="bool" Value="@_detail.Node.InterruptInheritance" ValueChanged="SetInheritanceAsync" Color="Color.Secondary" Label="Do not inherit permissions from parent folders" />

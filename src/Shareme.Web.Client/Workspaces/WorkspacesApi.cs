@@ -42,6 +42,14 @@ public interface IWorkspacesApi
     Task UpdateTaskAsync(Guid taskId, TaskRequest request, CancellationToken cancellationToken = default);
 
     Task<TaskDto> MoveTaskAsync(Guid taskId, MoveTaskRequest request, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<CommentDto>> GetCommentsAsync(Guid nodeId, CancellationToken cancellationToken = default);
+
+    Task AddCommentAsync(Guid nodeId, CommentRequest request, CancellationToken cancellationToken = default);
+
+    Task EditCommentAsync(Guid commentId, CommentRequest request, CancellationToken cancellationToken = default);
+
+    Task DeleteCommentAsync(Guid commentId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class WorkspacesApi(HttpClient http) : ApiClientBase(http), IWorkspacesApi
@@ -92,6 +100,14 @@ internal sealed class WorkspacesApi(HttpClient http) : ApiClientBase(http), IWor
 
     public Task<TaskDto> MoveTaskAsync(Guid taskId, MoveTaskRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<TaskDto>(HttpMethod.Post, $"api/v1/tasks/{taskId}/move", request, cancellationToken);
+
+    public async Task<IReadOnlyList<CommentDto>> GetCommentsAsync(Guid nodeId, CancellationToken cancellationToken = default) => await GetAsync<CommentDto[]>($"api/v1/nodes/{nodeId}/comments", cancellationToken);
+
+    public Task AddCommentAsync(Guid nodeId, CommentRequest request, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Post, $"api/v1/nodes/{nodeId}/comments", request, cancellationToken);
+
+    public Task EditCommentAsync(Guid commentId, CommentRequest request, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Put, $"api/v1/comments/{commentId}", request, cancellationToken);
+
+    public Task DeleteCommentAsync(Guid commentId, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"api/v1/comments/{commentId}", null, cancellationToken);
 
     public Task<FinalizeResultDto> FinalizeAsync(Guid id, CancellationToken cancellationToken = default) =>
         SendAsync<FinalizeResultDto>(HttpMethod.Post, $"{Base}/{id}/finalize", null, cancellationToken);

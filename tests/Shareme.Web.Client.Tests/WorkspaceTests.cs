@@ -30,6 +30,8 @@ public sealed class WorkspaceTests : BunitContext
         Services.AddSingleton(_api);
         var graph = Substitute.For<ISharemeApi>();
         graph.GetRootAsync(default).ReturnsForAnyArgs(new NodeDto(Guid.CreateVersion7(), null, "folder", "folder", "Root", new Dictionary<string, string>(), 0, false, DateTimeOffset.UtcNow, null));
+        graph.GetNodeAsync(_id, Arg.Any<CancellationToken>()).Returns(new NodeDetailDto(
+            new NodeDto(_id, null, "workspace", "workspace", "Campaign", new Dictionary<string, string>(), 0, false, DateTimeOffset.UtcNow, null), [], false));
         Services.AddSingleton(graph);
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetNodeMetadataAsync(default, default).ReturnsForAnyArgs(new NodeMetadataDto(_id, "workspace", new Dictionary<string, EffectivePropertyDto>()));
@@ -102,6 +104,20 @@ public sealed class WorkspaceTests : BunitContext
         board.Find("input[data-testid='new-task'], [data-testid='new-task'] input").Input("Visuals");
         await board.Find("[data-testid='add-task']").ClickAsync(new());
         await _api.Received(1).CreateTaskAsync(_id, Arg.Is<TaskRequest>(r => r.Title == "Visuals"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Comments_are_listed_as_plain_text_and_written()
+    {
+        _api.GetCommentsAsync(_id, Arg.Any<CancellationToken>()).Returns([
+            new CommentDto(Guid.CreateVersion7(), _id, Guid.CreateVersion7(), "Ada", "<b>bold?</b>", [], DateTimeOffset.UtcNow, null, false)]);
+        var panel = Render<CommentsPanel>(p => p.Add(c => c.NodeId, _id));
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid='comments']").TextContent.ShouldContain("<b>bold?</b>"));
+        panel.FindAll("[data-testid='comments'] b").ShouldBeEmpty("user text is never markup");
+        panel.Find("textarea[data-testid='comment-text'], [data-testid='comment-text'] textarea").Input("Looks good");
+        await panel.Find("[data-testid='add-comment']").ClickAsync(new());
+        await _api.Received(1).AddCommentAsync(_id, Arg.Is<CommentRequest>(r => r.Text == "Looks good"), Arg.Any<CancellationToken>());
     }
 
     private WorkspaceDto Workspace(string name, string? role) =>

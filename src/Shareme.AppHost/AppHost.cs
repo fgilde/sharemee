@@ -57,6 +57,9 @@ var web = builder.AddProject<Projects.Shareme_Web>("shareme-web")
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints();
 
+// links in digest mails lead to the web app
+api.WithEnvironment("Coworkee__Notifications__PublicAppUrl", web.GetEndpoint("https"));
+
 auth.WithEnvironment("Coworkee__Auth__ApiScopes__shareme_api", "shareme_api")
     .WithEnvironment("Coworkee__Jobs__RunServer", "false")
     .WithEnvironment("Coworkee__Account__PublicAuthUrl", auth.GetEndpoint("https"))

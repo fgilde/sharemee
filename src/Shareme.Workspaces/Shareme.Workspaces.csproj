@@ -3,5 +3,6 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
     <CoworkeePackage Include="Coworkee.Identity" />
+    <CoworkeePackage Include="Coworkee.Notifications" />
   </ItemGroup>
 </Project>

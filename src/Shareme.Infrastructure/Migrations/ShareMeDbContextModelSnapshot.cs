@@ -692,9 +692,31 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ReadAt", "CreatedAt");
+
                     b.HasIndex("UserId", "ReadAt", "CreatedAt");
 
                     b.ToTable("Notifications", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Notifications.NotificationDigestState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("LastSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("NotificationDigests", "cw");
                 });
 
             modelBuilder.Entity("Coworkee.Settings.SettingValue", b =>
@@ -3027,6 +3049,52 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("SavedSearches", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Workspaces.Comment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.PrimitiveCollection<string>("MentionIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NodeId", "CreatedAt");
+
+                    b.ToTable("Comments", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Workspaces.WorkflowState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3454,6 +3522,15 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasOne("Shareme.Metadata.PropertyDefinition", null)
                         .WithMany("ListValues")
                         .HasForeignKey("DefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Workspaces.Comment", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("NodeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

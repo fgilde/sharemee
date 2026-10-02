@@ -2,6 +2,14 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P4c (comments, notifications, digest)
+
+- [ ] Outbox re-delivery can create duplicate notifications (handlers save on their own); a dedupe key per event, user and type would prevent it.
+- [ ] The digest runs without a lock (two overlapping runs could both mail), in the default language and through the global mail settings.
+- [ ] The comment box shows to readers who may not comment (Update needed); the API refuses with 403.
+- [ ] The add-comment answer carries an unset creation date (the panel reloads anyway).
+- [ ] Watcher, mention and assignee checks impersonate each recipient (one permission check each); a batch reader query would scale better.
+
 ## From P4b (states, tasks)
 
 - [ ] Task edits are last write wins (no version on update); the open editor keeps the old task after live reloads.
