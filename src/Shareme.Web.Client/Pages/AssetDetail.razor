@@ -1,0 +1,206 @@
+@page "/assets/{Id:guid}"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Coworkee.Contracts.Identity
+@using MudBlazor.Extensions.Components
+@using Shareme.Contracts.Assets
+@using Shareme.Contracts.Graph
+@using Shareme.Web.Client.Assets
+@inject ISharemeApi Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_asset?.Name ?? "Asset")</PageTitle>
+
+@if (_asset is null || _detail is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <RealtimeSubscription @key="_asset.Id" Topic="@($"children:{_asset.Id}")" OnEvent="_ => ReloadAsync()" />
+    <div data-testid="breadcrumb"><MudBreadcrumbs Items="_breadcrumb" /></div>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">@_asset.Name</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColor(_asset.Status)" data-testid="asset-status">@_asset.Status</MudChip>
+        <MudSpacer />
+        @if (_asset.CurrentVersion is not null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download" Href="@AssetUrls.Download(_asset.Id)" data-testid="download">Download</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Link" OnClick="CreateLinkAsync" data-testid="create-link">Share link</MudButton>
+        }
+    </MudStack>
+
+    @if (_link is not null)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _link = null">
+            Link valid until @_link.ExpiresAt.ToLocalTime().ToString("t"): <MudLink Href="@_link.Url" Target="_blank" data-testid="share-link">@(new Uri(new Uri(Nav.BaseUri), _link.Url))</MudLink>
+        </MudAlert>
+    }
+
+    <MudGrid>
+        <MudItem xs="12" md="7">
+            <MudPaper Outlined="true" Class="pa-2" Style="min-height:320px" data-testid="preview">
+                @if (Preview is { State: DerivationStates.Ready })
+                {
+                    <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Preview)" ContentType="image/webp" FileName="@_asset.Name" ShowFileName="false" />
+                }
+                else
+                {
+                    <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="min-height:300px">
+                        <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Large" />
+                        <MudText Typo="Typo.body2">@PreviewText</MudText>
+                    </MudStack>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            @if (_asset.CurrentVersion is { } current)
+            {
+                <MudSimpleTable Dense="true">
+                    <tbody>
+                        <tr><td>File</td><td>@current.FileName</td></tr>
+                        <tr><td>Type</td><td>@_asset.AssetType (@current.MimeType)</td></tr>
+                        <tr><td>Size</td><td>@FormatSize(current.Size)</td></tr>
+                        <tr><td>Version</td><td>@current.Number</td></tr>
+                        <tr><td>Uploaded</td><td>@current.CreatedAt.ToLocalTime().ToString("g")</td></tr>
+                        <tr><td>SHA-256</td><td style="font-family:monospace;font-size:11px;word-break:break-all">@current.Sha256</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudItem>
+    </MudGrid>
+
+    <MudTabs Elevation="0" Outlined="true" Class="mt-6">
+        <MudTabPanel Text="Metadata">
+            <div class="pa-4"><MetadataEditor @key="_asset.Id" NodeId="_asset.Id" /></div>
+        </MudTabPanel>
+        <MudTabPanel Text="Versions">
+            <div class="pa-4">
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>#</th><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var version in _asset.Versions)
+                        {
+                            <tr data-version="@version.Number">
+                                <td>@version.Number</td>
+                                <td>@version.FileName</td>
+                                <td>@FormatSize(version.Size)</td>
+                                <td>@version.CreatedAt.ToLocalTime().ToString("g")</td>
+                                <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.Download(_asset.Id, version.Number)" aria-label="Download version" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <div class="mt-4"><UploadPanel AssetId="_asset.Id" /></div>
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Relations">
+            <div class="pa-4">
+                @if (_edges.Count == 0)
+                {
+                    <MudText Typo="Typo.body2">No relations.</MudText>
+                }
+                @foreach (var edge in _edges)
+                {
+                    var other = edge.FromNodeId == _asset.Id ? (edge.ToNodeId, edge.ToName) : (edge.FromNodeId, edge.FromName);
+                    <MudStack Row="true" AlignItems="AlignItems.Center" data-edge="@edge.Type">
+                        <MudChip T="string" Size="Size.Small">@edge.Type</MudChip>
+                        <MudLink Href="@($"/browse/{other.Item1}")">@other.Item2</MudLink>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove relation" OnClick="() => RunAsync(() => Api.DeleteEdgeAsync(edge.Id))" />
+                    </MudStack>
+                }
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Permissions">
+            <div class="pa-4">
+                <MudSwitch T="bool" Value="@_detail.Node.InterruptInheritance" ValueChanged="SetInheritanceAsync" Color="Color.Secondary" Label="Do not inherit permissions from parent folders" />
+                <PermissionView Permission="@IdentityPermissions.ResourcePermissions.Manage">
+                    <ResourcePermissionsPanel ResourceType="@NodePermissions.ResourceType" ResourceId="_asset.Id" />
+                </PermissionView>
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Activity">
+            <div class="pa-4"><AuditTimeline EntityType="Asset" EntityId="@_asset.Id.ToString()" /></div>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    private AssetDto? _asset;
+    private NodeDetailDto? _detail;
+    private IReadOnlyList<EdgeDto> _edges = [];
+    private List<BreadcrumbItem> _breadcrumb = [];
+    private DownloadLinkDto? _link;
+
+    [Parameter] public Guid Id { get; set; }
+
+    private DerivationDto? Preview => _asset?.Derivations.FirstOrDefault(d => d.Kind == DerivationKinds.Preview);
+
+    private string PreviewText => Preview?.State switch
+    {
+        DerivationStates.Pending => "The preview is being prepared…",
+        DerivationStates.Failed => "No preview could be created.",
+        _ when _asset?.Status == AssetStatuses.Importing => "The file is being imported…",
+        _ => "No preview for this file type.",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _asset = null;
+        _link = null;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _asset = await Api.GetAssetAsync(Id);
+            _detail = await Api.GetNodeAsync(Id);
+            _edges = await Api.GetEdgesAsync(Id);
+            _breadcrumb = _detail.Breadcrumb.Select((c, i) => new BreadcrumbItem(c.Name, i == _detail.Breadcrumb.Count - 1 ? null : $"/browse/{c.Id}", disabled: i == _detail.Breadcrumb.Count - 1)).ToList();
+        }
+        catch (ApiException exception) when (exception.Status is 403 or 404)
+        {
+            Snackbar.Add("This asset is not available.", Severity.Warning);
+            Nav.NavigateTo("/browse");
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task CreateLinkAsync() => RunAsync(async () => _link = await Api.CreateDownloadLinkAsync(_asset!.Id));
+
+    private Task SetInheritanceAsync(bool interrupt) => RunAsync(() => Api.SetInheritanceAsync(_asset!.Id, interrupt));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await ReloadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You do not have permission for this." : exception.Message, exception.Status == 403 ? Severity.Warning : Severity.Error);
+        }
+    }
+
+    private static Color StatusColor(string status) => status switch
+    {
+        AssetStatuses.Ready => Color.Success,
+        AssetStatuses.Duplicate => Color.Warning,
+        AssetStatuses.Failed => Color.Error,
+        _ => Color.Info,
+    };
+
+    internal static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} GB",
+    };
+}

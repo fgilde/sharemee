@@ -1,0 +1,29 @@
+@using Coworkee.Contracts
+@using Shareme.Contracts.Graph
+@inject ISharemeApi Api
+@inject NavigationManager Nav
+
+<MudTreeView T="Guid" Items="_roots" ServerData="LoadAsync" Dense="true" Hover="true" SelectionMode="SelectionMode.SingleSelection"
+             SelectedValue="SelectedId" SelectedValueChanged="Open" data-testid="folder-tree" />
+
+@code {
+    private List<TreeItemData<Guid>> _roots = [];
+
+    [Parameter] public Guid SelectedId { get; set; }
+
+    protected override async Task OnInitializedAsync() =>
+        _roots = (await Api.GetEntryPointsAsync()).Select(Item).ToList();
+
+    private async Task<IReadOnlyCollection<TreeItemData<Guid>>> LoadAsync(Guid parentId) =>
+        (await Api.GetChildrenAsync(parentId, new PageRequest(1, 500))).Items.Where(n => n.Semantic == "folder").Select(Item).ToList();
+
+    private void Open(Guid id)
+    {
+        if (id != Guid.Empty && id != SelectedId)
+        {
+            Nav.NavigateTo($"/browse/{id}");
+        }
+    }
+
+    private static TreeItemData<Guid> Item(NodeDto node) => new() { Value = node.Id, Text = node.Name, Icon = Icons.Material.Outlined.Folder, Expandable = true };
+}

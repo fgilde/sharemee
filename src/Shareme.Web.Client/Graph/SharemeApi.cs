@@ -1,6 +1,7 @@
 using Coworkee.Client.Blazor;
 using Coworkee.Client.Blazor.Api;
 using Coworkee.Contracts;
+using Shareme.Contracts.Assets;
 using Shareme.Contracts.Graph;
 
 namespace Shareme.Web.Client.Graph;
@@ -32,6 +33,35 @@ public interface ISharemeApi
     Task RestoreAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task PurgeAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<AssetDto> GetAssetAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<UploadSessionDto> StartUploadAsync(StartUploadRequest request, CancellationToken cancellationToken = default);
+
+    Task PutChunkAsync(Guid session, int index, byte[] data, int length, CancellationToken cancellationToken = default);
+
+    Task<UploadSessionDto> CompleteUploadAsync(Guid session, CancellationToken cancellationToken = default);
+
+    Task<UploadSessionDto> GetUploadAsync(Guid session, CancellationToken cancellationToken = default);
+
+    Task<DownloadLinkDto> CreateDownloadLinkAsync(Guid assetId, int? version = null, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<EdgeDto>> GetEdgesAsync(Guid nodeId, CancellationToken cancellationToken = default);
+
+    Task CreateEdgeAsync(Guid fromNodeId, CreateEdgeRequest request, CancellationToken cancellationToken = default);
+
+    Task DeleteEdgeAsync(Guid edgeId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<NodeTypeDto>> GetNodeTypesAsync(CancellationToken cancellationToken = default);
+
+    Task CreateNodeTypeAsync(CreateNodeTypeRequest request, CancellationToken cancellationToken = default);
+}
+
+public static class AssetUrls
+{
+    public static string Derivation(Guid assetId, string kind) => $"api/v1/assets/{assetId}/derivations/{kind}";
+
+    public static string Download(Guid assetId, int? version = null) => $"api/v1/assets/{assetId}/download" + (version is { } v ? $"?version={v}" : string.Empty);
 }
 
 internal sealed class SharemeApi(HttpClient http) : ApiClientBase(http), ISharemeApi
@@ -73,6 +103,39 @@ internal sealed class SharemeApi(HttpClient http) : ApiClientBase(http), ISharem
     public Task RestoreAsync(Guid id, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Post, $"api/v1/recycle-bin/{id}/restore", null, cancellationToken);
 
     public Task PurgeAsync(Guid id, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"api/v1/recycle-bin/{id}", null, cancellationToken);
+
+    public Task<AssetDto> GetAssetAsync(Guid id, CancellationToken cancellationToken = default) => GetAsync<AssetDto>($"api/v1/assets/{id}", cancellationToken);
+
+    public Task<UploadSessionDto> StartUploadAsync(StartUploadRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<UploadSessionDto>(HttpMethod.Post, "api/v1/uploads", request, cancellationToken);
+
+    public async Task PutChunkAsync(Guid session, int index, byte[] data, int length, CancellationToken cancellationToken = default)
+    {
+        var content = new ByteArrayContent(data, 0, length);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        using var response = await SendContentAsync(HttpMethod.Put, $"api/v1/uploads/{session}/chunks/{index}", content, cancellationToken);
+    }
+
+    public Task<UploadSessionDto> CompleteUploadAsync(Guid session, CancellationToken cancellationToken = default) =>
+        SendAsync<UploadSessionDto>(HttpMethod.Post, $"api/v1/uploads/{session}/complete", null, cancellationToken);
+
+    public Task<UploadSessionDto> GetUploadAsync(Guid session, CancellationToken cancellationToken = default) => GetAsync<UploadSessionDto>($"api/v1/uploads/{session}", cancellationToken);
+
+    public Task<DownloadLinkDto> CreateDownloadLinkAsync(Guid assetId, int? version = null, CancellationToken cancellationToken = default) =>
+        SendAsync<DownloadLinkDto>(HttpMethod.Post, $"api/v1/assets/{assetId}/download-link" + (version is { } v ? $"?version={v}" : string.Empty), null, cancellationToken);
+
+    public async Task<IReadOnlyList<EdgeDto>> GetEdgesAsync(Guid nodeId, CancellationToken cancellationToken = default) =>
+        await GetAsync<EdgeDto[]>($"{Nodes}/{nodeId}/edges", cancellationToken);
+
+    public Task CreateEdgeAsync(Guid fromNodeId, CreateEdgeRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, $"{Nodes}/{fromNodeId}/edges", request, cancellationToken);
+
+    public Task DeleteEdgeAsync(Guid edgeId, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"api/v1/edges/{edgeId}", null, cancellationToken);
+
+    public async Task<IReadOnlyList<NodeTypeDto>> GetNodeTypesAsync(CancellationToken cancellationToken = default) => await GetAsync<NodeTypeDto[]>("api/v1/node-types", cancellationToken);
+
+    public Task CreateNodeTypeAsync(CreateNodeTypeRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, "api/v1/node-types", request, cancellationToken);
 }
 
 internal sealed class SharemeNavigation : INavigationContributor
