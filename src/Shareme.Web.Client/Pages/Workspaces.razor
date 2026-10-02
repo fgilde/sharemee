@@ -21,7 +21,7 @@
     @foreach (var workspace in _workspaces)
     {
         <MudItem xs="12" sm="6" md="4" lg="3">
-            <MudCard Outlined="true" Style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/workspaces/{workspace.Id}"))" data-workspace="@workspace.Name">
+            <MudCard Outlined="true" Style="@(workspace.MyRole is null ? null : "cursor:pointer")" @onclick="@(() => Open(workspace))" data-workspace="@workspace.Name">
                 <MudCardContent>
                     <MudStack Row="true" AlignItems="AlignItems.Center">
                         <MudIcon Icon="@Icon(workspace.Kind)" />
@@ -90,7 +90,17 @@
     private Task TabAsync(int index)
     {
         _templates = index == 1;
+        _templateId = null;
         return LoadAsync();
+    }
+
+    // templates are listed to everyone who may create workspaces, but opened only by their members
+    private void Open(WorkspaceDto workspace)
+    {
+        if (workspace.MyRole is not null || !workspace.IsTemplate)
+        {
+            Nav.NavigateTo($"/workspaces/{workspace.Id}");
+        }
     }
 
     private async Task LoadAsync()

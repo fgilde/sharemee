@@ -36,7 +36,7 @@ public static class WorkspaceRoles
 
 public sealed record WorkspaceDto(
     Guid Id, string Name, string Kind, bool IsTemplate, Guid? TemplateId, Guid? FinalizationFolderId, bool CopyMetadataToAssets, Guid? RequiredSetId,
-    DateTimeOffset? FinalizedAt, DateTimeOffset CreatedAt, int ItemCount, string? MyRole);
+    DateTimeOffset? FinalizedAt, DateTimeOffset CreatedAt, int ItemCount, string? MyRole, bool CanManage = false, bool CanFinalize = false);
 
 public sealed record CreateWorkspaceRequest(
     string Name, string Kind = WorkspaceKinds.Collaboration, Guid? TemplateId = null, bool IsTemplate = false, Guid? FinalizationFolderId = null,

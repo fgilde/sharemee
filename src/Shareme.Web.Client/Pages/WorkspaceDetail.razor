@@ -33,7 +33,7 @@ else
             <MudChip T="string" Size="Size.Small" Color="Color.Success">finalised @finalized.ToLocalTime().ToString("d")</MudChip>
         }
         <MudSpacer />
-        @if (IsOwner && !_workspace.IsTemplate && _workspace.FinalizedAt is null && _workspace.Kind != WorkspaceKinds.Collection)
+        @if (_workspace is { CanFinalize: true, IsTemplate: false, FinalizedAt: null } && _workspace.Kind != WorkspaceKinds.Collection)
         {
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.TaskAlt" OnClick="FinalizeAsync" data-testid="finalize">Finalise</MudButton>
         }
@@ -42,7 +42,7 @@ else
     <MudTabs Elevation="0" Outlined="true">
         <MudTabPanel Text="Items">
             <div class="pa-4">
-                @if (_workspace.Kind != WorkspaceKinds.Collection && _workspace.FinalizedAt is null)
+                @if (_workspace is { IsTemplate: false, FinalizedAt: null } && _workspace.Kind != WorkspaceKinds.Collection)
                 {
                     <div class="mb-4"><UploadPanel FolderId="_workspace.Id" /></div>
                 }
@@ -150,7 +150,8 @@ else
 
     [Parameter] public Guid Id { get; set; }
 
-    private bool IsOwner => _workspace?.MyRole == WorkspaceRoles.Owner;
+    // by permission, so owners through a group and administrators get the same tools
+    private bool IsOwner => _workspace?.CanManage == true;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -159,10 +160,27 @@ else
         if (_workspace is not null)
         {
             (_name, _folderId, _copyMetadata) = (_workspace.Name, _workspace.FinalizationFolderId, _workspace.CopyMetadataToAssets);
-            _folderName = _folderId is { } folder ? (await Graph.GetNodeAsync(folder)).Node.Name : null;
+            try
+            {
+                _folderName = _folderId is { } folder ? (await Graph.GetNodeAsync(folder)).Node.Name : null;
+            }
+            catch (ApiException)
+            {
+                // a folder from a template the owner cannot read
+                _folderName = "a folder you cannot see";
+            }
+
             if (IsOwner)
             {
-                _rootId = (await Graph.GetRootAsync()).Id;
+                try
+                {
+                    // the picker starts where the owner's folder access starts
+                    _rootId = (await Graph.GetEntryPointsAsync()).FirstOrDefault()?.Id;
+                }
+                catch (ApiException)
+                {
+                    _rootId = null;
+                }
             }
         }
     }

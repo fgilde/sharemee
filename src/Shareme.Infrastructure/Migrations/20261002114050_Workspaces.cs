@@ -66,6 +66,21 @@ namespace Shareme.Infrastructure.Migrations
                 maxLength: 20,
                 nullable: true);
 
+            migrationBuilder.CreateTable(
+                name: "WorkspaceRoleBindings",
+                schema: "sm",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Key = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    RoleId = table.Column<Guid>(type: "uuid", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkspaceRoleBindings", x => x.Id);
+                });
+
             migrationBuilder.InsertData(
                 schema: "sm",
                 table: "NodeTypes",
@@ -85,11 +100,22 @@ namespace Shareme.Infrastructure.Migrations
                 schema: "sm",
                 table: "Nodes",
                 columns: new[] { "TenantId", "IsTemplate" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkspaceRoleBindings_TenantId_Key",
+                schema: "sm",
+                table: "WorkspaceRoleBindings",
+                columns: new[] { "TenantId", "Key" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "WorkspaceRoleBindings",
+                schema: "sm");
+
             migrationBuilder.DropIndex(
                 name: "IX_Nodes_Root",
                 schema: "sm",

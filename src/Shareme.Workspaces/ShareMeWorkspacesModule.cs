@@ -31,6 +31,7 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
         context.Services.AddMessagingFromAssembly(typeof(ShareMeWorkspacesModule).Assembly);
         context.Services.AddSingleton<IPermissionDefinitionContributor, WorkspacePermissionDefinitions>();
         context.Services.AddScoped<WorkspaceRoleStore>();
+        context.Services.AddSingleton<IModelContributor, WorkspaceModelContributor>();
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -60,7 +61,28 @@ internal sealed class WorkspacePermissionDefinitions : IPermissionDefinitionCont
             .Add(WorkspacePermissions.Finalize, "Finalise a workspace into its folder", NodePermissions.Read);
 }
 
-/// <summary>The owner and collaborator roles of a tenant, made on first use; admins may change their permissions like any role.</summary>
+/// <summary>Which role of a tenant is the workspace owner or collaborator role; renaming the role keeps it.</summary>
+public sealed class WorkspaceRoleBinding : Coworkee.Domain.Entity, Coworkee.Domain.IMultiTenant
+{
+    public required string Key { get; set; }
+
+    public Guid RoleId { get; set; }
+
+    public Guid TenantId { get; set; }
+}
+
+internal sealed class WorkspaceModelContributor : IModelContributor
+{
+    public void Apply(ModelBuilder modelBuilder) =>
+        modelBuilder.Entity<WorkspaceRoleBinding>(binding =>
+        {
+            binding.ToTable("WorkspaceRoleBindings", "sm");
+            binding.Property(b => b.Key).HasMaxLength(20);
+            binding.HasIndex(b => new { b.TenantId, b.Key }).IsUnique();
+        });
+}
+
+/// <summary>The owner and collaborator roles of a tenant, made on first use; admins may rename them or change their permissions like any role.</summary>
 internal sealed class WorkspaceRoleStore(CoworkeeDbContext db, ICurrentUser currentUser)
 {
     private static readonly Dictionary<string, (string Name, string[] Permissions)> Definitions = new()
@@ -91,22 +113,26 @@ internal sealed class WorkspaceRoleStore(CoworkeeDbContext db, ICurrentUser curr
         _roles = [];
         foreach (var (key, (name, permissions)) in Definitions)
         {
-            var normalized = name.ToUpperInvariant();
-            var role = db.Set<Role>().Local.FirstOrDefault(r => r.TenantId == tenantId && r.NormalizedName == normalized)
-                ?? await db.Set<Role>().SingleOrDefaultAsync(r => r.TenantId == tenantId && r.NormalizedName == normalized, cancellationToken);
-            if (role is null && !create)
+            var binding = db.Set<WorkspaceRoleBinding>().Local.FirstOrDefault(b => b.TenantId == tenantId && b.Key == key)
+                ?? await db.Set<WorkspaceRoleBinding>().AsNoTracking().SingleOrDefaultAsync(b => b.TenantId == tenantId && b.Key == key, cancellationToken);
+            if (binding is null && !create)
             {
                 continue;
             }
 
-            if (role is null)
+            if (binding is null)
             {
-                role = new Role { Name = name, NormalizedName = normalized, TenantId = tenantId, Description = "Given per workspace; change its permissions to change what members may do." };
+                // a role an admin made with this name is not taken over: its permissions are unknown
+                var taken = await db.Set<Role>().AnyAsync(r => r.TenantId == tenantId && r.NormalizedName == name.ToUpperInvariant(), cancellationToken);
+                var roleName = taken ? name + " (workspaces)" : name;
+                var role = new Role { Name = roleName, NormalizedName = roleName.ToUpperInvariant(), TenantId = tenantId, Description = "Given per workspace; change its permissions to change what members may do." };
                 db.Add(role);
                 db.AddRange(permissions.Select(p => new PermissionGrant { Name = p, ProviderType = PermissionProviderType.Role, ProviderKey = role.Id, TenantId = tenantId }));
+                binding = new WorkspaceRoleBinding { Key = key, RoleId = role.Id, TenantId = tenantId };
+                db.Add(binding);
             }
 
-            _roles[key] = role.Id;
+            _roles[key] = binding.RoleId;
         }
 
         return _roles;
@@ -127,7 +153,7 @@ public abstract record WorkspaceRequest(Guid Id, string RequiredPermission) : IR
 
 public sealed record GetWorkspace(Guid Id) : WorkspaceRequest(Id, NodePermissions.Read), IQuery<Result<WorkspaceDto>>;
 
-public sealed record UpdateWorkspace(Guid Id, UpdateWorkspaceRequest Request) : WorkspaceRequest(Id, NodePermissions.Update), ICommand<Result<WorkspaceDto>>;
+public sealed record UpdateWorkspace(Guid Id, UpdateWorkspaceRequest Request) : WorkspaceRequest(Id, NodePermissions.ManagePermissions), ICommand<Result<WorkspaceDto>>;
 
 public sealed record GetWorkspaceMembers(Guid Id) : WorkspaceRequest(Id, NodePermissions.Read), IQuery<Result<IReadOnlyList<WorkspaceMemberDto>>>;
 
@@ -197,9 +223,9 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             return Error.Forbidden("auth.forbidden", "You may not create templates.");
         }
 
-        if (currentUser.UserId is not { } userId)
+        if (currentUser is not { UserId: { } userId, TenantId: not null })
         {
-            return Error.Forbidden("auth.forbidden", "Workspaces are created by users.");
+            return Error.Forbidden("auth.forbidden", "Workspaces are created by users of an organisation.");
         }
 
         Workspace? template = null;
@@ -216,9 +242,14 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         }
 
         var folderId = request.FinalizationFolderId ?? template?.FinalizationFolderId;
-        if (folderId is { } folder && !await db.Set<Folder>().AnyAsync(f => f.Id == folder, cancellationToken))
+        if (request.FinalizationFolderId is { } chosen && await FolderProblemAsync(chosen, cancellationToken) is { } folderProblem)
         {
-            return Error.Validation("FinalizationFolderId", "The folder does not exist.");
+            return folderProblem;
+        }
+
+        if (await SetProblemAsync(request.RequiredSetId, cancellationToken) is { } setProblem)
+        {
+            return setProblem;
         }
 
         var workspace = new Workspace
@@ -237,13 +268,15 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         workspace.MarkChanged("created");
         db.Add(workspace);
 
-        // the creator owns it; members of a template become members of every workspace made from it
+        // the creator owns it; the collaborators of a template (users or groups) become collaborators of every workspace made from it, its owners do not
         var ownerRole = await roles.RoleIdAsync(WorkspaceRoles.Owner, cancellationToken);
+        var collaboratorRole = await roles.RoleIdAsync(WorkspaceRoles.Collaborator, cancellationToken);
         db.Add(new ResourcePermission { ResourceType = NodePermissions.ResourceType, ResourceId = workspace.Id, PrincipalType = PrincipalType.User, PrincipalId = userId, RoleId = ownerRole });
         if (template is not null)
         {
             var copied = await db.Set<ResourcePermission>().AsNoTracking()
-                .Where(p => p.ResourceType == NodePermissions.ResourceType && p.ResourceId == template.Id && !(p.PrincipalType == PrincipalType.User && p.PrincipalId == userId))
+                .Where(p => p.ResourceType == NodePermissions.ResourceType && p.ResourceId == template.Id && p.RoleId == collaboratorRole
+                    && !(p.PrincipalType == PrincipalType.User && p.PrincipalId == userId))
                 .ToListAsync(cancellationToken);
             db.AddRange(copied.Select(p => new ResourcePermission
             {
@@ -261,9 +294,13 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             return NotFound;
         }
 
-        var count = await db.Set<Node>().CountAsync(n => n.ParentId == workspace.Id, cancellationToken)
-            + await db.Set<Edge>().CountAsync(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == workspace.Id, cancellationToken);
-        return Map(workspace, count, (await MyRolesAsync([workspace.Id], cancellationToken)).GetValueOrDefault(workspace.Id));
+        var (children, linked) = await VisibleItemsAsync(workspace.Id, cancellationToken);
+        var count = children.Count + linked.Count;
+        return Map(workspace, count, (await MyRolesAsync([workspace.Id], cancellationToken)).GetValueOrDefault(workspace.Id)) with
+        {
+            CanManage = await access.CanAsync(NodePermissions.ManagePermissions, workspace.Id, cancellationToken),
+            CanFinalize = await access.CanAsync(WorkspacePermissions.Finalize, workspace.Id, cancellationToken),
+        };
     }
 
     public async Task<Result<WorkspaceDto>> HandleAsync(UpdateWorkspace command, CancellationToken cancellationToken)
@@ -279,9 +316,19 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             return Error.Validation("Name", "A name of up to 200 characters is required.");
         }
 
-        if (request.FinalizationFolderId is { } folder && !await db.Set<Folder>().AnyAsync(f => f.Id == folder, cancellationToken))
+        if (workspace.IsTemplate && !await access.IsGlobalAsync(WorkspacePermissions.ManageTemplates, cancellationToken))
         {
-            return Error.Validation("FinalizationFolderId", "The folder does not exist.");
+            return Error.Forbidden("auth.forbidden", "You may not change templates.");
+        }
+
+        if (request.FinalizationFolderId is { } folder && folder != workspace.FinalizationFolderId && await FolderProblemAsync(folder, cancellationToken) is { } folderProblem)
+        {
+            return folderProblem;
+        }
+
+        if (request.RequiredSetId != workspace.RequiredSetId && await SetProblemAsync(request.RequiredSetId, cancellationToken) is { } setProblem)
+        {
+            return setProblem;
         }
 
         workspace.Name = request.Name.Trim();
@@ -317,8 +364,13 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
 
     public async Task<Result<IReadOnlyList<WorkspaceMemberDto>>> HandleAsync(GetMemberCandidates query, CancellationToken cancellationToken)
     {
+        // a search, not a directory: at least three characters
+        if (query.Search is not { Length: >= 3 } search || !await db.Set<Workspace>().AnyAsync(w => w.Id == query.Id, cancellationToken))
+        {
+            return Result<IReadOnlyList<WorkspaceMemberDto>>.Success([]);
+        }
+
         var users = db.Set<User>().AsNoTracking().Where(u => u.TenantId == currentUser.TenantId && u.IsActive);
-        if (query.Search is { Length: > 0 } search)
         {
             var pattern = "%" + search.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
             users = users.Where(u => EF.Functions.ILike(u.Email!, pattern) || EF.Functions.ILike(u.FirstName ?? string.Empty, pattern) || EF.Functions.ILike(u.LastName ?? string.Empty, pattern));
@@ -342,7 +394,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             return NotFound;
         }
 
-        if (!await db.Set<User>().AnyAsync(u => u.Id == command.Request.UserId && u.TenantId == currentUser.TenantId, cancellationToken))
+        if (currentUser.TenantId is null || !await db.Set<User>().AnyAsync(u => u.Id == command.Request.UserId && u.TenantId == currentUser.TenantId, cancellationToken))
         {
             return Error.Validation("UserId", "The user does not exist.");
         }
@@ -353,18 +405,31 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         var existing = await db.Set<ResourcePermission>().Where(p => p.ResourceType == NodePermissions.ResourceType && p.ResourceId == command.Id
             && p.PrincipalType == PrincipalType.User && p.PrincipalId == command.Request.UserId && roleIds.Contains(p.RoleId)).ToListAsync(cancellationToken);
         var roleId = await roles.RoleIdAsync(command.Request.Role, cancellationToken);
+        var ownerRole = await roles.RoleIdAsync(WorkspaceRoles.Owner, cancellationToken);
+        if (roleId != ownerRole && existing.Any(p => p.RoleId == ownerRole)
+            && !await db.Set<ResourcePermission>().AnyAsync(p => p.ResourceType == NodePermissions.ResourceType && p.ResourceId == command.Id && p.RoleId == ownerRole
+                && !(p.PrincipalType == PrincipalType.User && p.PrincipalId == command.Request.UserId), cancellationToken))
+        {
+            return Error.Conflict("workspaces.last_owner", "Make someone else owner first.");
+        }
+
+        db.RemoveRange(existing.Where(p => p.RoleId != roleId));
         if (existing.Any(p => p.RoleId == roleId))
         {
             return Result.Success();
         }
 
-        db.RemoveRange(existing);
         db.Add(new ResourcePermission { ResourceType = NodePermissions.ResourceType, ResourceId = command.Id, PrincipalType = PrincipalType.User, PrincipalId = command.Request.UserId, RoleId = roleId });
         return Result.Success();
     }
 
     public async Task<Result> HandleAsync(RemoveWorkspaceMember command, CancellationToken cancellationToken)
     {
+        if (!await db.Set<Workspace>().AnyAsync(w => w.Id == command.Id, cancellationToken))
+        {
+            return NotFound;
+        }
+
         var keys = await roles.KeysAsync(cancellationToken);
         var ownerRole = await roles.RoleIdAsync(WorkspaceRoles.Owner, cancellationToken);
         var roleIds = keys.Keys.ToList();
@@ -392,16 +457,21 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             return NotFound;
         }
 
-        var children = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == query.Id).OrderBy(n => n.Name).ToListAsync(cancellationToken);
-        var linkedIds = db.Set<Edge>().Where(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == query.Id).Select(e => e.ToNodeId);
-        var linked = await db.Set<Asset>().AsNoTracking().Where(a => linkedIds.Contains(a.Id)).OrderBy(a => a.Name).ToListAsync(cancellationToken);
-
-        // linked assets stay under their own rights
-        var visible = await AssetSelection.WithPermissionAsync(db, access, linked, NodePermissions.Read, cancellationToken);
+        var (children, linked) = await VisibleItemsAsync(query.Id, cancellationToken);
         var mapped = await mapper.MapAsync(children, cancellationToken);
-        var mappedLinks = await mapper.MapAsync(visible, cancellationToken);
+        var mappedLinks = await mapper.MapAsync(linked, cancellationToken);
         IReadOnlyList<WorkspaceItemDto> items = [.. mapped.Select(n => new WorkspaceItemDto(n, false)), .. mappedLinks.Select(n => new WorkspaceItemDto(n, true))];
         return Result<IReadOnlyList<WorkspaceItemDto>>.Success(items);
+    }
+
+    /// <summary>Children and linked assets the caller may read: children with their own permissions and linked assets keep their rights.</summary>
+    private async Task<(IReadOnlyList<Node> Children, IReadOnlyList<Asset> Linked)> VisibleItemsAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var children = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == id).OrderBy(n => n.Name).ToListAsync(cancellationToken);
+        var linkedIds = db.Set<Edge>().Where(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == id).Select(e => e.ToNodeId);
+        var linked = await db.Set<Asset>().AsNoTracking().Where(a => linkedIds.Contains(a.Id)).OrderBy(a => a.Name).ToListAsync(cancellationToken);
+        return (await AssetSelection.WithPermissionAsync(db, access, children, NodePermissions.Read, cancellationToken),
+            await AssetSelection.WithPermissionAsync(db, access, linked, NodePermissions.Read, cancellationToken));
     }
 
     public async Task<Result> HandleAsync(LinkAssets command, CancellationToken cancellationToken)
@@ -453,6 +523,11 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             return Error.Conflict("workspaces.finalized", "The workspace is finalised already.");
         }
 
+        if (workspace.WorkspaceKind == WorkspaceKinds.Collection)
+        {
+            return Error.Validation("Id", "Collections only link assets; there is nothing to finalise.");
+        }
+
         if (workspace.FinalizationFolderId is not { } folderId || await db.Set<Folder>().SingleOrDefaultAsync(f => f.Id == folderId, cancellationToken) is not { } folder)
         {
             return Error.Validation("FinalizationFolderId", "Choose the folder the files go to first.");
@@ -473,26 +548,49 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             }
         }
 
-        var assets = await db.Set<Asset>().Where(a => a.ParentId == workspace.Id).ToListAsync(cancellationToken);
-        foreach (var asset in assets)
+        // ponytail: the whole content is loaded and moved in memory (one save); a set-based rebase like MoveNode when workspaces hold many thousand nodes
+        var prefix = workspace.Path;
+        var content = await db.Set<Node>().Where(n => n.Path.StartsWith(prefix) && n.Id != workspace.Id).OrderBy(n => n.Depth).ToListAsync(cancellationToken);
+        var byId = content.ToDictionary(n => n.Id);
+        foreach (var node in content)
         {
-            asset.PlaceUnder(folder);
-            if (workspace.CopyMetadataToAssets)
+            // parents come first, so every node is placed under its already moved parent; subfolders move with their content
+            node.PlaceUnder(node.ParentId == workspace.Id ? folder : byId[node.ParentId!.Value]);
+            if (node.ParentId == folder.Id)
             {
-                // the asset's own values win
-                foreach (var (key, values) in workspace.Metadata.Where(p => !asset.Metadata.ContainsKey(p.Key)))
+                node.MarkChanged(NodeChangeKinds.Moved);
+            }
+        }
+
+        if (workspace.CopyMetadataToAssets)
+        {
+            // only properties assets may carry and users may edit; the asset's own values win
+            var copyable = (await db.Set<PropertyDefinition>().AsNoTracking().Where(d => d.Editable).Select(d => new { d.Key, d.NodeTypeKeys }).ToListAsync(cancellationToken))
+                .Where(d => d.NodeTypeKeys.Count == 0 || d.NodeTypeKeys.Contains(NodeTypeKeys.Asset)).Select(d => d.Key).ToHashSet();
+            foreach (var asset in content.OfType<Asset>())
+            {
+                foreach (var (key, values) in workspace.Metadata.Where(p => copyable.Contains(p.Key) && !asset.Metadata.ContainsKey(p.Key)))
                 {
                     asset.Metadata[key] = values.ToList();
                 }
             }
-
-            asset.MarkChanged(NodeChangeKinds.Moved);
         }
 
         workspace.FinalizedAt = clock.GetUtcNow();
         workspace.MarkChanged("finalized");
-        return new FinalizeResultDto(assets.Count, folder.Id);
+        return new FinalizeResultDto(content.Count(n => n is Asset && n.ParentId == folder.Id), folder.Id);
     }
+
+    /// <summary>The finalisation folder must exist and take the caller's files.</summary>
+    private async Task<Error?> FolderProblemAsync(Guid folderId, CancellationToken cancellationToken) =>
+        await db.Set<Folder>().AnyAsync(f => f.Id == folderId, cancellationToken) && await access.CanAsync(NodePermissions.Create, folderId, cancellationToken)
+            ? null
+            : Error.Validation("FinalizationFolderId", "Choose a folder you may add files to.");
+
+    private async Task<Error?> SetProblemAsync(Guid? setId, CancellationToken cancellationToken) =>
+        setId is not { } id || await db.Set<PropertySet>().AnyAsync(s => s.Id == id && s.NodeTypeKey == NodeTypeKeys.Workspace, cancellationToken)
+            ? null
+            : Error.Validation("RequiredSetId", "Choose a property set for workspaces.");
 
     /// <summary>The caller's role per workspace, owner before collaborator.</summary>
     private async Task<Dictionary<Guid, string>> MyRolesAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)

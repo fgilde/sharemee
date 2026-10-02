@@ -49,10 +49,17 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         members.Select(m => (m.UserId, m.Role)).ShouldBe([(ownerId, WorkspaceRoles.Owner), (memberId, WorkspaceRoles.Collaborator)], ignoreOrder: true);
         (await member.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(memberId, WorkspaceRoles.Owner), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await owner.DeleteAsync($"/api/v1/workspaces/{workspace.Id}/members/{ownerId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(ownerId), Ct)).StatusCode.ShouldBe(HttpStatusCode.Conflict, "the last owner cannot step down");
+
+        // settings belong to owners: a collaborator cannot drop the folder or the required set
+        (await member.PutAsJsonAsync($"/api/v1/workspaces/{workspace.Id}", new UpdateWorkspaceRequest("Hijacked"), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await owner.GetFromJsonAsync<WorkspaceMemberDto[]>($"/api/v1/workspaces/{workspace.Id}/candidates?search=ac", Ct))!.ShouldBeEmpty("searches need three characters");
 
         // collaborators upload into the workspace; the folder tree does not show it
         var upload = await UploadAsync(member, "draft.txt", "hello"u8.ToArray(), workspace.Id);
-        (await member.GetFromJsonAsync<WorkspaceItemDto[]>($"/api/v1/workspaces/{workspace.Id}/items", Ct))!.Single().Node.Id.ShouldBe(upload.AssetId);
+        var sub = (await (await member.PostAsJsonAsync("/api/v1/nodes", new CreateNodeRequest(workspace.Id, "Drafts"), Ct)).Content.ReadFromJsonAsync<NodeDto>(Ct))!;
+        var nested = await UploadAsync(member, "nested.txt", "nested"u8.ToArray(), sub.Id);
+        (await member.GetFromJsonAsync<WorkspaceItemDto[]>($"/api/v1/workspaces/{workspace.Id}/items", Ct))!.Select(i => i.Node.Id).ShouldBe([sub.Id, upload.AssetId], ignoreOrder: true);
         var root = (await Admin.GetFromJsonAsync<NodeDto>("/api/v1/nodes/root", Ct))!.Id;
         (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{root}/children", Ct))!.Items.ShouldNotContain(n => n.Id == workspace.Id);
         (await member.GetFromJsonAsync<NodeDto[]>("/api/v1/nodes/entry-points", Ct))!.ShouldBeEmpty();
@@ -65,9 +72,26 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         var finalized = (await (await owner.PostAsync($"/api/v1/workspaces/{workspace.Id}/finalize", null, Ct)).Content.ReadFromJsonAsync<FinalizeResultDto>(Ct))!;
         finalized.Moved.ShouldBe(1);
         (await Admin.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{upload.AssetId}", Ct))!.Node.ParentId.ShouldBe(target);
+        (await Admin.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{nested.AssetId}", Ct))!.Breadcrumb.Select(c => c.Name).ShouldContain("Drafts", "subfolders move with their content");
+        (await Admin.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{sub.Id}", Ct))!.Node.ParentId.ShouldBe(target);
+        (await owner.PostAsJsonAsync("/api/v1/uploads", new StartUploadRequest("late.txt", 4, workspace.Id), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest, "finalised workspaces take no files");
         (await Admin.GetFromJsonAsync<NodeMetadataDto>($"/api/v1/nodes/{upload.AssetId}/metadata", Ct))!.Properties.Keys.ShouldContain("caption");
         (await owner.GetFromJsonAsync<WorkspaceDto>($"/api/v1/workspaces/{workspace.Id}", Ct))!.FinalizedAt.ShouldNotBeNull();
         (await owner.PostAsync($"/api/v1/workspaces/{workspace.Id}/finalize", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Content_deleted_inside_a_workspace_is_restored_into_it_never_into_the_folder_tree()
+    {
+        var (owner, _) = await UserAsync(WorkspacePermissions.Create);
+        var workspace = (await (await owner.PostAsJsonAsync("/api/v1/workspaces", new CreateWorkspaceRequest("Secret"), Ct)).Content.ReadFromJsonAsync<WorkspaceDto>(Ct))!;
+        var sub = (await (await owner.PostAsJsonAsync("/api/v1/nodes", new CreateNodeRequest(workspace.Id, "Inner"), Ct)).Content.ReadFromJsonAsync<NodeDto>(Ct))!;
+        var file = await UploadAsync(owner, "secret.txt", "secret"u8.ToArray(), sub.Id);
+
+        (await owner.DeleteAsync($"/api/v1/nodes/{file.AssetId}", Ct)).EnsureSuccessStatusCode();
+        (await owner.DeleteAsync($"/api/v1/nodes/{sub.Id}", Ct)).EnsureSuccessStatusCode();
+        (await owner.PostAsync($"/api/v1/recycle-bin/{file.AssetId}/restore", null, Ct)).EnsureSuccessStatusCode();
+        (await Admin.GetFromJsonAsync<NodeDetailDto>($"/api/v1/nodes/{file.AssetId}", Ct))!.Node.ParentId.ShouldBe(workspace.Id);
     }
 
     [Fact]

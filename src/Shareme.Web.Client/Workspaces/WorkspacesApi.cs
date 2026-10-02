@@ -25,6 +25,8 @@ public interface IWorkspacesApi
 
     Task UnlinkAsync(Guid id, Guid assetId, CancellationToken cancellationToken = default);
 
+    Task LinkAsync(Guid id, IReadOnlyList<Guid> assetIds, CancellationToken cancellationToken = default);
+
     Task<FinalizeResultDto> FinalizeAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
@@ -55,6 +57,9 @@ internal sealed class WorkspacesApi(HttpClient http) : ApiClientBase(http), IWor
 
     public async Task<IReadOnlyList<WorkspaceItemDto>> GetItemsAsync(Guid id, CancellationToken cancellationToken = default) =>
         await GetAsync<WorkspaceItemDto[]>($"{Base}/{id}/items", cancellationToken);
+
+    public Task LinkAsync(Guid id, IReadOnlyList<Guid> assetIds, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, $"{Base}/{id}/links", new LinkAssetsRequest(assetIds), cancellationToken);
 
     public Task UnlinkAsync(Guid id, Guid assetId, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"{Base}/{id}/links/{assetId}", null, cancellationToken);
 

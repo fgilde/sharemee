@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261002112406_Workspaces")]
+    [Migration("20261002114050_Workspaces")]
     partial class Workspaces
     {
         /// <inheritdoc />
@@ -3019,6 +3019,31 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasIndex("TenantId", "OwnerId");
 
                     b.ToTable("SavedSearches", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Workspaces.WorkspaceRoleBinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("WorkspaceRoleBindings", "sm");
                 });
 
             modelBuilder.Entity("Shareme.Graph.Asset", b =>

@@ -86,5 +86,5 @@ public sealed class WorkspaceTests : BunitContext
     }
 
     private WorkspaceDto Workspace(string name, string? role) =>
-        new(_id, name, WorkspaceKinds.Upload, false, null, null, false, null, null, DateTimeOffset.UtcNow, 0, role);
+        new(_id, name, WorkspaceKinds.Upload, false, null, null, false, null, null, DateTimeOffset.UtcNow, 0, role, role == WorkspaceRoles.Owner, role == WorkspaceRoles.Owner);
 }

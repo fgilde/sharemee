@@ -214,6 +214,13 @@ public interface INodePurgeListener
     Task OnPurgingAsync(IQueryable<Guid> nodeIds, CancellationToken cancellationToken);
 }
 
+public static class NodeContainers
+{
+    /// <summary>Folders and open workspaces take files; templates, collections and finalised workspaces do not.</summary>
+    public static bool AcceptsFiles(this Node node) =>
+        node is Folder || node is Workspace { IsTemplate: false, FinalizedAt: null } workspace && workspace.WorkspaceKind != "collection";
+}
+
 public static class NodePaths
 {
     public static IReadOnlyList<Guid> Ids(string path) =>

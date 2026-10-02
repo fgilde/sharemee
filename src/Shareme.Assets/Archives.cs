@@ -104,7 +104,7 @@ internal sealed class ArchiveHandlers(CoworkeeDbContext db, NodeAccess access, I
         }
 
         var targetId = command.Request.TargetFolderId ?? archive.ParentId;
-        if (targetId is null || await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == targetId && (f is Folder || f is Workspace), cancellationToken) is not { } target)
+        if (targetId is null || await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == targetId, cancellationToken) is not { } target || !target.AcceptsFiles())
         {
             return Error.NotFound("nodes.not_found", "The target folder does not exist.");
         }
@@ -223,7 +223,7 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
 
     private async Task UnpackAsync(ArchiveExtraction extraction, string path, string work, CancellationToken cancellationToken)
     {
-        if (await db.Set<Node>().SingleOrDefaultAsync(f => f.Id == extraction.TargetFolderId && (f is Folder || f is Workspace), cancellationToken) is not { } target
+        if (await db.Set<Node>().SingleOrDefaultAsync(f => f.Id == extraction.TargetFolderId, cancellationToken) is not { } target || !target.AcceptsFiles()
             || !await access.CanAsync(NodePermissions.Create, target.Id, cancellationToken))
         {
             throw new InvalidOperationException("The target folder is gone or no longer writable for you.");
