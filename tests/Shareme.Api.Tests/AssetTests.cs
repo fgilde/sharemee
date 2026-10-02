@@ -169,7 +169,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         var folder = await FolderAsync("Renders");
         using var picture = new ImageMagick.MagickImage(ImageMagick.MagickColors.OrangeRed, 2400, 1200);
         var image = await UploadAsync(Admin, "wide.png", picture.ToByteArray(ImageMagick.MagickFormat.Png), folder);
-        var pdf = await UploadAsync(Admin, "doc.pdf", [.. "%PDF-1.4 test"u8], folder);
+        var pdf = await UploadAsync(Admin, "bundle.zip", [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00], folder);
         var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
 
         var rendered = await DerivationsAsync(image.AssetId);
