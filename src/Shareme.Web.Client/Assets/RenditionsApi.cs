@@ -22,6 +22,10 @@ public interface IRenditionsApi
     Task RequestAsync(Guid assetId, string kind, CancellationToken cancellationToken = default);
 
     Task UploadAsync(Guid assetId, string kind, Stream content, CancellationToken cancellationToken = default);
+
+    Task CropAsync(Guid assetId, string kind, CropArea area, CancellationToken cancellationToken = default);
+
+    Task<CropVariantDto> CreateVariantAsync(Guid assetId, CropVariantRequest request, CancellationToken cancellationToken = default);
 }
 
 internal sealed class RenditionsApi(HttpClient http) : ApiClientBase(http), IRenditionsApi
@@ -49,6 +53,12 @@ internal sealed class RenditionsApi(HttpClient http) : ApiClientBase(http), IRen
 
     public Task UploadAsync(Guid assetId, string kind, Stream content, CancellationToken cancellationToken = default) =>
         PutStreamAsync($"api/v1/assets/{assetId}/derivations/{Uri.EscapeDataString(kind)}", content, cancellationToken);
+
+    public Task CropAsync(Guid assetId, string kind, CropArea area, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Put, $"api/v1/assets/{assetId}/derivations/{Uri.EscapeDataString(kind)}/crop", area, cancellationToken);
+
+    public Task<CropVariantDto> CreateVariantAsync(Guid assetId, CropVariantRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<CropVariantDto>(HttpMethod.Post, $"api/v1/assets/{assetId}/variants", request, cancellationToken);
 
     private async Task PutStreamAsync(string url, Stream content, CancellationToken cancellationToken)
     {

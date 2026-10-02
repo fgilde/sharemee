@@ -445,6 +445,7 @@ internal sealed class RenditionHandlers(CoworkeeDbContext db, IBlobStorage stora
         await storage.PutAsync(derivation.BlobKey, new MemoryStream(bytes), mimeType, cancellationToken);
         derivation.State = DerivationStates.Ready;
         derivation.IsManual = true;
+        derivation.Crop = null;
         derivation.MimeType = mimeType;
         derivation.Size = bytes.Length;
         derivation.Width = null;

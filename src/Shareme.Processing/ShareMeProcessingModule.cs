@@ -35,6 +35,7 @@ public sealed class ShareMeProcessingModule : CoworkeeModule, IWebModule
         var services = context.Services;
         services.AddMessagingFromAssembly(typeof(ShareMeProcessingModule).Assembly);
         services.AddScoped<RenderDerivationsJob>();
+        services.AddScoped<CropVariantJob>();
         services.AddRecurringJob<RenditionSweepJob>(RenditionSweepJob.Id, "*/10 * * * *");
         services.AddSingleton<ProcessingTools>();
         services.AddSingleton<PdfSource>();
@@ -54,9 +55,13 @@ public sealed class ShareMeProcessingModule : CoworkeeModule, IWebModule
         ResourceLimits.Time = 120;
     }
 
-    public void ConfigureApplication(WebApplication app) =>
-        app.MapPost("/api/v1/assets/{id:guid}/derivations/rerender", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new RerenderAsset(id), ct).ToHttpResult())
-            .WithTags("Assets").RequireAuthorization();
+    public void ConfigureApplication(WebApplication app)
+    {
+        var assets = app.MapGroup("/api/v1/assets").WithTags("Assets").RequireAuthorization();
+        assets.MapPost("/{id:guid}/derivations/rerender", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new RerenderAsset(id), ct).ToHttpResult());
+        assets.MapPut("/{id:guid}/derivations/{kind}/crop", (Guid id, string kind, CropArea body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CropDerivation(id, kind, body), ct).ToHttpResult());
+        assets.MapPost("/{id:guid}/variants", (Guid id, CropVariantRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateCropVariant(id, body), ct).ToHttpResult());
+    }
 }
 
 /// <summary>Renders the current version again, for example after a failure or a renderer update.</summary>
@@ -232,6 +237,10 @@ internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jo
         var pending = db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.State == DerivationStates.Pending);
         await pending.Where(d => d.PlannedAt < now.AddDays(-1))
             .ExecuteUpdateAsync(d => d.SetProperty(x => x.State, DerivationStates.Failed).SetProperty(x => x.Error, "Rendering did not finish within a day."), cancellationToken);
+        await db.Set<Asset>().IgnoreQueryFilters()
+            .Where(a => a.Status == AssetStatuses.Importing && a.CurrentVersionId == null && a.CreatedAt < now - Lost
+                && db.Set<Edge>().IgnoreQueryFilters().Any(e => e.EdgeTypeId == EdgeType.VariantId && e.ToNodeId == a.Id))
+            .ExecuteUpdateAsync(a => a.SetProperty(x => x.Status, AssetStatuses.Failed), cancellationToken);
         foreach (var versionId in await pending.Where(d => d.PlannedAt < now - Lost).Select(d => d.VersionId).Distinct().Take(500).ToListAsync(cancellationToken))
         {
             jobs.Enqueue<RenderDerivationsJob, Guid>(versionId, ShareMeProcessingModule.Queue);
@@ -440,6 +449,11 @@ internal sealed class RenderDerivationsJob(
                 try
                 {
                     using var rendition = image.Clone();
+                    if (Crops.Parse(derivation.Crop) is { } crop)
+                    {
+                        Crops.Apply(rendition, crop);
+                    }
+
                     rendition.Resize(new MagickGeometry((uint)s.Width, (uint)s.Height) { Greater = true });
                     rendition.Strip();
                     if (s.WatermarkId is { } watermarkId && await watermarks.ApplyAsync(watermarkId, rendition, cancellationToken) is { } watermarkError)

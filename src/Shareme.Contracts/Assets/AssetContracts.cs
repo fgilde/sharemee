@@ -110,6 +110,19 @@ public static class DerivationFormats
     };
 }
 
+/// <summary>A part of the picture as fractions (0 to 1) of the upright image the preview shows.</summary>
+public sealed record CropArea(double Left, double Top, double Width, double Height)
+{
+    public bool IsValid =>
+        double.IsFinite(Left) && double.IsFinite(Top) && double.IsFinite(Width) && double.IsFinite(Height)
+        && Left >= 0 && Top >= 0 && Width > 0 && Height > 0 && Left + Width <= 1.000001 && Top + Height <= 1.000001;
+}
+
+/// <summary>A cropped copy as a new asset next to the source, linked as its variant and with its metadata.</summary>
+public sealed record CropVariantRequest(CropArea Area, string? Name = null);
+
+public sealed record CropVariantDto(Guid AssetId);
+
 /// <summary>A rendition an organisation defines: rendered for every matching asset (default), on request, or uploaded by hand.</summary>
 public sealed record DerivationTypeDto(
     Guid Id, string Key, string Name, int Width, int Height, string Format, int Quality, bool IsDefault, bool IsOnDemand, bool AllowManualUpload, Guid? WatermarkId,

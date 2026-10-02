@@ -135,6 +135,9 @@ public sealed class Derivation : Entity, IMultiTenant, IHasRealtimeTopics
     /// <summary>Uploaded by hand; re-rendering keeps it.</summary>
     public bool IsManual { get; set; }
 
+    /// <summary>The cropped part as "left,top,width,height" fractions; re-rendering keeps it.</summary>
+    public string? Crop { get; set; }
+
     public DateTimeOffset PlannedAt { get; set; }
 
     public Guid TenantId { get; set; }
@@ -211,6 +214,7 @@ internal sealed class AssetModelContributor : IModelContributor
             derivation.Property(d => d.BlobKey).HasMaxLength(512);
             derivation.Property(d => d.MimeType).HasMaxLength(100);
             derivation.Property(d => d.Error).HasMaxLength(1000);
+            derivation.Property(d => d.Crop).HasMaxLength(100);
             derivation.HasIndex(d => new { d.VersionId, d.Kind }).IsUnique();
             derivation.HasIndex(d => d.AssetId);
             derivation.HasIndex(d => d.BlobKey);

@@ -1287,6 +1287,10 @@ namespace Shareme.Infrastructure.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<string>("Crop")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Error")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
