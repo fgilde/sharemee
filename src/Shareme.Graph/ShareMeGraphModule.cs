@@ -26,6 +26,10 @@ public sealed class ShareMeGraphModule : CoworkeeModule, IWebModule
         services.AddSingleton<IPermissionDefinitionContributor, GraphPermissionDefinitions>();
         services.AddScoped<IResourceHierarchy, NodeHierarchy>();
         services.AddScoped<NodeAccess>();
+        services.AddScoped<RestrictionStore>();
+        services.AddScoped<IResourceRestriction, NodeRestriction>();
+        services.AddScoped(provider => new Restrictions(
+            provider.GetRequiredService<RestrictionStore>(), provider.GetRequiredService<IPermissionChecker>(), provider.GetRequiredService<Coworkee.Core.Security.ICurrentUser>()));
         services.AddScoped<NodeMapper>();
         services.AddScoped<IRealtimeTopicAuthorizer, ChildrenTopicAuthorizer>();
     }
@@ -55,6 +59,11 @@ public sealed class ShareMeGraphModule : CoworkeeModule, IWebModule
         bin.MapGet("/", ([AsParameters] PageRequest page, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRecycleBin(page), ct).ToHttpResult());
         bin.MapPost("/{id:guid}/restore", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new RestoreNode(id), ct).ToHttpResult());
         bin.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new PurgeNode(id), ct).ToHttpResult());
+
+        var restrictions = app.MapGroup("/api/v1/restrictions").WithTags("Restrictions").RequireAuthorization();
+        restrictions.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRestrictions(), ct).ToHttpResult());
+        restrictions.MapPost("/", (RestrictionRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveRestriction(body), ct).ToHttpResult());
+        restrictions.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteRestriction(id), ct).ToHttpResult());
 
         var types = app.MapGroup("/api/v1/node-types").WithTags("Nodes").RequireAuthorization();
         types.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetNodeTypes(), ct).ToHttpResult());

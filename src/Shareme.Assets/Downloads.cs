@@ -299,6 +299,11 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
             return Error.Validation("Kind", "Choose originals or an existing rendition.");
         }
 
+        if ((await access.RestrictionsAsync(cancellationToken)).BlockedRenditions.Contains(request.Kind))
+        {
+            return Error.Forbidden("downloads.rendition_blocked", "You may not fetch this rendition.");
+        }
+
         var naming = request.NamingId is { } namingId
             ? await db.Set<FileNamingDefinition>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == namingId, cancellationToken)
             : await db.Set<FileNamingDefinition>().AsNoTracking().FirstOrDefaultAsync(n => n.IsDefault, cancellationToken);
@@ -416,6 +421,9 @@ internal static class AssetSelection
     public static async Task<IReadOnlyList<T>> WithPermissionAsync<T>(CoworkeeDbContext db, NodeAccess access, IReadOnlyList<T> assets, string permission, CancellationToken cancellationToken)
         where T : Node
     {
+        // nodes with a list value hidden from the caller drop out first
+        var restrictions = await access.RestrictionsAsync(cancellationToken);
+        assets = assets.Where(a => !restrictions.Hides(a)).ToList();
         if (assets.Count == 0 || await access.IsGlobalAsync(permission, cancellationToken))
         {
             return assets;

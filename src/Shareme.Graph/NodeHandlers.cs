@@ -140,14 +140,14 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
     {
         if (await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
         {
-            var root = await db.Set<Folder>().AsNoTracking().Where(n => n.ParentId == null).ToListAsync(cancellationToken);
+            var root = await (await access.VisibleAsync(db.Set<Folder>().AsNoTracking().Where(n => n.ParentId == null), cancellationToken)).ToListAsync(cancellationToken);
             return Result<IReadOnlyList<NodeDto>>.Success(await mapper.MapAsync(root, cancellationToken));
         }
 
         var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
         // entry points of the folder tree only; workspaces have their own list
         var tree = await db.Set<Folder>().AsNoTracking().Where(n => n.ParentId == null).Select(n => n.Path).SingleOrDefaultAsync(cancellationToken) ?? "/";
-        var nodes = await db.Set<Node>().AsNoTracking().Where(n => granted.Contains(n.Id) && n.Path.StartsWith(tree)).ToListAsync(cancellationToken);
+        var nodes = await (await access.VisibleAsync(db.Set<Node>().AsNoTracking().Where(n => granted.Contains(n.Id) && n.Path.StartsWith(tree)), cancellationToken)).ToListAsync(cancellationToken);
         var interrupted = await InterruptedAsync(nodes.SelectMany(n => n.PathIds).Distinct().ToList(), cancellationToken);
         var topMost = nodes.Where(n => n.PathIds is var ids && (ids.Count == 1 || interrupted.Contains(n.Id) || !NodeAccess.Readable(ids, granted, interrupted)[^2]))
             .OrderBy(n => n.Name).ToList();
@@ -208,6 +208,7 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
             children = children.Where(n => !hidden.Contains(n.Id));
         }
 
+        children = await access.VisibleAsync(children, cancellationToken);
         if (!string.IsNullOrWhiteSpace(query.Page.Search))
         {
             var search = query.Page.Search.Trim();

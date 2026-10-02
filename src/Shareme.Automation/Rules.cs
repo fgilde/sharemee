@@ -65,6 +65,7 @@ public sealed class ShareMeAutomationModule : CoworkeeModule, IWebModule
         jobs.MapGet("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRuleJob(id), ct).ToHttpResult());
         DataOperationsEndpoints.Map(app);
         AiEndpoints.Map(app);
+        JobsOverviewEndpoints.Map(app);
     }
 }
 

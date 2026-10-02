@@ -14,6 +14,8 @@ public interface IDataApi
     Task<IReadOnlyList<DataJobDto>> GetJobsAsync(CancellationToken cancellationToken = default);
 
     Task<DataJobDto> GetJobAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<JobsOverviewDto> GetOverviewAsync(CancellationToken cancellationToken = default);
 }
 
 internal sealed class DataApi(HttpClient http) : ApiClientBase(http), IDataApi
@@ -37,4 +39,6 @@ internal sealed class DataApi(HttpClient http) : ApiClientBase(http), IDataApi
     public async Task<IReadOnlyList<DataJobDto>> GetJobsAsync(CancellationToken cancellationToken = default) => await GetAsync<DataJobDto[]>("api/v1/data-jobs", cancellationToken);
 
     public Task<DataJobDto> GetJobAsync(Guid id, CancellationToken cancellationToken = default) => GetAsync<DataJobDto>($"api/v1/data-jobs/{id}", cancellationToken);
+
+    public Task<JobsOverviewDto> GetOverviewAsync(CancellationToken cancellationToken = default) => GetAsync<JobsOverviewDto>("api/v1/jobs", cancellationToken);
 }

@@ -260,6 +260,15 @@ internal sealed class GraphModelContributor : IModelContributor
 
     public void Apply(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Restriction>(restriction =>
+        {
+            restriction.ToTable("Restrictions", Schema);
+            restriction.Property(r => r.Kind).HasMaxLength(40);
+            restriction.Property(r => r.PropertyKey).HasMaxLength(100);
+            restriction.Property(r => r.Value).HasMaxLength(200);
+            restriction.HasIndex(r => r.RoleId);
+        });
+
         var names = new ValueComparer<Dictionary<string, string>>(
             (a, b) => a!.Count == b!.Count && !a.Except(b).Any(),
             d => d.Aggregate(0, (hash, pair) => HashCode.Combine(hash, pair.Key, pair.Value)),

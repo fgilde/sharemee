@@ -89,7 +89,9 @@ internal sealed class SearchHandlers(
     public async Task<Result<SearchResponse>> HandleAsync(SearchNodes query, CancellationToken cancellationToken)
     {
         var request = query.Request;
-        var map = new SearchFieldMap((await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key));
+        // properties hidden from the user are no fields for them: no filter, facet, sort or term match on them
+        var hidden = (await access.RestrictionsAsync(cancellationToken)).HiddenProperties;
+        var map = new SearchFieldMap((await catalog.DefinitionsAsync(cancellationToken)).Where(d => !hidden.Contains(d.Key)).ToDictionary(d => d.Key));
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
         if (request.Term is { Length: > MaxTermLength })
         {
@@ -327,7 +329,7 @@ internal sealed class SearchHandlers(
     /// <summary>The hits as they are now, in hit order: deleted ones dropped, and for non-global readers only what they may still read (the index can lag behind a revoked grant).</summary>
     private async Task<List<Node>> VisibleAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
-        var nodes = (await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).ToListAsync(cancellationToken)).ToDictionary(n => n.Id);
+        var nodes = (await (await access.VisibleAsync(db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)), cancellationToken)).ToListAsync(cancellationToken)).ToDictionary(n => n.Id);
         var ordered = ids.Where(nodes.ContainsKey).Select(id => nodes[id]).ToList();
         if (ordered.Count == 0 || await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
         {

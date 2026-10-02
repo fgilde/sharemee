@@ -309,7 +309,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
             workspaces = workspaces.Where(w => granted.Contains(w.Id));
         }
 
-        var list = await workspaces.OrderBy(w => w.Name).ToListAsync(cancellationToken);
+        var list = await (await access.VisibleAsync(workspaces, cancellationToken)).OrderBy(w => w.Name).ToListAsync(cancellationToken);
         var myRoles = await MyRolesAsync(list.Select(w => w.Id).ToList(), cancellationToken);
         var ids = list.Select(w => w.Id).ToList();
         var counts = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId != null && ids.Contains(n.ParentId.Value) && !(n is WorkTask)).GroupBy(n => n.ParentId!.Value)

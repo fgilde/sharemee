@@ -296,7 +296,8 @@ internal sealed class DataHandlers(
                 names[ancestor] = "…";
             }
         }
-        var definitions = await catalog.DefinitionsAsync(cancellationToken);
+        var hidden = (await access.RestrictionsAsync(cancellationToken)).HiddenProperties;
+        var definitions = (await catalog.DefinitionsAsync(cancellationToken)).Where(d => !hidden.Contains(d.Key)).ToList();
         var language = (await catalog.LanguagesAsync(cancellationToken)).FirstOrDefault(l => l.IsDefault)?.Code ?? MetadataCatalog.FallbackLanguage.Code;
         var presentTypes = nodes.Select(n => types[n.NodeTypeId]).ToHashSet();
 

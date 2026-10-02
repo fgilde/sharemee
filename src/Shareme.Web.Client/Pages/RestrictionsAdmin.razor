@@ -1,0 +1,118 @@
+@page "/admin/restrictions"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Coworkee.Contracts.Identity
+@using Shareme.Contracts.Graph
+@using Shareme.Web.Client.Graph
+@inject IRestrictionsApi Api
+@inject ICoworkeeApi Identity
+@inject ISnackbar Snackbar
+
+<PageTitle>Restrictions</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-2">Restrictions</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">Restrictions take something away from everyone with the role, on top of their permissions: a property (hidden or read only), files and folders with a list value (not listed, found or opened), or a rendition.</MudText>
+
+<MudSimpleTable Dense="true" Hover="true" data-testid="restrictions">
+    <thead><tr><th>Role</th><th>Restriction</th><th>Property</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var restriction in _restrictions)
+        {
+            <tr data-restriction="@restriction.Kind">
+                <td>@(_roles.FirstOrDefault(r => r.Id == restriction.RoleId)?.Name ?? restriction.RoleId.ToString())</td>
+                <td>@Label(restriction.Kind)</td>
+                <td>@restriction.PropertyKey</td>
+                <td>@restriction.Value</td>
+                <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(restriction.Id))" /></td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudText Typo="Typo.h6">New restriction</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="Guid?" @bind-Value="_roleId" Label="Role" data-testid="restriction-role">
+                @foreach (var role in _roles)
+                {
+                    <MudSelectItem T="Guid?" Value="role.Id">@role.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="string" @bind-Value="_kind" Label="Restriction">
+                @foreach (var kind in RestrictionKinds.All)
+                {
+                    <MudSelectItem Value="@kind">@Label(kind)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3"><MudTextField @bind-Value="_propertyKey" Label="Property key" Disabled="_kind == RestrictionKinds.BlockedRendition" /></MudItem>
+        <MudItem xs="6" sm="3">
+            <MudTextField @bind-Value="_value" Label="@(_kind == RestrictionKinds.BlockedRendition ? "Rendition kind" : "List value key")"
+                          Disabled="_kind is RestrictionKinds.HiddenProperty or RestrictionKinds.ReadOnlyProperty" />
+        </MudItem>
+    </MudGrid>
+    <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="AddAsync" Disabled="_roleId is null" data-testid="add-restriction">Add</MudButton>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<RestrictionDto> _restrictions = [];
+    private IReadOnlyList<RoleDto> _roles = [];
+    private Guid? _roleId;
+    private string _kind = RestrictionKinds.HiddenProperty;
+    private string? _propertyKey, _value;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        try
+        {
+            _roles = await Identity.GetRolesAsync();
+        }
+        catch (ApiException)
+        {
+        }
+    }
+
+    private static string Label(string kind) => kind switch
+    {
+        RestrictionKinds.HiddenProperty => "Hide property",
+        RestrictionKinds.ReadOnlyProperty => "Property read only",
+        RestrictionKinds.HiddenListValue => "Hide nodes with list value",
+        _ => "Block rendition",
+    };
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _restrictions = await Api.GetAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not manage restrictions." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private Task AddAsync() => RunAsync(async () =>
+    {
+        await Api.AddAsync(new RestrictionRequest(_roleId!.Value, _kind,
+            _kind == RestrictionKinds.BlockedRendition ? null : _propertyKey,
+            _kind is RestrictionKinds.HiddenProperty or RestrictionKinds.ReadOnlyProperty ? null : _value));
+        _propertyKey = _value = null;
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+}

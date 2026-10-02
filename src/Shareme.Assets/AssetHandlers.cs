@@ -71,6 +71,8 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             .ToListAsync(cancellationToken);
         var derivations = await db.Set<Derivation>().AsNoTracking().Where(d => d.VersionId == asset.CurrentVersionId).OrderBy(d => d.Kind)
             .Where(d => d.Kind != DerivationKinds.Still).ToListAsync(cancellationToken);
+        var blocked = (await access.RestrictionsAsync(cancellationToken)).BlockedRenditions;
+        derivations = derivations.Where(d => !blocked.Contains(d.Kind)).ToList();
         return new AssetDto(
             asset.Id, asset.ParentId, asset.Name, asset.AssetTypeKey, asset.Status, versions.FirstOrDefault(v => v.Id == asset.CurrentVersionId), versions,
             derivations.Select(RenditionHandlers.Map).ToList(), asset.RenditionTag, await access.CanAsync(AssetPermissions.Download, asset.Id, cancellationToken));
@@ -80,6 +82,7 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
     {
         if (await VersionAsync(query.Id, query.Version, cancellationToken) is not { } version
             || query.Kind == DerivationKinds.Still
+            || (await access.RestrictionsAsync(cancellationToken)).BlockedRenditions.Contains(query.Kind)
             || await db.Set<Derivation>().AsNoTracking().SingleOrDefaultAsync(d => d.VersionId == version.Id && d.Kind == query.Kind && d.State == DerivationStates.Ready, cancellationToken) is not { BlobKey: { } key } derivation
             || await storage.OpenReadAsync(key, cancellationToken) is not { } content)
         {

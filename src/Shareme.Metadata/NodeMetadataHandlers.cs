@@ -44,7 +44,7 @@ public static class MetadataSources
 /// <summary>Own values of a node changed; <see cref="Keys"/> are the properties whose values differ now.</summary>
 public sealed record NodeMetadataChanged(Guid NodeId, IReadOnlyList<string> Keys, string Source) : Coworkee.Domain.IDomainEvent;
 
-internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog)
+internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog, Restrictions restrictions)
     : IHandler<GetNodeMetadata, Result<NodeMetadataDto>>, IHandler<SetNodeMetadata, Result>
 {
     public async Task<Result<NodeMetadataDto>> HandleAsync(GetNodeMetadata query, CancellationToken cancellationToken)
@@ -55,7 +55,8 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
         }
 
         var typeKey = await TypeKeyAsync(node, cancellationToken);
-        var definitions = (await catalog.DefinitionsAsync(cancellationToken)).Where(d => d.AppliesTo(typeKey)).ToDictionary(d => d.Key);
+        var hidden = (await restrictions.CurrentAsync(cancellationToken)).HiddenProperties;
+        var definitions = (await catalog.DefinitionsAsync(cancellationToken)).Where(d => d.AppliesTo(typeKey) && !hidden.Contains(d.Key)).ToDictionary(d => d.Key);
         var properties = node.Metadata.Where(p => definitions.ContainsKey(p.Key) && p.Value.Count > 0)
             .ToDictionary(p => p.Key, p => new EffectivePropertyDto(p.Value, null));
         foreach (var (key, inherited) in await InheritedAsync(node, definitions.Values, cancellationToken))
@@ -78,8 +79,10 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
         var errors = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         void Fail(string key, string message) => (errors.TryGetValue(key, out var list) ? list : errors[key] = []).Add(message);
 
-        // keys without a definition are dropped, values of read only properties are kept as they are
-        var next = node.Metadata.Where(p => all.TryGetValue(p.Key, out var d) && (!command.Replace || !IsWritable(d))).ToDictionary(p => p.Key, p => p.Value);
+        // keys without a definition are dropped, values of read only properties (also those restricted for the user) are kept as they are
+        var restricted = await restrictions.CurrentAsync(cancellationToken);
+        bool Writable(PropertyDefinition d) => IsWritable(d) && !restricted.CannotChange(d.Key);
+        var next = node.Metadata.Where(p => all.TryGetValue(p.Key, out var d) && (!command.Replace || !Writable(d))).ToDictionary(p => p.Key, p => p.Value);
         var languages = (await catalog.LanguagesAsync(cancellationToken)).Select(l => l.Code).ToHashSet();
         var contexts = (await catalog.ContextsAsync(cancellationToken)).Select(c => c.Key).ToHashSet();
         var references = new Dictionary<Guid, string>();
@@ -92,7 +95,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             }
 
             var current = node.Metadata.GetValueOrDefault(key) ?? [];
-            if (!IsWritable(definition))
+            if (!Writable(definition))
             {
                 if (JsonSerializer.Serialize(values ?? []) != JsonSerializer.Serialize(current))
                 {
@@ -134,7 +137,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
         }
 
         // read only values are written by the system (P1c mirroring), so Required does not apply to them here
-        var required = all.Values.Where(d => d.AppliesTo(typeKey) && IsWritable(d) && d.Validation.Required && (command.Replace || command.Values.ContainsKey(d.Key)) && !next.ContainsKey(d.Key)).ToList();
+        var required = all.Values.Where(d => d.AppliesTo(typeKey) && Writable(d) && d.Validation.Required && (command.Replace || command.Values.ContainsKey(d.Key)) && !next.ContainsKey(d.Key)).ToList();
         if (required.Count > 0)
         {
             var inherited = await InheritedAsync(node, required, cancellationToken);
