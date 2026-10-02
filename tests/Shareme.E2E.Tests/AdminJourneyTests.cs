@@ -108,7 +108,7 @@ public sealed class AdminJourneyTests
         await Assertions.Expect(first.Locator("[data-property='client'] input").First).ToHaveValueAsync("Acme", new() { Timeout = Timeout });
 
         // upload a picture, the second browser sees it live, the processing host renders its preview
-        await first.Locator("[data-testid='upload-input'] input[type=file]").SetInputFilesAsync(new FilePayload
+        await first.Locator("input[type=file]").First.SetInputFilesAsync(new FilePayload
         {
             Name = "pixel.png",
             MimeType = "image/png",
@@ -119,7 +119,8 @@ public sealed class AdminJourneyTests
 
         await first.Locator("tr[data-node]", new() { HasTextString = "pixel.png" }).GetByRole(AriaRole.Link, new() { Name = "pixel.png" }).ClickAsync();
         await first.Locator("[data-testid='asset-status']").WaitForAsync(new() { Timeout = Timeout });
-        await first.Locator("[data-testid='preview'] img").WaitForAsync(new() { Timeout = 60_000 });
+        // MudExFileDisplay shows images in its zoomable canvas viewer
+        await first.Locator("[data-testid='preview'] .MudExImageView-container canvas").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
     }
 
     private static async Task<IPage> NewPageAsync(IBrowser browser)
