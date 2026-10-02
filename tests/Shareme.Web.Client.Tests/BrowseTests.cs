@@ -35,6 +35,8 @@ public sealed class BrowseTests : BunitContext
         metadata.GetContextsAsync(default).ReturnsForAnyArgs([]);
         metadata.GetSetsAsync(default, default).ReturnsForAnyArgs([]);
         Services.AddSingleton(metadata);
+        Services.AddScoped<Shareme.Web.Client.Assets.UploadQueue>();
+        _api.GetEntryPointsAsync(Arg.Any<CancellationToken>()).Returns([]);
         Services.AddSingleton(Substitute.For<ICoworkeeApi>());
         Services.AddSingleton(new CoworkeeClientOptions());
         Services.AddSingleton<IRealtimeConnection>(Substitute.For<IRealtimeConnection>());
@@ -94,7 +96,8 @@ public sealed class BrowseTests : BunitContext
     public async Task The_folder_picker_can_go_up_and_hides_the_moved_node()
     {
         _api.GetNodeAsync(_root, Arg.Any<CancellationToken>()).Returns(new NodeDetailDto(Node(_root, "Root", null), [new(_root, "Root")], false));
-        _api.GetChildrenAsync(_root, Arg.Any<PageRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _api.GetFoldersAsync(_folder, Arg.Any<PageRequest>(), Arg.Any<CancellationToken>()).Returns(new PagedResult<NodeDto>([], 0, 1, 500));
+        _api.GetFoldersAsync(_root, Arg.Any<PageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PagedResult<NodeDto>([Node(_folder, "Marketing", _root), Node(_child, "Campaigns", _root)], 2, 1, 200));
         var picker = Render<FolderPicker>(p => p.Add(f => f.StartId, _folder).Add(f => f.ExcludeId, _child));
 

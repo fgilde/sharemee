@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Shareme.Graph\Shareme.Graph.csproj" />
     <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />
     <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
+    <ProjectReference Include="..\Shareme.Processing\Shareme.Processing.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <CoworkeePackage Include="Coworkee.Infrastructure" />
     <CoworkeePackage Include="Coworkee.Identity" />

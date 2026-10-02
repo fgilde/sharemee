@@ -62,6 +62,11 @@ public sealed class ApiFactory(PostgresFixture postgres) : PostgresWebApplicatio
         base.ConfigureWebHost(builder);
         builder.UseSetting("Coworkee:SetupToken", ApiFixture.SetupToken);
         builder.UseSetting("Coworkee:Jobs:PollingInterval", "00:00:01");
+
+        // the api also serves the processing queue in tests, so renditions appear without the processing host
+        builder.UseSetting("Coworkee:Jobs:Queues:0", "default");
+        builder.UseSetting("Coworkee:Jobs:Queues:1", "mail");
+        builder.UseSetting("Coworkee:Jobs:Queues:2", "processing");
         builder.UseSetting("Coworkee:Storage:FileSystem:Root", Path.Combine(Path.GetTempPath(), "shareme-api-tests-blobs"));
         builder.ConfigureTestServices(services => services.AddTestAuthentication());
     }

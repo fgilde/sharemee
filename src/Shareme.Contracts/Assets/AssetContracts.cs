@@ -42,6 +42,25 @@ public sealed record UploadResultDto(Guid AssetId, Guid VersionId, int VersionNu
 
 public sealed record AssetVersionDto(Guid Id, int Number, string FileName, long Size, string Sha256, string MimeType, string? Extension, DateTimeOffset CreatedAt, Guid? CreatedBy);
 
-public sealed record AssetDto(Guid Id, Guid? FolderId, string Name, string AssetType, string Status, AssetVersionDto? CurrentVersion, IReadOnlyList<AssetVersionDto> Versions);
+public static class DerivationKinds
+{
+    public const string Thumbnail = "thumbnail";
+    public const string Preview = "preview";
+
+    public static readonly IReadOnlyList<string> All = [Thumbnail, Preview];
+}
+
+public static class DerivationStates
+{
+    public const string Pending = "pending";
+    public const string Ready = "ready";
+    public const string Failed = "failed";
+    public const string NotSupported = "notsupported";
+}
+
+public sealed record DerivationDto(string Kind, string State, int? Width, int? Height);
+
+public sealed record AssetDto(
+    Guid Id, Guid? FolderId, string Name, string AssetType, string Status, AssetVersionDto? CurrentVersion, IReadOnlyList<AssetVersionDto> Versions, IReadOnlyList<DerivationDto> Derivations, string? RenditionTag = null);
 
 public sealed record DownloadLinkDto(string Url, DateTimeOffset ExpiresAt);

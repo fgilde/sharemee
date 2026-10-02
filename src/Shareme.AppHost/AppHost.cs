@@ -6,6 +6,9 @@ var migrations = builder.AddProject<Projects.Shareme_Migrations>("shareme-migrat
     .WithReference(infrastructure.Database)
     .WaitFor(infrastructure.Database);
 
+// api and processing share the stored files
+var blobRoot = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", ".data", "blobs"));
+
 var auth = builder.AddProject<Projects.Shareme_Auth>("shareme-auth")
     .WithReference(infrastructure.Database)
     .WaitForCompletion(migrations)
@@ -22,8 +25,17 @@ var api = builder.AddProject<Projects.Shareme_Api>("shareme-api")
     .WaitFor(infrastructure.Mail)
     .WithReference(infrastructure.Redis)
     .WaitFor(infrastructure.Redis)
+    .WithEnvironment("Coworkee__Storage__FileSystem__Root", blobRoot)
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints();
+
+builder.AddProject<Projects.Shareme_Processing_Host>("shareme-processing")
+    .WithReference(infrastructure.Database)
+    .WaitForCompletion(migrations)
+    .WithReference(infrastructure.Redis)
+    .WaitFor(infrastructure.Redis)
+    .WithEnvironment("Coworkee__Storage__FileSystem__Root", blobRoot)
+    .WithHttpHealthCheck("/health");
 
 if (builder.Configuration["Shareme:SetupToken"] is { Length: > 0 } setupToken)
 {

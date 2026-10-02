@@ -1270,6 +1270,69 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("AssetVersions", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Assets.Derivation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BlobKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("MimeType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("PlannedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("BlobKey");
+
+                    b.HasIndex("State", "PlannedAt");
+
+                    b.HasIndex("VersionId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("Derivations", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Assets.FileType", b =>
                 {
                     b.Property<string>("Extension")
@@ -2497,6 +2560,10 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<Guid?>("CurrentVersionId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("RenditionTag")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -2689,6 +2756,15 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasOne("Shareme.Graph.Node", null)
                         .WithMany()
                         .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Assets.Derivation", b =>
+                {
+                    b.HasOne("Shareme.Assets.AssetVersion", null)
+                        .WithMany()
+                        .HasForeignKey("VersionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

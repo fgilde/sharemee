@@ -2,6 +2,17 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P1d (processing, asset UI)
+
+- [ ] No ImageMagick security policy; coders are pinned from the checked MIME type, but a policy disabling MSVG/MVG/PS/PDF/URL/TEXT coders is defence in depth.
+- [ ] `[Realtime]` on `Derivation` adds type/entity publishes nobody needs (the `children:{assetId}` extra topic is what the UI uses).
+- [ ] Shared blob storage between api and processing host is assumed, never probed at startup (FileSystem root defaults per process).
+- [ ] Uploads cannot be cancelled or removed from the queue; the queue list is app wide while the panel text speaks of this folder.
+- [ ] AssetDetail reloads several times per upload (derivation created/updated events); debounce.
+- [ ] Admin pages (metadata, node types) are only `[Authorize]`; non-admins see raw error codes.
+- [ ] The processing module (Magick.NET) is loaded by every host through `ShareMeDatabaseModule`; only the processing host and the test fixture need it.
+- [ ] Renditions of superseded versions are rendered and stored but not exposed; share links cannot serve renditions.
+
 ## From P1c (storage, assets)
 
 - [ ] Upload assembly goes through a temp file (`Shareme:Uploads:TempRoot`), so it needs free disk of the file size; stream into S3 multipart / Azure blocks while hashing instead.

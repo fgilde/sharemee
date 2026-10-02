@@ -36,6 +36,6 @@
     {
         _current = await Api.GetNodeAsync(id);
         _crumbs = _current.Breadcrumb.Select(c => new BreadcrumbItem(c.Name, c.Id.ToString())).ToList();
-        _folders = (await Api.GetChildrenAsync(id, new PageRequest(1, 200))).Items.Where(n => n.Semantic == "folder" && n.Id != ExcludeId).ToList();
+        _folders = (await Api.GetFoldersAsync(id, new PageRequest(1, 500))).Items.Where(n => n.Id != ExcludeId).ToList();
     }
 }

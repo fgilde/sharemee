@@ -360,6 +360,7 @@ internal sealed class ProcessUploadJob(CoworkeeDbContext db, IBlobStorage storag
         };
         db.Add(version);
         asset.CurrentVersionId = version.Id;
+        asset.RenditionTag = null;
         asset.AssetTypeKey = fileType?.AssetTypeKey ?? AssetTypeKeys.Other;
 
         // duplicates follow the current content; links the uploader cannot see stay out of the answer

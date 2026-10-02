@@ -47,19 +47,36 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             var result = await d.SendAsync(new DownloadAsset(id, version), ct);
             return result.IsSuccess ? File(response, result.Value) : result.Error!.ToProblem();
         });
+        assets.MapGet("/{id:guid}/derivations/{kind}", async (Guid id, string kind, int? version, string? v, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        {
+            var result = await d.SendAsync(new GetDerivation(id, kind, version), ct);
+            if (!result.IsSuccess)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            // a tagged url names one rendition forever, so browsers may keep it
+            var file = File(response, result.Value, inline: true);
+            if (v is { Length: > 0 })
+            {
+                response.Headers.CacheControl = "private, max-age=31536000, immutable";
+            }
+
+            return file;
+        });
         assets.MapPost("/{id:guid}/download-link", (Guid id, int? version, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateDownloadLink(id, version), ct).ToHttpResult());
 
         app.MapGet("/api/v1/blobs/{token}", async (string token, HttpResponse response, BlobLinkResolver resolver, CancellationToken ct) =>
             await resolver.ResolveAsync(token, ct) is { } download ? File(response, download) : Results.NotFound()).WithTags("Assets").AllowAnonymous();
     }
 
-    /// <summary>Always an attachment, never sniffed or cached, with ranges so broken downloads resume.</summary>
-    private static IResult File(HttpResponse response, BlobDownload download)
+    /// <summary>Originals are attachments that are never cached; renditions are our own WebP files and may be shown inline and cached briefly. Never sniffed, ranges supported.</summary>
+    private static IResult File(HttpResponse response, BlobDownload download, bool inline = false)
     {
         response.Headers.XContentTypeOptions = "nosniff";
-        response.Headers.CacheControl = "private, no-store";
+        response.Headers.CacheControl = inline ? "private, max-age=300" : "private, no-store";
         return Results.File(
-            download.Content, download.MimeType, download.FileName, download.LastModified,
+            download.Content, download.MimeType, inline ? null : download.FileName, download.LastModified,
             download.Sha256 is { } sha ? new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{sha}\"") : null,
             enableRangeProcessing: true);
     }

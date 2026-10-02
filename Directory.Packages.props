@@ -48,6 +48,7 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="bunit" Version="2.11.3" />
+    <PackageVersion Include="Magick.NET-Q8-AnyCPU" Version="14.17.2" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
   </ItemGroup>
 </Project>

@@ -36,8 +36,8 @@ public sealed class ShareMeGraphModule : CoworkeeModule, IWebModule
         nodes.MapGet("/root", (IDispatcher d, CancellationToken ct) => d.SendAsync(new EnsureRoot(), ct).ToHttpResult());
         nodes.MapGet("/entry-points", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetEntryPoints(), ct).ToHttpResult());
         nodes.MapGet("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetNode(id), ct).ToHttpResult());
-        nodes.MapGet("/{id:guid}/children", (Guid id, [AsParameters] PageRequest page, string? sort, IDispatcher d, CancellationToken ct) =>
-            d.SendAsync(new GetChildren(id, page, sort), ct).ToHttpResult());
+        nodes.MapGet("/{id:guid}/children", (Guid id, [AsParameters] PageRequest page, string? sort, string? kind, IDispatcher d, CancellationToken ct) =>
+            d.SendAsync(new GetChildren(id, page, sort, kind), ct).ToHttpResult());
         nodes.MapPost("/", (CreateNodeRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateNode(body), ct).ToHttpResult());
         nodes.MapPut("/{id:guid}", (Guid id, UpdateNodeRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new UpdateNode(id, body), ct).ToHttpResult());
         nodes.MapPost("/{id:guid}/move", (Guid id, MoveNodeRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new MoveNode(id, body.TargetParentId), ct).ToHttpResult());
