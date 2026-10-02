@@ -1255,6 +1255,10 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<long>("Size")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("TechnicalMetadata")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
@@ -1453,6 +1457,22 @@ namespace Shareme.Infrastructure.Migrations
                         },
                         new
                         {
+                            Extension = "eps",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"25215053\",\"C5D0D3C6\"]",
+                            MimeType = "application/postscript"
+                        },
+                        new
+                        {
+                            Extension = "ai",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"25504446\",\"25215053\"]",
+                            MimeType = "application/pdf"
+                        },
+                        new
+                        {
                             Extension = "mp4",
                             AssetTypeKey = "video",
                             ForbiddenForUpload = false,
@@ -1586,6 +1606,38 @@ namespace Shareme.Infrastructure.Migrations
                             ForbiddenForUpload = false,
                             MagicNumbers = "[\"D0CF11E0A1B11AE1\"]",
                             MimeType = "application/vnd.ms-powerpoint"
+                        },
+                        new
+                        {
+                            Extension = "odt",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/vnd.oasis.opendocument.text"
+                        },
+                        new
+                        {
+                            Extension = "ods",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/vnd.oasis.opendocument.spreadsheet"
+                        },
+                        new
+                        {
+                            Extension = "odp",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/vnd.oasis.opendocument.presentation"
+                        },
+                        new
+                        {
+                            Extension = "rtf",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"7B5C727466\"]",
+                            MimeType = "application/rtf"
                         },
                         new
                         {

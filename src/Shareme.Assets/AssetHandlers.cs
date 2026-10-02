@@ -66,7 +66,7 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
         }
 
         var versions = await db.Set<AssetVersion>().AsNoTracking().Where(v => v.AssetId == asset.Id).OrderByDescending(v => v.Number)
-            .Select(v => new AssetVersionDto(v.Id, v.Number, v.FileName, v.Size, v.Sha256, v.MimeType, v.Extension, v.CreatedAt, v.CreatedBy))
+            .Select(v => new AssetVersionDto(v.Id, v.Number, v.FileName, v.Size, v.Sha256, v.MimeType, v.Extension, v.CreatedAt, v.CreatedBy, v.TechnicalMetadata))
             .ToListAsync(cancellationToken);
         var derivations = await db.Set<Derivation>().AsNoTracking().Where(d => d.VersionId == asset.CurrentVersionId).OrderBy(d => d.Kind)
             .Select(d => new DerivationDto(d.Kind, d.State, d.Width, d.Height)).ToListAsync(cancellationToken);
@@ -82,7 +82,7 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             return NotFound;
         }
 
-        var name = Path.GetFileNameWithoutExtension(version.FileName) + "-" + derivation.Kind + ".webp";
+        var name = Path.GetFileNameWithoutExtension(version.FileName) + "-" + derivation.Kind + (derivation.MimeType switch { "video/mp4" => ".mp4", "audio/mpeg" => ".mp3", _ => ".webp" });
         return new BlobDownload(content, name, derivation.MimeType ?? "image/webp", version.Sha256 + "-" + derivation.Kind, version.CreatedAt);
     }
 
