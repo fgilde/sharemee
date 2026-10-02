@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <InternalsVisibleTo Include="Shareme.Metadata" />
+    <InternalsVisibleTo Include="Shareme.Assets" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Contracts\Shareme.Contracts.csproj" />
     <CoworkeePackage Include="Coworkee.Identity" />
