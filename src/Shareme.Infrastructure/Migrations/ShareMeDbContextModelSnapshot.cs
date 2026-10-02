@@ -2351,6 +2351,113 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("Watermarks", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Automation.Rule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actions")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Conditions")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.PrimitiveCollection<string>("NodeTypeKeys")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("SortIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Rules", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Automation.RuleJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Entries")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Executed")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Failed")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("FolderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Matched")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<string>("NodeIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.PrimitiveCollection<string>("RuleIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Skipped")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("RuleJobs", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Graph.Edge", b =>
                 {
                     b.Property<Guid>("Id")

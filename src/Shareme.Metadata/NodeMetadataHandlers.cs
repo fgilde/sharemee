@@ -22,8 +22,8 @@ public sealed record GetNodeMetadata(Guid Id) : IQuery<Result<NodeMetadataDto>>,
     public string RequiredPermission => NodePermissions.Read;
 }
 
-/// <summary>Replace sets the whole own value set; otherwise only the given keys change and a null list removes a key.</summary>
-public sealed record SetNodeMetadata(Guid Id, IReadOnlyDictionary<string, List<MetadataValue>?> Values, bool Replace) : ICommand<Result>, IResourceRequest
+/// <summary>Replace sets the whole own value set; otherwise only the given keys change and a null list removes a key. <paramref name="Source"/> tells listeners who changed it (rules do not react to their own writes).</summary>
+public sealed record SetNodeMetadata(Guid Id, IReadOnlyDictionary<string, List<MetadataValue>?> Values, bool Replace, string Source = MetadataSources.User) : ICommand<Result>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;
 
@@ -31,6 +31,16 @@ public sealed record SetNodeMetadata(Guid Id, IReadOnlyDictionary<string, List<M
 
     public string RequiredPermission => NodePermissions.Update;
 }
+
+public static class MetadataSources
+{
+    public const string User = "user";
+    public const string Rule = "rule";
+    public const string Import = "import";
+}
+
+/// <summary>Own values of a node changed; <see cref="Keys"/> are the properties whose values differ now.</summary>
+public sealed record NodeMetadataChanged(Guid NodeId, IReadOnlyList<string> Keys, string Source) : Coworkee.Domain.IDomainEvent;
 
 internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog)
     : IHandler<GetNodeMetadata, Result<NodeMetadataDto>>, IHandler<SetNodeMetadata, Result>
@@ -148,8 +158,11 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             return Result.Success();
         }
 
+        var changed = next.Keys.Union(node.Metadata.Keys)
+            .Where(k => JsonSerializer.Serialize(next.GetValueOrDefault(k)) != JsonSerializer.Serialize(node.Metadata.GetValueOrDefault(k))).ToList();
         node.Metadata = next;
         node.MarkChanged("metadata changed");
+        node.Publish(new NodeMetadataChanged(node.Id, changed, command.Source));
         return Result.Success();
     }
 

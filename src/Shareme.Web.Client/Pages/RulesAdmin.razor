@@ -1,0 +1,281 @@
+@page "/admin/rules"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Automation
+@using Shareme.Web.Client.Metadata
+@inject IRulesApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Rules</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Rules</MudText>
+
+<MudSimpleTable Dense="true" Hover="true" data-testid="rules">
+    <thead><tr><th>Name</th><th>Active</th><th>Node types</th><th>Conditions</th><th>Writes</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var rule in _rules)
+        {
+            <tr data-rule="@rule.Name">
+                <td>@rule.Name</td>
+                <td>@(rule.IsActive ? "yes" : "no")</td>
+                <td>@(rule.NodeTypeKeys.Count == 0 ? "all" : string.Join(", ", rule.NodeTypeKeys))</td>
+                <td>@string.Join("; ", rule.Conditions.Select(c => $"{c.Kind}: {c.PropertyKey} {c.Operator} {c.Value}".Trim()))</td>
+                <td>@string.Join(", ", rule.Actions.Select(a => a.PropertyKey).Distinct())</td>
+                <td style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(rule)" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(rule.Id))" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="rule-editor">
+    <MudText Typo="Typo.h6">@(_ruleId is null ? "New rule" : "Edit rule")</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_name" Label="Name" data-testid="rule-name" /></MudItem>
+        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_nodeTypes" Label="Node types (comma separated, empty for all)" /></MudItem>
+        <MudItem xs="6" sm="1"><MudNumericField @bind-Value="_sortIndex" Label="Order" /></MudItem>
+        <MudItem xs="6" sm="1"><MudCheckBox @bind-Value="_isActive" Label="Active" /></MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle1" Class="mt-4">Conditions</MudText>
+    <MudText Typo="Typo.body2">Every filter must hold. Then the "then" actions run when at least one trigger holds (or none is defined), else the "else" actions.</MudText>
+    @foreach (var condition in _conditions)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" data-testid="condition">
+            <MudSelect T="string" @bind-Value="condition.Kind" Label="Kind" Style="max-width:140px">
+                <MudSelectItem Value="@RuleConditionKinds.Filter">filter</MudSelectItem>
+                <MudSelectItem Value="@RuleConditionKinds.Trigger">trigger</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="condition.PropertyKey" Label="Property key" Disabled="!NeedsProperty(condition.Operator)" />
+            <MudSelect T="string" @bind-Value="condition.Operator" Label="Operator" Style="max-width:200px">
+                @foreach (var op in RuleOperators.All.Order())
+                {
+                    <MudSelectItem Value="@op">@op</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="condition.Value" Label="@(condition.Operator == RuleOperators.HasRelation ? "Relation type key" : "Value")"
+                          Disabled="!RuleOperators.WithValue.Contains(condition.Operator) && condition.Operator != RuleOperators.HasRelation" />
+            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove condition" OnClick="() => _conditions.Remove(condition)" />
+        </MudStack>
+    }
+    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Add" OnClick="() => _conditions.Add(new())" data-testid="add-condition">Condition</MudButton>
+
+    <MudText Typo="Typo.subtitle1" Class="mt-4">Actions</MudText>
+    <MudText Typo="Typo.body2">Templates: text with {var.year} {var.month} {var.day} {var.hour} {var.minute} {var.second} {var.date} {var.name} {fnc.find(key)} {fnc.findInAscendants(key)} {fnc.regexExtract(key, pattern)}. An empty result clears the property.</MudText>
+    @foreach (var action in _actions)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" data-testid="action">
+            <MudSelect T="bool" @bind-Value="action.OnMatch" Label="Branch" Style="max-width:120px">
+                <MudSelectItem Value="true">then</MudSelectItem>
+                <MudSelectItem Value="false">else</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="action.PropertyKey" Label="Property key" Style="max-width:220px" />
+            <MudTextField @bind-Value="action.Template" Label="Template" />
+            <MudCheckBox @bind-Value="action.OnlyIfEmpty" Label="only if empty" />
+            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove action" OnClick="() => _actions.Remove(action)" />
+        </MudStack>
+    }
+    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Add" OnClick="() => _actions.Add(new())" data-testid="add-action">Action</MudButton>
+
+    <MudStack Row="true" Class="mt-4">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-rule">Save</MudButton>
+        @if (_ruleId is not null)
+        {
+            <MudButton OnClick="Reset">Cancel</MudButton>
+        }
+    </MudStack>
+
+    @if (_ruleId is { } ruleId)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-4">
+            <MudTextField @bind-Value="_testNode" Label="Try on node (id)" data-testid="test-node" />
+            <MudButton Variant="Variant.Outlined" OnClick="() => TestAsync(ruleId)" data-testid="test-rule">Dry run</MudButton>
+        </MudStack>
+        @if (_test is { } test)
+        {
+            <MudAlert Severity="@(test.FiltersMatched ? Severity.Info : Severity.Warning)" Class="mt-2" data-testid="test-result">
+                @(test.FiltersMatched ? test.TriggersMatched ? "Filters and triggers hold: the \"then\" actions run." : "Filters hold, no trigger: the \"else\" actions run." : "The filters do not hold: nothing runs.")
+                @foreach (var (key, value) in test.Values)
+                {
+                    <div><b>@key</b> = @value</div>
+                }
+                @foreach (var problem in test.Problems)
+                {
+                    <div>@problem</div>
+                }
+            </MudAlert>
+        }
+    }
+</MudPaper>
+
+<MudText Typo="Typo.h6" Class="mt-6">Run rules on existing content</MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center">
+    <MudTextField @bind-Value="_jobFolder" Label="Folder (id), everything below it" data-testid="job-folder" />
+    <MudButton Variant="Variant.Outlined" OnClick="StartJobAsync" data-testid="start-job">Run active rules</MudButton>
+</MudStack>
+<MudSimpleTable Dense="true" Hover="true" Class="mt-2" data-testid="jobs">
+    <thead><tr><th>Started</th><th>State</th><th>Nodes</th><th>Matched</th><th>Written</th><th>Skipped</th><th>Failed</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var job in _jobs)
+        {
+            <tr data-job="@job.Id">
+                <td>@job.CreatedAt.ToLocalTime().ToString("g")</td>
+                <td>@job.State @job.Error</td>
+                <td>@job.Total</td>
+                <td>@job.Matched</td>
+                <td>@job.Executed</td>
+                <td>@job.Skipped</td>
+                <td>@job.Failed</td>
+                <td style="text-align:right"><MudButton Size="Size.Small" OnClick="() => ReportAsync(job.Id)">Report</MudButton></td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+@if (_report is { } report)
+{
+    <MudPaper Outlined="true" Class="pa-2 mt-2" data-testid="job-report">
+        @foreach (var entry in report.Entries)
+        {
+            <div>@entry.NodeId: @entry.Result @entry.Message</div>
+        }
+    </MudPaper>
+}
+
+@code {
+    private IReadOnlyList<RuleDto> _rules = [];
+    private IReadOnlyList<RuleJobDto> _jobs = [];
+    private RuleJobDto? _report;
+    private RuleTestDto? _test;
+    private Guid? _ruleId;
+    private string? _name, _nodeTypes, _testNode, _jobFolder;
+    private int _sortIndex;
+    private bool _isActive = true;
+    private List<ConditionForm> _conditions = [];
+    private List<ActionForm> _actions = [new()];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _rules = await Api.GetAsync();
+            _jobs = await Api.GetJobsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not manage rules." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private static bool NeedsProperty(string op) => RuleOperators.WithValue.Contains(op) || RuleOperators.WithProperty.Contains(op);
+
+    private void Edit(RuleDto rule)
+    {
+        _ruleId = rule.Id;
+        _name = rule.Name;
+        _nodeTypes = string.Join(", ", rule.NodeTypeKeys);
+        _sortIndex = rule.SortIndex;
+        _isActive = rule.IsActive;
+        _conditions = rule.Conditions.Select(c => new ConditionForm { Kind = c.Kind, Operator = c.Operator, PropertyKey = c.PropertyKey, Value = c.Value }).ToList();
+        _actions = rule.Actions.Select(a => new ActionForm { PropertyKey = a.PropertyKey, Template = a.Template, OnMatch = a.OnMatch, OnlyIfEmpty = a.OnlyIfEmpty }).ToList();
+        _test = null;
+    }
+
+    private void Reset()
+    {
+        _ruleId = null;
+        _name = _nodeTypes = null;
+        _sortIndex = 0;
+        _isActive = true;
+        _conditions = [];
+        _actions = [new()];
+        _test = null;
+    }
+
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var types = (_nodeTypes ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        await Api.SaveAsync(_ruleId, new RuleRequest(
+            _name ?? string.Empty,
+            _conditions.Select(c => new RuleCondition(c.Kind, c.Operator, NeedsProperty(c.Operator) ? c.PropertyKey : null, c.Value)).ToList(),
+            _actions.Select(a => new RuleAction(a.PropertyKey ?? string.Empty, a.Template ?? string.Empty, a.OnMatch, a.OnlyIfEmpty)).ToList(),
+            types, _isActive, _sortIndex));
+        Reset();
+    });
+
+    private async Task TestAsync(Guid ruleId)
+    {
+        if (!Guid.TryParse(_testNode, out var nodeId))
+        {
+            Snackbar.Add("Enter the id of a node.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            _test = await Api.TestAsync(ruleId, nodeId);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private Task StartJobAsync()
+    {
+        if (!Guid.TryParse(_jobFolder, out var folderId))
+        {
+            Snackbar.Add("Enter the id of a folder.", Severity.Warning);
+            return Task.CompletedTask;
+        }
+
+        return RunAsync(async () =>
+        {
+            await Api.StartJobAsync(new RuleJobRequest(FolderId: folderId));
+            Snackbar.Add("The run started.", Severity.Success);
+        });
+    }
+
+    private async Task ReportAsync(Guid id)
+    {
+        try
+        {
+            _report = await Api.GetJobAsync(id);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private sealed class ConditionForm
+    {
+        public string Kind { get; set; } = RuleConditionKinds.Filter;
+        public string Operator { get; set; } = RuleOperators.EqualTo;
+        public string? PropertyKey { get; set; }
+        public string? Value { get; set; }
+    }
+
+    private sealed class ActionForm
+    {
+        public string? PropertyKey { get; set; }
+        public string? Template { get; set; }
+        public bool OnMatch { get; set; } = true;
+        public bool OnlyIfEmpty { get; set; }
+    }
+}
