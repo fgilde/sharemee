@@ -16,6 +16,8 @@ public sealed class RenditionsAdminTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
+        Services.AddSingleton(NSubstitute.Substitute.For<IDownloadsApi>());
         Services.AddSingleton(_api);
         AddAuthorization().SetAuthorized("Ada");
         var watermark = new WatermarkDto(Guid.CreateVersion7(), "Logo", true, "southeast", 50, 25, "confidential", null);

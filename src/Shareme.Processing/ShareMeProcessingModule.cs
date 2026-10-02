@@ -60,6 +60,18 @@ public sealed class ShareMeProcessingModule : CoworkeeModule, IWebModule
         var assets = app.MapGroup("/api/v1/assets").WithTags("Assets").RequireAuthorization();
         assets.MapPost("/{id:guid}/derivations/rerender", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new RerenderAsset(id), ct).ToHttpResult());
         assets.MapPut("/{id:guid}/derivations/{kind}/crop", (Guid id, string kind, CropArea body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CropDerivation(id, kind, body), ct).ToHttpResult());
+        app.MapPost("/api/v1/downloads/contact-sheet", async (ContactSheetRequest body, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        {
+            var result = await d.SendAsync(new CreateContactSheet(body), ct);
+            if (!result.IsSuccess)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            response.Headers.XContentTypeOptions = "nosniff";
+            response.Headers.CacheControl = "private, no-store";
+            return Results.File(result.Value.Content, result.Value.MimeType, result.Value.FileName);
+        }).WithTags("Downloads").RequireAuthorization();
         assets.MapPost("/{id:guid}/variants", (Guid id, CropVariantRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateCropVariant(id, body), ct).ToHttpResult());
     }
 }
