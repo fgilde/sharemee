@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Shareme.Api.Tests" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
     <PackageReference Include="Magick.NET-Q8-AnyCPU" />

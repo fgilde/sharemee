@@ -28,6 +28,7 @@ public static class AssetTypeKeys
     public const string Audio = "audio";
     public const string Document = "document";
     public const string Archive = "archive";
+    public const string Model = "model";
     public const string Other = "other";
 }
 
@@ -52,17 +53,22 @@ public static class DerivationKinds
     /// <summary>A playable copy of video (MP4) or audio (MP3).</summary>
     public const string Media = "media";
 
+    /// <summary>A short looping GIF of a video's first seconds, for galleries.</summary>
+    public const string Animated = "animated";
+
     /// <summary>Internal: the full size still of non image files (video frame, page), kept so further renditions skip the heavy tool.</summary>
     public const string Still = "still";
 
     /// <summary>Kinds owned by the system; custom derivation types use other keys.</summary>
-    public static readonly IReadOnlySet<string> System = new HashSet<string> { Thumbnail, Preview, Media, Still };
+    public static readonly IReadOnlySet<string> System = new HashSet<string> { Thumbnail, Preview, Media, Animated, Still };
 
     public static readonly IReadOnlyList<string> All = [Thumbnail, Preview, Media];
 
     /// <summary>The renditions planned for a file of this type.</summary>
     public static IReadOnlyList<string> For(string mimeType) =>
-        mimeType.StartsWith("video/", StringComparison.Ordinal) || mimeType.StartsWith("audio/", StringComparison.Ordinal) ? All : [Thumbnail, Preview];
+        mimeType.StartsWith("video/", StringComparison.Ordinal) ? [Thumbnail, Preview, Media, Animated]
+        : mimeType.StartsWith("audio/", StringComparison.Ordinal) ? All
+        : [Thumbnail, Preview];
 }
 
 public static class DerivationStates
@@ -87,6 +93,9 @@ public static class InlineTypes
     {
         "application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "video/mp4", "video/webm", "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/mp4",
         "text/plain", "text/csv",
+
+        // meshes, shown by the MudEx 3D viewer
+        "model/gltf-binary", "model/stl", "model/obj", "model/3mf", "model/ply",
     };
 }
 
@@ -106,6 +115,7 @@ public static class DerivationFormats
         "image/png" => ".png",
         "video/mp4" => ".mp4",
         "audio/mpeg" => ".mp3",
+        "image/gif" => ".gif",
         _ => ".webp",
     };
 }

@@ -250,8 +250,8 @@ else
         _cropping = false;
         await ReloadAsync();
 
-        // a page or text shows best as itself; images and media start with their renditions
-        _showOriginal = CanView && _asset?.CurrentVersion?.MimeType is "application/pdf" or "text/plain" or "text/csv";
+        // a page, text or mesh shows best as itself; images and media start with their renditions
+        _showOriginal = CanView && (_asset?.CurrentVersion?.MimeType is "application/pdf" or "text/plain" or "text/csv" || _asset?.AssetType == AssetTypeKeys.Model);
         try
         {
             _types = await Renditions.GetTypesAsync();
