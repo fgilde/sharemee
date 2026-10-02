@@ -106,6 +106,20 @@ public sealed class AdminJourneyTests
         await first.GetByText("Metadata saved.").WaitForAsync(new() { Timeout = Timeout });
         await first.ReloadAsync();
         await Assertions.Expect(first.Locator("[data-property='client'] input").First).ToHaveValueAsync("Acme", new() { Timeout = Timeout });
+
+        // upload a picture, the second browser sees it live, the processing host renders its preview
+        await first.Locator("[data-testid='upload-input'] input[type=file]").SetInputFilesAsync(new FilePayload
+        {
+            Name = "pixel.png",
+            MimeType = "image/png",
+            Buffer = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="),
+        });
+        await first.Locator("[data-upload-state='done']").WaitForAsync(new() { Timeout = Timeout });
+        await second.Locator("tr[data-node]", new() { HasTextString = "pixel.png" }).WaitForAsync(new() { Timeout = Timeout });
+
+        await first.Locator("tr[data-node]", new() { HasTextString = "pixel.png" }).GetByRole(AriaRole.Link, new() { Name = "pixel.png" }).ClickAsync();
+        await first.Locator("[data-testid='asset-status']").WaitForAsync(new() { Timeout = Timeout });
+        await first.Locator("[data-testid='preview'] img").WaitForAsync(new() { Timeout = 60_000 });
     }
 
     private static async Task<IPage> NewPageAsync(IBrowser browser)

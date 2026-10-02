@@ -1,0 +1,56 @@
+@page "/admin/node-types"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Graph
+@inject ISharemeApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Node types</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Node types</MudText>
+
+<MudSimpleTable Dense="true" Hover="true">
+    <thead><tr><th>Key</th><th>Name</th><th>Kind</th><th>Icon</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var type in _types)
+        {
+            <tr data-type="@type.Key">
+                <td>@type.Key</td>
+                <td>@type.Name</td>
+                <td>@type.Semantic</td>
+                <td>@type.Icon</td>
+                <td>@(type.IsSystem ? "system" : null)</td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudText Typo="Typo.h6">New custom type</MudText>
+    <MudStack Row="true" AlignItems="AlignItems.End">
+        <MudTextField @bind-Value="_key" Label="Key" data-testid="type-key" />
+        <MudTextField @bind-Value="_name" Label="Name" data-testid="type-name" />
+        <MudTextField @bind-Value="_icon" Label="Icon (material name)" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAsync" data-testid="create-type">Create</MudButton>
+    </MudStack>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<NodeTypeDto> _types = [];
+    private string? _key, _name, _icon;
+
+    protected override async Task OnInitializedAsync() => _types = await Api.GetNodeTypesAsync();
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            await Api.CreateNodeTypeAsync(new CreateNodeTypeRequest(_key ?? string.Empty, _name ?? string.Empty, _icon));
+            _key = _name = _icon = null;
+            _types = await Api.GetNodeTypesAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Errors is { Count: > 0 } errors ? string.Join(" ", errors.SelectMany(e => e.Value)) : exception.Message, Severity.Error);
+        }
+    }
+}

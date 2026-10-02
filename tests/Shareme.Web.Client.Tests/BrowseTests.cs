@@ -35,6 +35,8 @@ public sealed class BrowseTests : BunitContext
         metadata.GetContextsAsync(default).ReturnsForAnyArgs([]);
         metadata.GetSetsAsync(default, default).ReturnsForAnyArgs([]);
         Services.AddSingleton(metadata);
+        Services.AddScoped<Shareme.Web.Client.Assets.UploadQueue>();
+        _api.GetEntryPointsAsync(Arg.Any<CancellationToken>()).Returns([]);
         Services.AddSingleton(Substitute.For<ICoworkeeApi>());
         Services.AddSingleton(new CoworkeeClientOptions());
         Services.AddSingleton<IRealtimeConnection>(Substitute.For<IRealtimeConnection>());

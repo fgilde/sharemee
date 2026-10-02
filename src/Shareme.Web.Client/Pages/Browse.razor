@@ -27,6 +27,9 @@
 else if (_detail is not null)
 {
     <RealtimeSubscription @key="_detail.Node.Id" Topic="@($"children:{_detail.Node.Id}")" OnEvent="_ => RefreshAsync()" />
+    <MudGrid>
+    <MudItem xs="12" md="3" Class="d-none d-md-block"><FolderTree SelectedId="_detail.Node.Id" /></MudItem>
+    <MudItem xs="12" md="9">
 
     <div data-testid="breadcrumb"><MudBreadcrumbs Items="_breadcrumb" /></div>
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
@@ -44,14 +47,58 @@ else if (_detail is not null)
         <MudSpacer />
         <MudTextField T="string" @bind-Value="_search" Placeholder="Filter" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadChildrenAsync()" Style="max-width:240px" />
+        <MudToggleIconButton @bind-Toggled="_gallery" Icon="@Icons.Material.Outlined.GridView" ToggledIcon="@Icons.Material.Outlined.ViewList" aria-label="Toggle gallery" data-testid="toggle-gallery" />
     </MudStack>
 
+    <div class="mb-4"><UploadPanel FolderId="_detail.Node.Id" /></div>
+
+    @if (_selected.Count > 0)
+    {
+        <MudPaper Outlined="true" Class="pa-2 mb-2 d-flex align-center gap-2" data-testid="selection-bar">
+            <MudText Typo="Typo.body2">@_selected.Count selected</MudText>
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.DriveFileMove" OnClick="() => _moving = _children.Where(c => _selected.Contains(c.Id)).ToList()">Move</MudButton>
+            <MudButton Size="Size.Small" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeleteSelectedAsync" data-testid="delete-selected">Delete</MudButton>
+            <MudButton Size="Size.Small" OnClick="() => _selected.Clear()">Clear</MudButton>
+        </MudPaper>
+    }
+
+    @if (_gallery)
+    {
+        <MudGrid Spacing="2" data-testid="gallery">
+            @foreach (var child in _children)
+            {
+                <MudItem xs="6" sm="4" lg="3">
+                    <MudCard Outlined="true" data-node="@child.Id">
+                        <a href="@Link(child)">
+                            @if (child.Semantic == "asset")
+                            {
+                                <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail)" alt="" loading="lazy" onerror="this.style.visibility='hidden'"
+                                     style="width:100%;height:140px;object-fit:contain" />
+                            }
+                            else
+                            {
+                                <div class="d-flex align-center justify-center" style="height:140px"><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Large" /></div>
+                            }
+                        </a>
+                        <MudCardContent Class="pa-2 d-flex align-center">
+                            <MudCheckBox T="bool" Value="_selected.Contains(child.Id)" ValueChanged="on => Toggle(child.Id, on)" Size="Size.Small" Dense="true" />
+                            <MudLink Href="@Link(child)" Typo="Typo.body2" Style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@child.Name</MudLink>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+
     <MudSimpleTable Dense="true" Hover="true">
-        <thead><tr><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
+        <thead><tr><th style="width:40px"></th><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
         <tbody>
             @foreach (var child in _children)
             {
                 <tr data-node="@child.Id">
+                    <td><MudCheckBox T="bool" Value="_selected.Contains(child.Id)" ValueChanged="on => Toggle(child.Id, on)" Size="Size.Small" Dense="true" data-testid="@($"select-{child.Id}")" /></td>
                     <td>
                         @if (_renaming == child.Id)
                         {
@@ -61,8 +108,16 @@ else if (_detail is not null)
                         }
                         else
                         {
-                            <MudIcon Icon="@(child.Semantic == "folder" ? Icons.Material.Outlined.Folder : Icons.Material.Outlined.InsertDriveFile)" Size="Size.Small" Class="mr-2" />
-                            <MudLink Href="@($"/browse/{child.Id}")">@child.Name</MudLink>
+                            @if (child.Semantic == "asset")
+                            {
+                                <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail)" alt="" loading="lazy" onerror="this.style.visibility='hidden'"
+                                     style="width:32px;height:32px;object-fit:cover;vertical-align:middle" class="mr-2" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" Class="mr-2" />
+                            }
+                            <MudLink Href="@Link(child)">@child.Name</MudLink>
                             @if (child.InterruptInheritance)
                             {
                                 <MudTooltip Text="Permissions are not inherited"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" Class="ml-1" /></MudTooltip>
@@ -73,13 +128,14 @@ else if (_detail is not null)
                     <td>@child.CreatedAt.ToLocalTime().ToString("g")</td>
                     <td style="text-align:right;white-space:nowrap">
                         <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Rename" OnClick="() => StartRename(child)" data-testid="@($"rename-{child.Id}")" />
-                        <MudIconButton Icon="@Icons.Material.Outlined.DriveFileMove" Size="Size.Small" aria-label="Move" OnClick="() => _moving = child" data-testid="@($"move-{child.Id}")" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.DriveFileMove" Size="Size.Small" aria-label="Move" OnClick="() => _moving = [child]" data-testid="@($"move-{child.Id}")" />
                         <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => DeleteAsync(child)" data-testid="@($"delete-{child.Id}")" />
                     </td>
                 </tr>
             }
         </tbody>
     </MudSimpleTable>
+    }
     @if (_children.Count == 0)
     {
         <MudText Typo="Typo.body2" Class="mt-2">This folder is empty.</MudText>
@@ -88,8 +144,8 @@ else if (_detail is not null)
     @if (_moving is not null)
     {
         <MudPaper Outlined="true" Class="pa-4 mt-4">
-            <MudText Typo="Typo.h6">Move "@_moving.Name"</MudText>
-            <FolderPicker StartId="_detail.Node.Id" ExcludeId="_moving.Id" OnPicked="target => MoveAsync(_moving, target)" />
+            <MudText Typo="Typo.h6">Move @(_moving.Count == 1 ? _moving[0].Name : $"{_moving.Count} items")</MudText>
+            <FolderPicker StartId="_detail.Node.Id" ExcludeId="_moving[0].Id" OnPicked="target => MoveAsync(_moving, target)" />
             <MudButton Class="mt-2" OnClick="() => _moving = null">Cancel</MudButton>
         </MudPaper>
     }
@@ -111,6 +167,8 @@ else if (_detail is not null)
             <div class="pa-4"><AuditTimeline EntityType="@(_detail.Node.Semantic == "folder" ? "Folder" : _detail.Node.Semantic == "asset" ? "Asset" : "CustomNode")" EntityId="@_detail.Node.Id.ToString()" /></div>
         </MudTabPanel>
     </MudTabs>
+    </MudItem>
+    </MudGrid>
 }
 else
 {
@@ -126,7 +184,9 @@ else
     private string? _search;
     private Guid? _renaming;
     private string? _renameValue;
-    private NodeDto? _moving;
+    private List<NodeDto>? _moving;
+    private readonly HashSet<Guid> _selected = [];
+    private bool _gallery;
 
     [Parameter] public Guid? Id { get; set; }
 
@@ -139,6 +199,7 @@ else
         _search = null;
         _newName = null;
         _renaming = null;
+        _selected.Clear();
         await RunAsync(async () =>
         {
             if (Id is { } id)
@@ -213,12 +274,44 @@ else
         await LoadChildrenAsync();
     });
 
-    private Task MoveAsync(NodeDto child, Guid target) => RunAsync(async () =>
+    private Task MoveAsync(IReadOnlyList<NodeDto> nodes, Guid target) => RunAsync(async () =>
     {
-        await Api.MoveNodeAsync(child.Id, target);
+        foreach (var node in nodes)
+        {
+            await Api.MoveNodeAsync(node.Id, target);
+        }
+
         _moving = null;
+        _selected.Clear();
         await LoadChildrenAsync();
     });
+
+    private Task DeleteSelectedAsync() => RunAsync(async () =>
+    {
+        var count = _selected.Count;
+        foreach (var id in _selected.ToList())
+        {
+            await Api.DeleteNodeAsync(id);
+        }
+
+        Snackbar.Add($"{count} items moved to the recycle bin.", Severity.Info);
+        _selected.Clear();
+        await LoadChildrenAsync();
+    });
+
+    private void Toggle(Guid id, bool on)
+    {
+        if (on)
+        {
+            _selected.Add(id);
+        }
+        else
+        {
+            _selected.Remove(id);
+        }
+    }
+
+    private static string Link(NodeDto node) => node.Semantic == "asset" ? $"/assets/{node.Id}" : $"/browse/{node.Id}";
 
     private Task DeleteAsync(NodeDto child) => RunAsync(async () =>
     {
