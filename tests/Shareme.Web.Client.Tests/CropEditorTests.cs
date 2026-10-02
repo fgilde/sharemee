@@ -24,6 +24,9 @@ public sealed class CropEditorTests
         var clamped = CropEditor.Fit(new RectangleF(-100, -100, 5000, 5000), 1600, 800, null).ShouldNotBeNull();
         clamped.ShouldBe(new CropArea(0, 0, 1, 1));
 
+        // a drag that starts left of the picture keeps only the part on it
+        CropEditor.Fit(new RectangleF(-400, 0, 800, 800), 1600, 800, null).ShouldBe(new CropArea(0, 0, 0.25, 1));
+
         CropEditor.Fit(new RectangleF(10, 10, 0.5f, 100), 1600, 800, null).ShouldBeNull();
     }
 }

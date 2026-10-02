@@ -121,6 +121,18 @@ internal sealed class CropHandlers(CoworkeeDbContext db, NodeAccess access, IBac
             return Error.NotFound("assets.not_found", "The asset has no content yet.");
         }
 
+        // the variant gets the folder's permissions; a source shut off from them would leak through it
+        if (source.InterruptInheritance)
+        {
+            return Error.Validation("Id", "This asset has its own permissions; a variant next to it would be visible to the whole folder.");
+        }
+
+        // the variant edge is a change of the source
+        if (!await access.CanAsync(NodePermissions.Update, source.Id, cancellationToken))
+        {
+            return Error.Forbidden("auth.forbidden", "You may not change this asset.");
+        }
+
         var mimeType = await db.Set<AssetVersion>().Where(v => v.Id == versionId).Select(v => v.MimeType).SingleAsync(cancellationToken);
         if (!ImageFormats.ByMimeType.ContainsKey(mimeType)
             && !await db.Set<Derivation>().AnyAsync(d => d.VersionId == versionId && d.Kind == DerivationKinds.Still && d.State == DerivationStates.Ready, cancellationToken))
@@ -128,7 +140,7 @@ internal sealed class CropHandlers(CoworkeeDbContext db, NodeAccess access, IBac
             return Error.Validation("Area", "Only pictures, and files with a rendered page or frame, can be cropped.");
         }
 
-        var name = string.IsNullOrWhiteSpace(request.Name) ? Path.GetFileNameWithoutExtension(source.Name) + " (crop)" : request.Name.Trim();
+        var name = string.IsNullOrWhiteSpace(request.Name) ? Path.GetFileNameWithoutExtension(source.Name) + " (crop)" : Path.GetFileNameWithoutExtension(request.Name.Trim());
         if (name.Length > 200 || name.Any(char.IsControl) || name.IndexOfAny(['/', '\\']) >= 0)
         {
             return Error.Validation("Name", "A name of up to 200 characters without slashes or control characters.");
@@ -146,7 +158,7 @@ internal sealed class CropHandlers(CoworkeeDbContext db, NodeAccess access, IBac
 
         var variant = new Asset
         {
-            Name = name,
+            Name = name + "." + VariantExtension(mimeType),
             NodeTypeId = NodeType.AssetTypeId,
             Status = AssetStatuses.Importing,
             AssetTypeKey = AssetTypeKeys.Image,
@@ -161,6 +173,9 @@ internal sealed class CropHandlers(CoworkeeDbContext db, NodeAccess access, IBac
             new CropVariantJobArgs(variant.Id, versionId, request.Area.Left, request.Area.Top, request.Area.Width, request.Area.Height), ShareMeProcessingModule.Queue);
         return new CropVariantDto(variant.Id);
     }
+
+    /// <summary>JPEG and WebP stay as they are, everything else becomes PNG.</summary>
+    internal static string VariantExtension(string mimeType) => mimeType switch { "image/jpeg" => "jpg", "image/webp" => "webp", _ => "png" };
 }
 
 /// <summary>Cuts the variant out of the source (its original, or the kept still of other media) and stores it as the variant's first version.</summary>
@@ -186,13 +201,18 @@ internal sealed class CropVariantJob(CoworkeeDbContext db, IBlobStorage storage,
 
         byte[] bytes;
         string mimeType, extension;
-        await using (var content = await storage.OpenReadAsync(key, cancellationToken) ?? throw new FileNotFoundException($"The picture of version {source.Id} is not in storage."))
+        // a picture that went away (the still is made again on rerender) fails the variant instead of leaving it importing
+        if (await storage.OpenReadAsync(key, cancellationToken) is not { } content)
         {
-            using var buffer = new MemoryStream();
-            await content.CopyToAsync(buffer, cancellationToken);
+            await FailAsync(variant, "The picture to crop is no longer stored; try again.", cancellationToken);
+            return;
+        }
+
+        await using (content)
+        {
             try
             {
-                using var image = new MagickImage(buffer.ToArray(), new MagickReadSettings { Format = isImage ? format : MagickFormat.Png, FrameIndex = 0, FrameCount = 1 });
+                using var image = new MagickImage(content, new MagickReadSettings { Format = isImage ? format : MagickFormat.Png, FrameIndex = 0, FrameCount = 1 });
 
                 // the same upright picture the preview shows, so the area matches what was chosen
                 if (!isImage && sources.FirstOrDefault(s => s.Supports(source.MimeType)) is { TrimStill: true })
@@ -209,6 +229,19 @@ internal sealed class CropVariantJob(CoworkeeDbContext db, IBlobStorage storage,
                     MagickFormat.WebP => (MagickFormat.WebP, "image/webp", "webp"),
                     _ => (MagickFormat.Png, "image/png", "png"),
                 } : (MagickFormat.Png, "image/png", "png");
+                if (output == MagickFormat.Png && image.ColorSpace != ColorSpace.sRGB)
+                {
+                    // PNG holds no CMYK; convert with the profile so colours stay
+                    if (image.GetColorProfile() is not null)
+                    {
+                        image.TransformColorSpace(ColorProfiles.SRGB);
+                    }
+                    else
+                    {
+                        image.ColorSpace = ColorSpace.sRGB;
+                    }
+                }
+
                 image.Quality = 92;
                 bytes = image.ToByteArray(output);
             }
@@ -227,7 +260,7 @@ internal sealed class CropVariantJob(CoworkeeDbContext db, IBlobStorage storage,
             {
                 AssetId = variant.Id,
                 Number = 1,
-                FileName = variant.Name + "." + extension,
+                FileName = variant.Name,
                 Size = bytes.Length,
                 Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
                 MimeType = mimeType,

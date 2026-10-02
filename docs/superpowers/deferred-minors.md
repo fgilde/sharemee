@@ -2,6 +2,14 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P3c (crop, variants)
+
+- [ ] A failed variant keeps no error text (only status failed); store it where the asset page can show it.
+- [ ] The crop of a rendition is not in DerivationDto and cannot be removed (cropping the full area resets it); the editor cannot show the current crop.
+- [ ] While a cropped rendition renders the old one is not served; after a failed render its old file stays on the failed row until the next rerender.
+- [ ] Assets with their own permissions get no variant; copying the source's grants onto the variant would allow it.
+- [ ] MudExImageViewer sends the selected area as PNG bytes to .NET on every selection although the editor only needs the rectangle.
+
 ## From P3b (derivation types, watermarks)
 
 - [ ] Renditions are not claimed per row: a render request while a job runs is refused (409) and metadata triggered re-renders wait for the sweep; a Pending to Processing claim would allow both at once.

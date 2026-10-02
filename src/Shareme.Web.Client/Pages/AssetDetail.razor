@@ -26,7 +26,7 @@ else
         <MudText Typo="Typo.h4">@_asset.Name</MudText>
         <MudChip T="string" Size="Size.Small" Color="@StatusColor(_asset.Status)" data-testid="asset-status">@_asset.Status</MudChip>
         <MudSpacer />
-        @if (Preview is { State: DerivationStates.Ready })
+        @if (Preview is { State: DerivationStates.Ready } && _asset.CanDownload)
         {
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Crop" OnClick="() => _cropping = !_cropping" data-testid="crop">Crop</MudButton>
         }

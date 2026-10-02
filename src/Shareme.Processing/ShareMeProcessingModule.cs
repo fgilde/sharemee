@@ -237,6 +237,10 @@ internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jo
         var pending = db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.State == DerivationStates.Pending);
         await pending.Where(d => d.PlannedAt < now.AddDays(-1))
             .ExecuteUpdateAsync(d => d.SetProperty(x => x.State, DerivationStates.Failed).SetProperty(x => x.Error, "Rendering did not finish within a day."), cancellationToken);
+        await db.Set<Asset>().IgnoreQueryFilters()
+            .Where(a => a.Status == AssetStatuses.Importing && a.CurrentVersionId == null && a.CreatedAt < now - Lost
+                && db.Set<Edge>().IgnoreQueryFilters().Any(e => e.EdgeTypeId == EdgeType.VariantId && e.ToNodeId == a.Id))
+            .ExecuteUpdateAsync(a => a.SetProperty(x => x.Status, AssetStatuses.Failed), cancellationToken);
         foreach (var versionId in await pending.Where(d => d.PlannedAt < now - Lost).Select(d => d.VersionId).Distinct().Take(500).ToListAsync(cancellationToken))
         {
             jobs.Enqueue<RenderDerivationsJob, Guid>(versionId, ShareMeProcessingModule.Queue);

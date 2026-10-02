@@ -333,7 +333,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         (await CenterAsync(Admin, image.AssetId, "square")).B.ShouldBeGreaterThan((byte)200);
 
         (await reader.PostAsJsonAsync($"/api/v1/assets/{image.AssetId}/variants", new CropVariantRequest(new CropArea(0, 0, 0.5, 1)), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-        var created = await (await Admin.PostAsJsonAsync($"/api/v1/assets/{image.AssetId}/variants", new CropVariantRequest(new CropArea(0, 0, 0.5, 1), "Left half"), Ct))
+        var created = await (await Admin.PostAsJsonAsync($"/api/v1/assets/{image.AssetId}/variants", new CropVariantRequest(new CropArea(0, 0, 0.5, 1), "Left half.jpg"), Ct))
             .Content.ReadFromJsonAsync<CropVariantDto>(Ct);
         var deadline = DateTime.UtcNow.AddSeconds(60);
         AssetDto variant;
@@ -345,6 +345,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
 
         variant.Status.ShouldBe(AssetStatuses.Ready);
         variant.CurrentVersion!.FileName.ShouldBe("Left half.png");
+        variant.Name.ShouldBe("Left half.png");
         using (var cropped = new ImageMagick.MagickImage(await Admin.GetByteArrayAsync($"/api/v1/assets/{variant.Id}/download", Ct)))
         {
             (cropped.Width, cropped.Height).ShouldBe((400u, 400u));
@@ -355,6 +356,14 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         (await Admin.GetFromJsonAsync<EdgeDto[]>($"/api/v1/nodes/{image.AssetId}/edges", Ct))!
             .ShouldContain(e => e.Type == EdgeTypeKeys.Variant && e.FromNodeId == image.AssetId && e.ToNodeId == variant.Id);
         (await Admin.PostAsJsonAsync($"/api/v1/assets/{image.AssetId}/variants", new CropVariantRequest(new CropArea(0, 0, 0, 1)), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        // a downloader without the right to change the source cannot attach variants to it
+        var downloader = await UserWithFolderRoleAsync(folder, NodePermissions.Read, AssetPermissions.Download, NodePermissions.Create);
+        (await downloader.PostAsJsonAsync($"/api/v1/assets/{image.AssetId}/variants", new CropVariantRequest(new CropArea(0, 0, 0.5, 1)), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        // an asset with its own permissions gets no variant the whole folder could see
+        (await Admin.PutAsJsonAsync($"/api/v1/nodes/{image.AssetId}/inheritance", new InheritanceRequest(true), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsJsonAsync($"/api/v1/assets/{image.AssetId}/variants", new CropVariantRequest(new CropArea(0, 0, 0.5, 1)), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     [Fact]

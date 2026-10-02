@@ -7,7 +7,7 @@
 @inject NavigationManager Nav
 
 <MudStack data-testid="crop-editor">
-    <MudText Typo="Typo.body2">Drag a frame over the picture; a fixed ratio narrows it around its centre.</MudText>
+    <MudText Typo="Typo.body2">Hold Ctrl and drag a frame over the picture (or switch on selection in the viewer's toolbar); a fixed ratio narrows it around its centre.</MudText>
     <div style="height:420px">
         <MudExImageViewer Src="@AssetUrls.Derivation(Asset.Id, DerivationKinds.Preview, Asset.RenditionTag)" AllowRubberBandSelection="true" ImageAreaSelected="OnSelected" />
     </div>
@@ -71,7 +71,7 @@
     {
         var left = Math.Clamp(area.X, 0, width);
         var top = Math.Clamp(area.Y, 0, height);
-        double w = Math.Clamp(area.Width, 0, width - left), h = Math.Clamp(area.Height, 0, height - top);
+        double w = Math.Clamp(Math.Min(area.Right, width) - left, 0, width - left), h = Math.Clamp(Math.Min(area.Bottom, height) - top, 0, height - top);
         if (w < 1 || h < 1)
         {
             return null;
