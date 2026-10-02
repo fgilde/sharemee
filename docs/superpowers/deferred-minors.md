@@ -2,6 +2,16 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P3b (derivation types, watermarks)
+
+- [ ] Renditions are not claimed per row: a render request while a job runs is refused (409) and metadata triggered re-renders wait for the sweep; a Pending to Processing claim would allow both at once.
+- [ ] Deleting a rendition type keeps its renditions (served by key; a new type with the same key adopts them); changing size, format or watermark of a type does not re-render existing ones.
+- [ ] Two concurrent creates of the same type key end in a 500 from the unique index instead of 409.
+- [ ] Asset tab shows the upload button to users without the update right (API refuses); renditions of deleted types are not listed.
+- [ ] No confirmation when deleting rendition types or watermarks in the admin page.
+- [ ] Opening /view of a PDF directly in Chrome shows it blocked (CSP sandbox disables the built-in viewer); the app renders PDFs with pdf.js through MudExFileDisplay, so only direct links are affected.
+- [ ] Hand made renditions carry no pixel size (the API host has no image library).
+
 ## From P3a (renderers)
 
 - [ ] Technical metadata of every version is sent with `GetAsset`; send the current version's only. The per-render update of `AssetVersion` may write the whole dictionary into the audit trail.

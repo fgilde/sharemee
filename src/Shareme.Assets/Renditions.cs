@@ -344,6 +344,12 @@ internal sealed class RenditionHandlers(CoworkeeDbContext db, IBlobStorage stora
             return Error.NotFound("watermarks.not_found", "The watermark does not exist.");
         }
 
+        // removing it would let its rendition types render unprotected
+        if (await db.Set<DerivationType>().Where(t => t.WatermarkId == watermark.Id).Select(t => t.Name).FirstOrDefaultAsync(cancellationToken) is { } user)
+        {
+            return Error.Conflict("watermarks.in_use", $"The rendition type '{user}' uses this watermark.");
+        }
+
         if (watermark.BlobKey is { } key)
         {
             db.Add(new OrphanBlob { Key = key });
@@ -377,9 +383,15 @@ internal sealed class RenditionHandlers(CoworkeeDbContext db, IBlobStorage stora
         }
 
         var derivation = await db.Set<Derivation>().SingleOrDefaultAsync(d => d.VersionId == versionId && d.Kind == type.Key, cancellationToken);
-        if (derivation is { State: not (DerivationStates.Failed or DerivationStates.NotSupported) })
+        if (derivation is { State: not DerivationStates.Failed })
         {
             return Map(derivation);
+        }
+
+        // a running job would not see the new row, and a second job would render its rows twice
+        if (await db.Set<Derivation>().AnyAsync(d => d.VersionId == versionId && d.State == DerivationStates.Pending, cancellationToken))
+        {
+            return Error.Conflict("assets.rendering", "Renditions of this file are being created; try again in a moment.");
         }
 
         if (derivation is null)
@@ -402,7 +414,7 @@ internal sealed class RenditionHandlers(CoworkeeDbContext db, IBlobStorage stora
             return Error.NotFound("assets.not_found", "The asset has no content yet.");
         }
 
-        if (await db.Set<DerivationType>().AsNoTracking().SingleOrDefaultAsync(t => t.Key == command.Kind, cancellationToken) is not { AllowManualUpload: true } type)
+        if (await db.Set<DerivationType>().AsNoTracking().SingleOrDefaultAsync(t => t.Key == command.Kind, cancellationToken) is not { AllowManualUpload: true } type || !type.AppliesTo(asset.AssetTypeKey))
         {
             return Error.Validation("Kind", "This rendition cannot be uploaded by hand.");
         }
@@ -417,6 +429,11 @@ internal sealed class RenditionHandlers(CoworkeeDbContext db, IBlobStorage stora
         {
             derivation = new Derivation { VersionId = versionId, AssetId = asset.Id, Kind = type.Key };
             db.Add(derivation);
+        }
+        else if (derivation.State == DerivationStates.Pending)
+        {
+            // the job would overwrite the upload
+            return Error.Conflict("assets.rendering", "This rendition is being created; try again in a moment.");
         }
         else if (derivation.BlobKey is { } previous)
         {

@@ -79,7 +79,8 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
         });
         assets.MapPost("/{id:guid}/derivations/{kind}", (Guid id, string kind, IDispatcher d, CancellationToken ct) => d.SendAsync(new RequestDerivation(id, kind), ct).ToHttpResult());
         assets.MapPut("/{id:guid}/derivations/{kind}", (Guid id, string kind, HttpRequest request, IDispatcher d, CancellationToken ct) =>
-            d.SendAsync(new UploadDerivation(id, kind, request.Body), ct).ToHttpResult());
+            d.SendAsync(new UploadDerivation(id, kind, request.Body), ct).ToHttpResult())
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(RenditionLimits.MaxUpload));
         assets.MapPost("/{id:guid}/download-link", (Guid id, int? version, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateDownloadLink(id, version), ct).ToHttpResult());
 
         var types = app.MapGroup("/api/v1/derivation-types").WithTags("Renditions").RequireAuthorization();

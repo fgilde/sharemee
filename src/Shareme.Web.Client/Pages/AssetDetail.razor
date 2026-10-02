@@ -125,7 +125,7 @@ else
                                     {
                                         <MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.DownloadDerivation(_asset.Id, kind)" aria-label="Download rendition" />
                                     }
-                                    else if (type is { IsOnDemand: true } && derivation?.State != DerivationStates.Pending)
+                                    else if (type is { IsOnDemand: true } && _asset.CanDownload && derivation?.State is not (DerivationStates.Pending or DerivationStates.NotSupported))
                                     {
                                         <MudButton Size="Size.Small" OnClick="() => RunAsync(() => Renditions.RequestAsync(_asset.Id, kind))" data-testid="request-rendition">Create</MudButton>
                                     }

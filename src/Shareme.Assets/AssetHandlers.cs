@@ -33,7 +33,7 @@ public sealed record DownloadAsset(Guid Id, int? Version, bool Inline = false) :
     public string RequiredPermission => AssetPermissions.Download;
 }
 
-/// <summary>Renditions are for everyone who may read the asset (watermarks protect them); originals need the download right.</summary>
+/// <summary>System renditions and watermarked custom ones are for everyone who may read the asset; other custom ones need the download right like originals.</summary>
 public sealed record GetDerivation(Guid Id, string Kind, int? Version) : IQuery<Result<BlobDownload>>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;
@@ -84,6 +84,14 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             || await storage.OpenReadAsync(key, cancellationToken) is not { } content)
         {
             return NotFound;
+        }
+
+        if (!DerivationKinds.System.Contains(derivation.Kind)
+            && (derivation.IsManual || !await db.Set<DerivationType>().AnyAsync(t => t.Key == derivation.Kind && t.WatermarkId != null, cancellationToken))
+            && !await access.CanAsync(AssetPermissions.Download, query.Id, cancellationToken))
+        {
+            await content.DisposeAsync();
+            return Error.Forbidden("auth.forbidden", "This rendition needs the download right.");
         }
 
         var name = Path.GetFileNameWithoutExtension(version.FileName) + "-" + derivation.Kind + DerivationFormats.Extension(derivation.MimeType);

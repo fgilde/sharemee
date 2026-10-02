@@ -266,6 +266,14 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         (await CenterAsync(reader, image.AssetId, "social")).R.ShouldBeGreaterThan((byte)200, "the asset is not confidential");
         (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/print", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
+        // a watermark without its image fails the rendition instead of letting it out unprotected, and one in use cannot be removed
+        var blank = (await (await Admin.PostAsJsonAsync("/api/v1/watermarks", new WatermarkRequest("Blank"), Ct)).Content.ReadFromJsonAsync<WatermarkDto>(Ct))!;
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest("guarded", "Guarded", 100, 100, WatermarkId: blank.Id), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/guarded", null, Ct)).EnsureSuccessStatusCode();
+        (await DerivationsAsync(image.AssetId)).Single(d => d.Kind == "guarded").State.ShouldBe(DerivationStates.Failed);
+        (await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/guarded", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await Admin.DeleteAsync($"/api/v1/watermarks/{blank.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+
         using var manual = new ImageMagick.MagickImage(ImageMagick.MagickColors.Green, 50, 50);
         var manualBytes = manual.ToByteArray(ImageMagick.MagickFormat.Png);
         (await Admin.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/print", new ByteArrayContent(manualBytes), Ct)).EnsureSuccessStatusCode();
@@ -273,16 +281,23 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         (await Admin.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/web", new ByteArrayContent(manualBytes), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await reader.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/print", new ByteArrayContent(manualBytes), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
 
-        // marked confidential and rendered again: the triggered watermark appears, the hand made rendition stays
+        // marked confidential: the rendition with the triggered watermark is made again on its own
         (await Admin.PutAsJsonAsync($"/api/v1/nodes/{image.AssetId}/metadata", new Dictionary<string, List<MetadataValue>>
         {
             ["confidential"] = [new(V: JsonSerializer.SerializeToElement(true))],
         }, Ct)).EnsureSuccessStatusCode();
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while ((await DerivationsAsync(image.AssetId)).Single(d => d.Kind == "social").State != DerivationStates.Ready || (await CenterAsync(reader, image.AssetId, "social")).B < 200)
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the confidential watermark was not applied");
+            await Task.Delay(250, Ct);
+        }
+
+        // rendering again keeps the hand made rendition; without a watermark it needs the download right
         (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/rerender", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        var rerendered = await DerivationsAsync(image.AssetId);
-        rerendered.Single(d => d.Kind == "print").IsManual.ShouldBeTrue();
-        (await CenterAsync(reader, image.AssetId, "social")).B.ShouldBeGreaterThan((byte)200, "the asset is confidential now");
-        using var download = await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/print?download=true", Ct);
+        (await DerivationsAsync(image.AssetId)).Single(d => d.Kind == "print").IsManual.ShouldBeTrue();
+        (await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/print", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using var download = await Admin.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/print?download=true", Ct);
         download.Content.Headers.ContentDisposition!.FileNameStar.ShouldBe("red-print.png");
         (await download.Content.ReadAsByteArrayAsync(Ct)).ShouldBe(manualBytes);
     }

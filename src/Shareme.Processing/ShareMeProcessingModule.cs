@@ -87,8 +87,18 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
             return Error.Conflict("assets.rendering", "The renditions are being created already.");
         }
 
-        // hand made renditions stay; the still is made again too, a renderer update may change it
-        foreach (var derivation in existing.Where(d => !d.IsManual))
+        // hand made renditions stay; the still is dropped and made again, a renderer update may change it
+        foreach (var still in existing.Where(d => d.Kind == DerivationKinds.Still))
+        {
+            if (still.BlobKey is { } key)
+            {
+                db.Add(new OrphanBlob { Key = key });
+            }
+
+            db.Remove(still);
+        }
+
+        foreach (var derivation in existing.Where(d => !d.IsManual && d.Kind != DerivationKinds.Still))
         {
             if (derivation.BlobKey is { } key)
             {
@@ -126,8 +136,8 @@ internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs
 {
     public async Task HandleAsync(AssetVersionCreated domainEvent, CancellationToken cancellationToken)
     {
-        if (await db.Set<AssetVersion>().IgnoreQueryFilters().Where(v => v.Id == domainEvent.VersionId).Select(v => new { v.MimeType, v.TenantId }).SingleOrDefaultAsync(cancellationToken) is not { } version
-            || await db.Set<Asset>().IgnoreQueryFilters().Where(a => a.Id == domainEvent.AssetId).Select(a => a.AssetTypeKey).SingleOrDefaultAsync(cancellationToken) is not { } assetType)
+        if (await db.Set<AssetVersion>().Where(v => v.Id == domainEvent.VersionId).Select(v => new { v.MimeType, v.TenantId }).SingleOrDefaultAsync(cancellationToken) is not { } version
+            || await db.Set<Asset>().Where(a => a.Id == domainEvent.AssetId).Select(a => a.AssetTypeKey).SingleOrDefaultAsync(cancellationToken) is not { } assetType)
         {
             return;
         }
@@ -152,6 +162,44 @@ internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs
     {
         jobs.Enqueue<RenderDerivationsJob, Guid>(domainEvent.VersionId, ShareMeProcessingModule.Queue);
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>Renditions with a watermark that depends on a property are made again when the asset's metadata changes; until then they are not served.</summary>
+internal sealed class RerenderTriggeredWatermarks(CoworkeeDbContext db, IBackgroundJobs jobs, TimeProvider clock) : IDomainEventHandler<NodeChanged>
+{
+    public const string MetadataChanged = "metadata changed";
+
+    public async Task HandleAsync(NodeChanged domainEvent, CancellationToken cancellationToken)
+    {
+        if (domainEvent.Kind != MetadataChanged
+            || await db.Set<Asset>().Where(a => a.Id == domainEvent.NodeId).Select(a => a.CurrentVersionId).SingleOrDefaultAsync(cancellationToken) is not { } versionId)
+        {
+            return;
+        }
+
+        var triggered = db.Set<DerivationType>().Where(t => t.WatermarkId != null && db.Set<WatermarkDefinition>().Any(w => w.Id == t.WatermarkId && w.TriggerProperty != null)).Select(t => t.Key);
+        var derivations = await db.Set<Derivation>().Where(d => d.VersionId == versionId && !d.IsManual && d.State == DerivationStates.Ready && triggered.Contains(d.Kind))
+            .ToListAsync(cancellationToken);
+        if (derivations.Count == 0)
+        {
+            return;
+        }
+
+        var busy = await db.Set<Derivation>().AnyAsync(d => d.VersionId == versionId && d.State == DerivationStates.Pending, cancellationToken);
+        foreach (var derivation in derivations)
+        {
+            derivation.State = DerivationStates.Pending;
+            derivation.PlannedAt = clock.GetUtcNow();
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        // ponytail: a job already running for the version leaves these to the rendition sweep (two hours); a row claim would let a second job start at once
+        if (!busy)
+        {
+            jobs.Enqueue<RenderDerivationsJob, Guid>(versionId, ShareMeProcessingModule.Queue);
+        }
     }
 }
 
@@ -394,9 +442,11 @@ internal sealed class RenderDerivationsJob(
                     using var rendition = image.Clone();
                     rendition.Resize(new MagickGeometry((uint)s.Width, (uint)s.Height) { Greater = true });
                     rendition.Strip();
-                    if (s.WatermarkId is { } watermarkId)
+                    if (s.WatermarkId is { } watermarkId && await watermarks.ApplyAsync(watermarkId, rendition, cancellationToken) is { } watermarkError)
                     {
-                        await watermarks.ApplyAsync(watermarkId, rendition, cancellationToken);
+                        // a rendition that should carry a watermark is never stored without it
+                        await FailAsync([derivation], watermarkError, cancellationToken);
+                        continue;
                     }
 
                     if (s.Format == DerivationFormats.Jpeg)
@@ -502,7 +552,8 @@ internal sealed class Watermarks(CoworkeeDbContext db, IBlobStorage storage, Ass
         watermark.TriggerProperty is not { } property
         || (metadata.TryGetValue(property, out var values) && values.Any(v => string.Equals(v.List ?? Text(v.V), watermark.TriggerValue ?? "true", StringComparison.OrdinalIgnoreCase)));
 
-    public async Task ApplyAsync(Guid id, IMagickImage<byte> target, CancellationToken cancellationToken)
+    /// <summary>Lays the watermark over the image when it applies; returns why it could not, so the rendition fails instead of going out unprotected.</summary>
+    public async Task<string?> ApplyAsync(Guid id, IMagickImage<byte> target, CancellationToken cancellationToken)
     {
         if (!loaded.TryGetValue(id, out var watermark))
         {
@@ -512,7 +563,7 @@ internal sealed class Watermarks(CoworkeeDbContext db, IBlobStorage storage, Ass
 
         if (watermark is not { } w)
         {
-            return;
+            return "The watermark has no readable image.";
         }
 
         if (w.Definition.TriggerProperty is not null)
@@ -520,7 +571,7 @@ internal sealed class Watermarks(CoworkeeDbContext db, IBlobStorage storage, Ass
             metadata ??= await db.Set<Asset>().IgnoreQueryFilters().AsNoTracking().Where(a => a.Id == version.AssetId).Select(a => a.Metadata).SingleOrDefaultAsync(cancellationToken) ?? [];
             if (!Triggered(w.Definition, metadata))
             {
-                return;
+                return null;
             }
         }
 
@@ -529,7 +580,8 @@ internal sealed class Watermarks(CoworkeeDbContext db, IBlobStorage storage, Ass
         mark.Resize(new MagickGeometry(edge, edge));
         mark.Alpha(AlphaOption.Set);
         mark.Evaluate(Channels.Alpha, EvaluateOperator.Multiply, w.Definition.Opacity / 100.0);
-        target.Composite(mark, Enum.Parse<Gravity>(w.Definition.Position, ignoreCase: true), CompositeOperator.Over);
+        target.Composite(mark, Enum.TryParse<Gravity>(w.Definition.Position, ignoreCase: true, out var gravity) ? gravity : Gravity.Southeast, CompositeOperator.Over);
+        return null;
     }
 
     public void Dispose()
@@ -552,7 +604,14 @@ internal sealed class Watermarks(CoworkeeDbContext db, IBlobStorage storage, Ass
         {
             using var buffer = new MemoryStream();
             await content.CopyToAsync(buffer, cancellationToken);
-            return (definition, new MagickImage(buffer.ToArray(), new MagickReadSettings { Format = MagickFormat.Png }));
+            try
+            {
+                return (definition, new MagickImage(buffer.ToArray(), new MagickReadSettings { Format = MagickFormat.Png }));
+            }
+            catch (MagickException)
+            {
+                return null;
+            }
         }
     }
 
