@@ -230,7 +230,7 @@ internal sealed class RenderDerivationsJob(CoworkeeDbContext db, IBlobStorage st
                 && await db.Set<Asset>().IgnoreQueryFilters().SingleOrDefaultAsync(a => a.Id == version.AssetId && a.CurrentVersionId == version.Id, cancellationToken) is { } asset)
             {
                 // lists pick up the new thumbnail through the asset's own change event
-                asset.RenditionTag = version.Id.ToString("N")[..12] + derivation.Size.ToString("x");
+                asset.RenditionTag = Guid.CreateVersion7().ToString("N");
             }
 
             // each rendition lands on its own, so a later failure keeps the earlier ones
