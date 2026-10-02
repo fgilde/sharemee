@@ -223,6 +223,26 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Uploaded_files_are_found_by_their_file_name()
+    {
+        var folder = await FolderAsync("Findable");
+        var result = await UploadAsync(Admin, "pixel.png", Png(200), folder);
+
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while (true)
+        {
+            var found = await (await Admin.PostAsJsonAsync("/api/v1/search", new Shareme.Contracts.Search.SearchRequest("pixel"), Ct)).Content.ReadFromJsonAsync<Shareme.Contracts.Search.SearchResponse>(Ct);
+            if (found!.Items.Any(i => i.Id == result.AssetId))
+            {
+                return;
+            }
+
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the upload was not found");
+            await Task.Delay(300, Ct);
+        }
+    }
+
+    [Fact]
     public async Task A_download_link_works_without_signing_in()
     {
         var folder = await FolderAsync("Shared");

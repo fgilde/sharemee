@@ -127,6 +127,7 @@ public sealed class AdminJourneyTests
         while (true)
         {
             await first.GotoAsync(web + "/search?q=pixel");
+            await first.Locator("[data-testid='total']").WaitForAsync(new() { Timeout = Timeout });
             if (await first.Locator("tr[data-hit]", new() { HasTextString = "pixel.png" }).CountAsync() > 0)
             {
                 break;
