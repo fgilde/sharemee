@@ -13,6 +13,9 @@ public enum NodeSemantic
     Folder,
     Asset,
     Custom,
+
+    /// <summary>A root of its own: members get access through grants on it, never through the folder tree.</summary>
+    Workspace,
 }
 
 public enum EdgeSemantic
@@ -28,6 +31,7 @@ public sealed class NodeType : Entity
 {
     public static readonly Guid FolderTypeId = new("0190f000-0000-7000-8000-000000000001");
     public static readonly Guid AssetTypeId = new("0190f000-0000-7000-8000-000000000002");
+    public static readonly Guid WorkspaceTypeId = new("0190f000-0000-7000-8000-000000000003");
 
     public required string Key { get; set; }
 
@@ -137,6 +141,26 @@ public sealed class CustomNode : Node
     public override NodeSemantic Semantic => NodeSemantic.Custom;
 }
 
+/// <summary>A place to work together; see Shareme.Workspaces for kinds, members, templates and finalisation.</summary>
+public sealed class Workspace : Node
+{
+    public override NodeSemantic Semantic => NodeSemantic.Workspace;
+
+    public string WorkspaceKind { get; set; } = "collaboration";
+
+    public bool IsTemplate { get; set; }
+
+    public Guid? TemplateId { get; set; }
+
+    public Guid? FinalizationFolderId { get; set; }
+
+    public bool CopyMetadataToAssets { get; set; }
+
+    public Guid? RequiredSetId { get; set; }
+
+    public DateTimeOffset? FinalizedAt { get; set; }
+}
+
 public sealed class EdgeType : Entity
 {
     public static readonly Guid LinkId = new("0190f000-0000-7000-8000-000000000101");
@@ -223,7 +247,8 @@ internal sealed class GraphModelContributor : IModelContributor
             type.HasIndex(t => new { t.TenantId, t.Key }).IsUnique().AreNullsDistinct(false);
             type.HasData(
                 new { Id = NodeType.FolderTypeId, Key = NodeTypeKeys.Folder, Semantic = NodeSemantic.Folder, Name = "Folder", Icon = (string?)"folder", IsSystem = true, TenantId = (Guid?)null },
-                new { Id = NodeType.AssetTypeId, Key = NodeTypeKeys.Asset, Semantic = NodeSemantic.Asset, Name = "Asset", Icon = (string?)"insert_drive_file", IsSystem = true, TenantId = (Guid?)null });
+                new { Id = NodeType.AssetTypeId, Key = NodeTypeKeys.Asset, Semantic = NodeSemantic.Asset, Name = "Asset", Icon = (string?)"insert_drive_file", IsSystem = true, TenantId = (Guid?)null },
+                new { Id = NodeType.WorkspaceTypeId, Key = NodeTypeKeys.Workspace, Semantic = NodeSemantic.Workspace, Name = "Workspace", Icon = (string?)"workspaces", IsSystem = true, TenantId = (Guid?)null });
         });
 
         modelBuilder.Entity<Node>(node =>
@@ -232,7 +257,8 @@ internal sealed class GraphModelContributor : IModelContributor
             node.HasDiscriminator<string>("Kind")
                 .HasValue<Folder>("folder")
                 .HasValue<Asset>("asset")
-                .HasValue<CustomNode>("custom");
+                .HasValue<CustomNode>("custom")
+                .HasValue<Workspace>("workspace");
             node.Property<string>("Kind").HasMaxLength(20);
             node.Ignore(n => n.RealtimeTopics);
             node.Ignore(n => n.PathIds);
@@ -251,7 +277,8 @@ internal sealed class GraphModelContributor : IModelContributor
                     d => JsonSerializer.Deserialize<Dictionary<string, List<MetadataValue>>>(JsonSerializer.Serialize(d, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!));
             node.HasIndex(n => n.Path).HasOperators("text_pattern_ops");
             node.HasIndex(n => new { n.TenantId, n.ParentId, n.SortIndex });
-            node.HasIndex(n => n.TenantId).IsUnique().HasFilter("\"ParentId\" IS NULL").HasDatabaseName("IX_Nodes_Root");
+            // one folder root per tenant; workspaces are roots of their own
+            node.HasIndex(n => n.TenantId).IsUnique().HasFilter("\"ParentId\" IS NULL AND \"Kind\" = 'folder'").HasDatabaseName("IX_Nodes_Root");
             node.HasIndex(n => n.DeletedWithId);
             node.HasOne<Node>().WithMany().HasForeignKey(n => n.ParentId).OnDelete(DeleteBehavior.NoAction);
             node.HasOne<NodeType>().WithMany().HasForeignKey(n => n.NodeTypeId).OnDelete(DeleteBehavior.Restrict);
@@ -263,6 +290,12 @@ internal sealed class GraphModelContributor : IModelContributor
             asset.Property(a => a.Status).HasMaxLength(20);
             asset.Property(a => a.RenditionTag).HasMaxLength(64);
             asset.HasIndex(a => a.CurrentVersionId);
+        });
+
+        modelBuilder.Entity<Workspace>(workspace =>
+        {
+            workspace.Property(w => w.WorkspaceKind).HasMaxLength(20);
+            workspace.HasIndex(w => new { w.TenantId, w.IsTemplate });
         });
 
         modelBuilder.Entity<EdgeType>(type =>

@@ -161,10 +161,12 @@ internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser curr
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var parentExists = node.ParentId is { } parentId && await db.Set<Node>().AnyAsync(n => n.Id == parentId, cancellationToken);
-        if (!parentExists)
+
+        // a workspace is a root itself; everything else whose parent is gone comes back under the folder root
+        if (!parentExists && node is not Workspace)
         {
             var oldPrefix = node.Path;
-            node.PlaceUnder(await db.Set<Node>().SingleAsync(n => n.ParentId == null, cancellationToken));
+            node.PlaceUnder(await db.Set<Folder>().SingleAsync(n => n.ParentId == null, cancellationToken));
             await NodeCommandHandlers.RebaseDescendantsAsync(db, node, oldPrefix, cancellationToken);
         }
 

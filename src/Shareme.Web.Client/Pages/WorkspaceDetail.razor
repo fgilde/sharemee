@@ -1,0 +1,232 @@
+@page "/workspaces/{Id:guid}"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Graph
+@using Shareme.Contracts.Workspaces
+@using Shareme.Web.Client.Assets
+@using Shareme.Web.Client.Workspaces
+@inject IWorkspacesApi Api
+@inject ISharemeApi Graph
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_workspace?.Name ?? "Workspace")</PageTitle>
+
+@if (_workspace is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <RealtimeSubscription @key="_workspace.Id" Topic="@($"children:{_workspace.Id}")" OnEvent="_ => LoadAsync()" />
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack" Href="/workspaces" aria-label="Back to workspaces" />
+        <MudIcon Icon="@Workspaces.Icon(_workspace.Kind)" />
+        <MudText Typo="Typo.h4" data-testid="workspace-title">@_workspace.Name</MudText>
+        <MudChip T="string" Size="Size.Small">@_workspace.Kind</MudChip>
+        @if (_workspace.IsTemplate)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Secondary">template</MudChip>
+        }
+        @if (_workspace.FinalizedAt is { } finalized)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Success">finalised @finalized.ToLocalTime().ToString("d")</MudChip>
+        }
+        <MudSpacer />
+        @if (IsOwner && !_workspace.IsTemplate && _workspace.FinalizedAt is null && _workspace.Kind != WorkspaceKinds.Collection)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.TaskAlt" OnClick="FinalizeAsync" data-testid="finalize">Finalise</MudButton>
+        }
+    </MudStack>
+
+    <MudTabs Elevation="0" Outlined="true">
+        <MudTabPanel Text="Items">
+            <div class="pa-4">
+                @if (_workspace.Kind != WorkspaceKinds.Collection && _workspace.FinalizedAt is null)
+                {
+                    <div class="mb-4"><UploadPanel FolderId="_workspace.Id" /></div>
+                }
+                <MudSimpleTable Dense="true" Hover="true" data-testid="items">
+                    <thead><tr><th></th><th>Name</th><th>Type</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var item in _items)
+                        {
+                            <tr data-item="@item.Node.Name">
+                                <td style="width:56px">
+                                    @if (item.Node.Thumbnail is { } tag)
+                                    {
+                                        <img src="@AssetUrls.Derivation(item.Node.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, tag)" alt="" style="max-width:48px;max-height:48px" />
+                                    }
+                                </td>
+                                <td><MudLink Href="@(item.Node.Semantic == "asset" ? $"/assets/{item.Node.Id}" : $"/browse/{item.Node.Id}")">@item.Node.Name</MudLink></td>
+                                <td>@(item.IsLinked ? "linked" : item.Node.Semantic)</td>
+                                <td style="text-align:right">
+                                    @if (item.IsLinked)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Outlined.LinkOff" Size="Size.Small" aria-label="Remove link" OnClick="() => RunAsync(() => Api.UnlinkAsync(_workspace.Id, item.Node.Id))" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                @if (_items.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">Nothing here yet.</MudText>
+                }
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Members">
+            <div class="pa-4">
+                <MudSimpleTable Dense="true" data-testid="members">
+                    <tbody>
+                        @foreach (var member in _members)
+                        {
+                            <tr data-member="@member.Email">
+                                <td>@(string.IsNullOrWhiteSpace(member.Name) ? member.Email : $"{member.Name} ({member.Email})")</td>
+                                <td>@member.Role</td>
+                                <td style="text-align:right">
+                                    @if (IsOwner)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Outlined.PersonRemove" Size="Size.Small" aria-label="Remove member" OnClick="() => RunAsync(() => Api.RemoveMemberAsync(_workspace.Id, member.UserId))" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                @if (IsOwner)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-4">
+                        <MudAutocomplete T="WorkspaceMemberDto" @bind-Value="_candidate" SearchFunc="FindAsync" ToStringFunc="@(m => m is null ? null : m.Email)" Label="Add a member" DebounceInterval="300" Style="min-width:280px" data-testid="member-search" />
+                        <MudSelect T="string" @bind-Value="_role" Label="Role" Style="max-width:160px">
+                            @foreach (var role in WorkspaceRoles.All)
+                            {
+                                <MudSelectItem Value="@role">@role</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudButton Variant="Variant.Filled" Disabled="_candidate is null" OnClick="AddMemberAsync" data-testid="add-member">Add</MudButton>
+                    </MudStack>
+                }
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Metadata">
+            <div class="pa-4"><Shareme.Web.Client.Metadata.MetadataEditor @key="_workspace.Id" NodeId="_workspace.Id" /></div>
+        </MudTabPanel>
+        @if (IsOwner)
+        {
+            <MudTabPanel Text="Settings">
+                <div class="pa-4">
+                    <MudTextField @bind-Value="_name" Label="Name" />
+                    @if (_workspace.Kind != WorkspaceKinds.Collection)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4">Finalise into</MudText>
+                        <MudText Typo="Typo.body2">@(_folderName ?? "No folder chosen")</MudText>
+                        @if (_rootId is { } root)
+                        {
+                            <Shareme.Web.Client.Graph.FolderPicker StartId="root" OnPicked="PickFolderAsync" />
+                        }
+                        <MudSwitch T="bool" @bind-Value="_copyMetadata" Color="Color.Primary" Label="Copy the workspace's metadata to the files when finalising" />
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" OnClick="SaveAsync" data-testid="save-settings">Save</MudButton>
+                </div>
+            </MudTabPanel>
+        }
+        <MudTabPanel Text="Activity">
+            <div class="pa-4"><AuditTimeline EntityType="Workspace" EntityId="@_workspace.Id.ToString()" /></div>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    private WorkspaceDto? _workspace;
+    private IReadOnlyList<WorkspaceItemDto> _items = [];
+    private IReadOnlyList<WorkspaceMemberDto> _members = [];
+    private WorkspaceMemberDto? _candidate;
+    private string _role = WorkspaceRoles.Collaborator;
+    private string? _name, _folderName;
+    private Guid? _folderId, _rootId;
+    private bool _copyMetadata;
+
+    [Parameter] public Guid Id { get; set; }
+
+    private bool IsOwner => _workspace?.MyRole == WorkspaceRoles.Owner;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _workspace = null;
+        await LoadAsync();
+        if (_workspace is not null)
+        {
+            (_name, _folderId, _copyMetadata) = (_workspace.Name, _workspace.FinalizationFolderId, _workspace.CopyMetadataToAssets);
+            _folderName = _folderId is { } folder ? (await Graph.GetNodeAsync(folder)).Node.Name : null;
+            if (IsOwner)
+            {
+                _rootId = (await Graph.GetRootAsync()).Id;
+            }
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _workspace = await Api.GetAsync(Id);
+            _items = await Api.GetItemsAsync(Id);
+            _members = await Api.GetMembersAsync(Id);
+        }
+        catch (ApiException exception) when (exception.Status is 403 or 404)
+        {
+            Snackbar.Add("This workspace is not available.", Severity.Warning);
+            Nav.NavigateTo("/workspaces");
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<IEnumerable<WorkspaceMemberDto>> FindAsync(string? search, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Api.FindCandidatesAsync(Id, search, cancellationToken);
+        }
+        catch (ApiException)
+        {
+            return [];
+        }
+    }
+
+    private Task AddMemberAsync() => RunAsync(async () =>
+    {
+        await Api.AddMemberAsync(Id, new AddWorkspaceMemberRequest(_candidate!.UserId, _role));
+        _candidate = null;
+    });
+
+    private async Task PickFolderAsync(Guid folder)
+    {
+        _folderId = folder;
+        _folderName = (await Graph.GetNodeAsync(folder)).Node.Name;
+    }
+
+    private Task SaveAsync() => RunAsync(() => Api.UpdateAsync(Id, new UpdateWorkspaceRequest(_name ?? string.Empty, _folderId, _copyMetadata, _workspace!.RequiredSetId)));
+
+    private Task FinalizeAsync() => RunAsync(async () =>
+    {
+        var result = await Api.FinalizeAsync(Id);
+        Snackbar.Add($"{result.Moved} files moved to their folder.", Severity.Success);
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You do not have permission for this." : exception.Message, Severity.Warning);
+        }
+    }
+}
