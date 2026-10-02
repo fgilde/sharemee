@@ -26,6 +26,10 @@ else
         <MudText Typo="Typo.h4">@_asset.Name</MudText>
         <MudChip T="string" Size="Size.Small" Color="@StatusColor(_asset.Status)" data-testid="asset-status">@_asset.Status</MudChip>
         <MudSpacer />
+        @if (Preview is { State: DerivationStates.Ready })
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Crop" OnClick="() => _cropping = !_cropping" data-testid="crop">Crop</MudButton>
+        }
         @if (CanView)
         {
             <MudToggleIconButton @bind-Toggled="_showOriginal" Icon="@Icons.Material.Outlined.Preview" ToggledIcon="@Icons.Material.Filled.Preview" title="Show the original" data-testid="show-original" />
@@ -47,7 +51,11 @@ else
     <MudGrid>
         <MudItem xs="12" md="7">
             <MudPaper Outlined="true" Class="pa-2" Style="min-height:320px" data-testid="preview">
-                @if (CanView && _showOriginal)
+                @if (_cropping)
+                {
+                    <CropEditor Asset="_asset" Types="CropTypes" OnClose="() => _cropping = false" />
+                }
+                else if (CanView && _showOriginal)
                 {
                     <MudExFileDisplay Url="@AssetUrls.View(_asset.Id)" ContentType="@_asset.CurrentVersion!.MimeType" FileName="@_asset.CurrentVersion.FileName" ShowFileName="false" data-testid="original" />
                 }
@@ -203,6 +211,7 @@ else
     private DownloadLinkDto? _link;
     private IReadOnlyList<DerivationTypeDto> _types = [];
     private bool _showOriginal;
+    private bool _cropping;
 
     [Parameter] public Guid Id { get; set; }
 
@@ -216,6 +225,8 @@ else
     private IEnumerable<(string Kind, string Name, DerivationTypeDto? Type)> RenditionRows =>
         _asset!.Derivations.Where(d => DerivationKinds.System.Contains(d.Kind)).Select(d => (d.Kind, d.Kind, (DerivationTypeDto?)null))
             .Concat(_types.Where(t => t.AssetTypeKeys.Count == 0 || t.AssetTypeKeys.Contains(_asset.AssetType)).Select(t => (t.Key, t.Name, (DerivationTypeDto?)t)));
+
+    private IReadOnlyList<DerivationTypeDto> CropTypes => _types.Where(t => t.AssetTypeKeys.Count == 0 || t.AssetTypeKeys.Contains(_asset!.AssetType)).ToList();
 
     private string MediaType => _asset?.CurrentVersion?.MimeType.StartsWith("audio/", StringComparison.Ordinal) == true ? "audio/mpeg" : "video/mp4";
 
@@ -231,6 +242,7 @@ else
     {
         _asset = null;
         _link = null;
+        _cropping = false;
         await ReloadAsync();
 
         // a page or text shows best as itself; images and media start with their renditions

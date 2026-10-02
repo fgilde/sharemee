@@ -112,6 +112,20 @@ public sealed class AssetDetailTests : BunitContext
     }
 
     [Fact]
+    public async Task A_rendered_picture_can_be_cropped_into_its_renditions_or_a_variant()
+    {
+        var version = new AssetVersionDto(Guid.CreateVersion7(), 1, "logo.png", 2048, new string('a', 64), "image/png", "png", DateTimeOffset.UtcNow, null);
+        _api.GetAssetAsync(_asset, Arg.Any<CancellationToken>()).Returns(new AssetDto(_asset, _folder, "logo.png", AssetTypeKeys.Image, AssetStatuses.Ready, version, [version],
+            [new DerivationDto(DerivationKinds.Preview, DerivationStates.Ready, 1600, 800)], CanDownload: true));
+        var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));
+
+        await page.WaitForElement("[data-testid='crop']").ClickAsync(new());
+
+        page.WaitForAssertion(() => page.Find("[data-testid='crop-editor']").TextContent.ShouldContain("Nothing selected yet."));
+        page.Find("[data-testid='apply-crop']").HasAttribute("disabled").ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task A_share_link_is_created_on_request()
     {
         _api.CreateDownloadLinkAsync(_asset, null, Arg.Any<CancellationToken>()).Returns(new DownloadLinkDto("/api/v1/blobs/token", DateTimeOffset.UtcNow.AddMinutes(15)));
