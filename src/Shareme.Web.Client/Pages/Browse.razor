@@ -10,6 +10,7 @@
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject Shareme.Web.Client.Assets.IDownloadsApi Downloads
+@inject Shareme.Web.Client.Workspaces.IWorkspacesApi WorkspacesApi
 @inject MudBlazor.Extensions.Services.MudExFileService Files
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
@@ -63,6 +64,16 @@ else if (_detail is not null)
             <MudText Typo="Typo.body2">@_selected.Count selected</MudText>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.DriveFileMove" OnClick="() => _moving = _children.Where(c => _selected.Contains(c.Id)).ToList()">Move</MudButton>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(SelectedAssets))" Disabled="SelectedAssets.Count == 0" data-testid="download-selected">Download</MudButton>
+            <MudMenu Size="Size.Small" Label="Add to collection" StartIcon="@Icons.Material.Outlined.CollectionsBookmark" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadCollectionsAsync() : Task.CompletedTask" data-testid="add-to-collection">
+                @foreach (var collection in _collections)
+                {
+                    <MudMenuItem OnClick="() => LinkAsync(collection.Id)">@collection.Name</MudMenuItem>
+                }
+                @if (_collections.Count == 0)
+                {
+                    <MudMenuItem Disabled="true">No collection you may add to</MudMenuItem>
+                }
+            </MudMenu>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(SelectedAssets, Title: _detail.Node.Name))" Disabled="SelectedAssets.Count == 0" data-testid="contact-sheet-selected">Contact sheet</MudButton>
             <MudButton Size="Size.Small" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeleteSelectedAsync" data-testid="delete-selected">Delete</MudButton>
             <MudButton Size="Size.Small" OnClick="() => _selected.Clear()">Clear</MudButton>
@@ -291,6 +302,33 @@ else
     {
         await ForEachAsync(nodes.Where(n => n.Id != target).Select(n => n.Id), id => Api.MoveNodeAsync(id, target), "moved");
         _moving = null;
+    }
+
+    private IReadOnlyList<Shareme.Contracts.Workspaces.WorkspaceDto> _collections = [];
+
+    private async Task LoadCollectionsAsync()
+    {
+        try
+        {
+            _collections = (await WorkspacesApi.GetAsync()).Where(w => w.Kind != Shareme.Contracts.Workspaces.WorkspaceKinds.Upload && w.MyRole is not null).ToList();
+        }
+        catch (ApiException)
+        {
+            _collections = [];
+        }
+    }
+
+    private async Task LinkAsync(Guid collection)
+    {
+        try
+        {
+            await WorkspacesApi.LinkAsync(collection, SelectedAssets);
+            Snackbar.Add($"{SelectedAssets.Count} assets added.", Severity.Success);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
     }
 
     private List<Guid> SelectedAssets => _children.Where(c => c.Semantic == "asset" && _selected.Contains(c.Id)).Select(c => c.Id).ToList();

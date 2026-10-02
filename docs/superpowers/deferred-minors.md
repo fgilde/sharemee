@@ -2,6 +2,15 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P4a (workspaces)
+
+- [ ] Global Nodes.Read and global Workspaces.Finalize reach every workspace without membership (administrators); scope them to workspace grants if that is unwanted.
+- [ ] Workspace-to-asset link edges are written directly although the link edge type allows folder:* only; the edge UI treats them as invalid.
+- [ ] Breadcrumbs of nodes inside a workspace link to /browse instead of /workspaces.
+- [ ] The Down migration of Workspaces fails once workspaces exist (old root index).
+- [ ] Workspace list counts all children, the detail counts only visible items.
+- [ ] Template managers who are no members see templates in the list but cannot open them.
+
 ## From P3e (3D, animated thumbnails)
 
 - [ ] Blender runs without memory limit or sandbox (2 threads, factory startup, no autoexec, sidecar references refused); a container without network and with only the work folder would allow FBX, which stays unrendered until then.

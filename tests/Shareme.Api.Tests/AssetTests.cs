@@ -301,7 +301,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         }
 
         // rendering again keeps the hand made rendition; without a watermark it needs the download right
-        (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/rerender", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await RerenderAsync(image.AssetId);
         (await DerivationsAsync(image.AssetId)).Single(d => d.Kind == "print").IsManual.ShouldBeTrue();
         (await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/print", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         using var download = await Admin.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/print?download=true", Ct);
@@ -720,6 +720,20 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
 
         pdf.Append($"trailer\n<< /Size {objects.Length + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
         return System.Text.Encoding.ASCII.GetBytes(pdf.ToString());
+    }
+
+    /// <summary>Asks for a fresh render, waiting while one still runs (metadata changes start renders on their own).</summary>
+    private async Task RerenderAsync(Guid assetId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        HttpStatusCode status;
+        while ((status = (await Admin.PostAsync($"/api/v1/assets/{assetId}/derivations/rerender", null, Ct)).StatusCode) == HttpStatusCode.Conflict)
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the running render did not finish");
+            await Task.Delay(250, Ct);
+        }
+
+        status.ShouldBe(HttpStatusCode.NoContent);
     }
 
     private async Task<IReadOnlyList<DerivationDto>> DerivationsAsync(Guid assetId)

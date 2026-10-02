@@ -146,7 +146,7 @@ internal sealed class CropHandlers(CoworkeeDbContext db, NodeAccess access, IBac
             return Error.Validation("Name", "A name of up to 200 characters without slashes or control characters.");
         }
 
-        if (await db.Set<Folder>().SingleOrDefaultAsync(f => f.Id == parentId, cancellationToken) is not { } folder)
+        if (await db.Set<Node>().SingleOrDefaultAsync(f => f.Id == parentId, cancellationToken) is not { } folder || !folder.AcceptsFiles())
         {
             return Error.NotFound("nodes.not_found", "The folder of the asset does not exist.");
         }

@@ -161,10 +161,24 @@ internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser curr
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var parentExists = node.ParentId is { } parentId && await db.Set<Node>().AnyAsync(n => n.Id == parentId, cancellationToken);
-        if (!parentExists)
+
+        // a workspace is a root itself; everything else whose parent is gone comes back under the folder root, but never content of a workspace
+        if (!parentExists && node is not Workspace)
         {
+            var top = node.PathIds[0];
+            Node? home = await db.Set<Folder>().SingleOrDefaultAsync(n => n.ParentId == null, cancellationToken);
+            if (top != home?.Id)
+            {
+                // content of a workspace goes back to its workspace, never into the shared folder tree
+                home = await db.Set<Workspace>().SingleOrDefaultAsync(w => w.Id == top, cancellationToken);
+                if (home is null)
+                {
+                    return Error.Conflict("nodes.restore_workspace_first", "This belonged to a workspace; restore the workspace first.");
+                }
+            }
+
             var oldPrefix = node.Path;
-            node.PlaceUnder(await db.Set<Node>().SingleAsync(n => n.ParentId == null, cancellationToken));
+            node.PlaceUnder(home);
             await NodeCommandHandlers.RebaseDescendantsAsync(db, node, oldPrefix, cancellationToken);
         }
 

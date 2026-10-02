@@ -388,7 +388,7 @@ internal static class AssetSelection
 
         if (folderId is { } id)
         {
-            if (await db.Set<Folder>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken) is not { } folder
+            if (await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == id && (f is Folder || f is Workspace), cancellationToken) is not { } folder
                 || !await access.CanAsync(NodePermissions.Read, folder.Id, cancellationToken))
             {
                 return Error.NotFound("nodes.not_found", "The folder does not exist.");

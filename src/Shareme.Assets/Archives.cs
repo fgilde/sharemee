@@ -104,7 +104,7 @@ internal sealed class ArchiveHandlers(CoworkeeDbContext db, NodeAccess access, I
         }
 
         var targetId = command.Request.TargetFolderId ?? archive.ParentId;
-        if (targetId is null || await db.Set<Folder>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == targetId, cancellationToken) is not { } target)
+        if (targetId is null || await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == targetId, cancellationToken) is not { } target || !target.AcceptsFiles())
         {
             return Error.NotFound("nodes.not_found", "The target folder does not exist.");
         }
@@ -223,14 +223,14 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
 
     private async Task UnpackAsync(ArchiveExtraction extraction, string path, string work, CancellationToken cancellationToken)
     {
-        if (await db.Set<Folder>().SingleOrDefaultAsync(f => f.Id == extraction.TargetFolderId, cancellationToken) is not { } target
+        if (await db.Set<Node>().SingleOrDefaultAsync(f => f.Id == extraction.TargetFolderId, cancellationToken) is not { } target || !target.AcceptsFiles()
             || !await access.CanAsync(NodePermissions.Create, target.Id, cancellationToken))
         {
             throw new InvalidOperationException("The target folder is gone or no longer writable for you.");
         }
 
         var maxTotal = configuration.GetValue(Archives.MaxTotalSetting, Archives.DefaultMaxTotal);
-        var folders = new Dictionary<string, Folder?>(StringComparer.OrdinalIgnoreCase) { [string.Empty] = target };
+        var folders = new Dictionary<string, Node?>(StringComparer.OrdinalIgnoreCase) { [string.Empty] = target };
         long total = 0;
 
         // ponytail: the central directory is read before the count is checked; bounded by the archive size, an EOCD pre-check would stop huge ones earlier
@@ -328,7 +328,7 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
     }
 
     /// <summary>The folder for a path below the target, made where missing; null when an existing one along the way is not writable for the caller.</summary>
-    private async Task<Folder?> FolderAsync(Dictionary<string, Folder?> folders, List<string> segments, CancellationToken cancellationToken)
+    private async Task<Node?> FolderAsync(Dictionary<string, Node?> folders, List<string> segments, CancellationToken cancellationToken)
     {
         var parent = folders[string.Empty]!;
         for (var depth = 1; depth <= segments.Count; depth++)
@@ -369,7 +369,7 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
     private string problem = string.Empty;
 
     /// <summary>Stores one file as a new asset like an upload would (type and content checked); null with <see cref="problem"/> set when it is refused.</summary>
-    private async Task<(Asset Asset, AssetVersion Version)?> ImportAsync(Folder folder, string fileName, string path, CancellationToken cancellationToken)
+    private async Task<(Asset Asset, AssetVersion Version)?> ImportAsync(Node folder, string fileName, string path, CancellationToken cancellationToken)
     {
         var parts = fileName.Split('.').Skip(1).Select(p => p.Trim().ToLowerInvariant()).Where(p => p.Length is > 0 and <= 20).ToList();
         if (await db.Set<FileType>().Where(t => t.ForbiddenForUpload && parts.Contains(t.Extension)).Select(t => t.Extension).FirstOrDefaultAsync(cancellationToken) is { } forbidden)

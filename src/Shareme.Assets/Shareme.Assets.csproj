@@ -2,6 +2,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Shareme.Search" />
     <InternalsVisibleTo Include="Shareme.Processing" />
+    <InternalsVisibleTo Include="Shareme.Workspaces" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />
     <CoworkeePackage Include="Coworkee.Storage" />

@@ -2549,7 +2549,7 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasIndex("TenantId")
                         .IsUnique()
                         .HasDatabaseName("IX_Nodes_Root")
-                        .HasFilter("\"ParentId\" IS NULL");
+                        .HasFilter("\"ParentId\" IS NULL AND \"Kind\" = 'folder'");
 
                     b.HasIndex("TenantId", "ParentId", "SortIndex");
 
@@ -2640,6 +2640,15 @@ namespace Shareme.Infrastructure.Migrations
                             Key = "asset",
                             Name = "Asset",
                             Semantic = "Asset"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000003"),
+                            Icon = "workspaces",
+                            IsSystem = true,
+                            Key = "workspace",
+                            Name = "Workspace",
+                            Semantic = "Workspace"
                         });
                 });
 
@@ -3009,6 +3018,31 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("SavedSearches", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Workspaces.WorkspaceRoleBinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("WorkspaceRoleBindings", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Graph.Asset", b =>
                 {
                     b.HasBaseType("Shareme.Graph.Node");
@@ -3047,6 +3081,38 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasBaseType("Shareme.Graph.Node");
 
                     b.HasDiscriminator().HasValue("folder");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Workspace", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.Property<bool>("CopyMetadataToAssets")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("FinalizationFolderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("FinalizedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsTemplate")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("RequiredSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TemplateId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WorkspaceKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasIndex("TenantId", "IsTemplate");
+
+                    b.HasDiscriminator().HasValue("workspace");
                 });
 
             modelBuilder.Entity("Coworkee.Identity.Domain.ResourcePermission", b =>

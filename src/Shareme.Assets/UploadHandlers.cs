@@ -96,7 +96,7 @@ internal sealed class UploadHandlers(CoworkeeDbContext db, ICurrentUser currentU
                 return Error.NotFound("nodes.not_found", "The asset does not exist.");
             }
         }
-        else if (request.TargetFolderId is not { } folderId || !await db.Set<Folder>().AnyAsync(f => f.Id == folderId, cancellationToken))
+        else if (request.TargetFolderId is not { } folderId || await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(f => f.Id == folderId, cancellationToken) is not { } target || !target.AcceptsFiles())
         {
             return Error.Validation("TargetFolderId", "Choose a folder to upload into.");
         }
@@ -200,7 +200,7 @@ internal sealed class UploadHandlers(CoworkeeDbContext db, ICurrentUser currentU
         Asset? placeholder = null;
         if (session.AssetId is null)
         {
-            if (await db.Set<Folder>().SingleOrDefaultAsync(f => f.Id == session.TargetFolderId, cancellationToken) is not { } folder)
+            if (await db.Set<Node>().SingleOrDefaultAsync(f => f.Id == session.TargetFolderId, cancellationToken) is not { } folder || !folder.AcceptsFiles())
             {
                 return Error.NotFound("nodes.not_found", "The target folder no longer exists.");
             }

@@ -125,7 +125,7 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
             return Error.Validation("Tenant", "The root folder belongs to an organisation.");
         }
 
-        var root = await db.Set<Node>().SingleOrDefaultAsync(n => n.ParentId == null, cancellationToken);
+        var root = await db.Set<Folder>().SingleOrDefaultAsync(n => n.ParentId == null, cancellationToken);
         if (root is null)
         {
             root = new Folder { Name = "Root", Names = new() { ["en"] = "Root", ["de"] = "Stamm" }, NodeTypeId = NodeType.FolderTypeId };
@@ -140,12 +140,14 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
     {
         if (await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
         {
-            var root = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == null).ToListAsync(cancellationToken);
+            var root = await db.Set<Folder>().AsNoTracking().Where(n => n.ParentId == null).ToListAsync(cancellationToken);
             return Result<IReadOnlyList<NodeDto>>.Success(await mapper.MapAsync(root, cancellationToken));
         }
 
         var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
-        var nodes = await db.Set<Node>().AsNoTracking().Where(n => granted.Contains(n.Id)).ToListAsync(cancellationToken);
+        // entry points of the folder tree only; workspaces have their own list
+        var tree = await db.Set<Folder>().AsNoTracking().Where(n => n.ParentId == null).Select(n => n.Path).SingleOrDefaultAsync(cancellationToken) ?? "/";
+        var nodes = await db.Set<Node>().AsNoTracking().Where(n => granted.Contains(n.Id) && n.Path.StartsWith(tree)).ToListAsync(cancellationToken);
         var interrupted = await InterruptedAsync(nodes.SelectMany(n => n.PathIds).Distinct().ToList(), cancellationToken);
         var topMost = nodes.Where(n => n.PathIds is var ids && (ids.Count == 1 || interrupted.Contains(n.Id) || !NodeAccess.Readable(ids, granted, interrupted)[^2]))
             .OrderBy(n => n.Name).ToList();
@@ -313,7 +315,7 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
 
         if (node.ParentId is null)
         {
-            return NodeErrors.RootIsFixed;
+            return node is Workspace ? Error.Conflict("nodes.workspace_is_root", "Workspaces stay where they are.") : NodeErrors.RootIsFixed;
         }
 
         if (target.Path.StartsWith(node.Path, StringComparison.Ordinal) || target.Semantic == NodeSemantic.Asset)
@@ -374,7 +376,7 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return NodeErrors.NotFound;
         }
 
-        if (node.ParentId is null)
+        if (node is { ParentId: null } and not Workspace)
         {
             return NodeErrors.RootIsFixed;
         }

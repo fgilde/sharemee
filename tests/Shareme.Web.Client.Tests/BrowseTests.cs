@@ -30,6 +30,7 @@ public sealed class BrowseTests : BunitContext
         Services.AddMudServices();
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_downloads);
+        Services.AddSingleton(Substitute.For<Shareme.Web.Client.Workspaces.IWorkspacesApi>());
         Services.AddSingleton(_api);
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetNodeMetadataAsync(default, default).ReturnsForAnyArgs(new NodeMetadataDto(_folder, "folder", new Dictionary<string, EffectivePropertyDto>()));
