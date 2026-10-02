@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261002130438_AutomationRules")]
+    [Migration("20261002131851_AutomationRules")]
     partial class AutomationRules
     {
         /// <inheritdoc />
@@ -2442,6 +2442,9 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.Property<int>("Skipped")
                         .HasColumnType("integer");
+
+                    b.Property<Guid>("StartedBy")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("State")
                         .IsRequired()

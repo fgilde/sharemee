@@ -28,6 +28,7 @@ namespace Shareme.Infrastructure.Migrations
                     Failed = table.Column<int>(type: "integer", nullable: false),
                     Error = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     Entries = table.Column<string>(type: "jsonb", nullable: false),
+                    StartedBy = table.Column<Guid>(type: "uuid", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     TenantId = table.Column<Guid>(type: "uuid", nullable: false)
                 },

@@ -22,6 +22,7 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         }
 
         (await Admin.PostAsJsonAsync("/api/v1/metadata/definitions", new PropertyDefinitionRequest("pages", "Pages", PropertyValueTypes.Integer), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsJsonAsync("/api/v1/metadata/definitions", new PropertyDefinitionRequest("title", "Title", Localizable: true), Ct)).EnsureSuccessStatusCode();
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -94,16 +95,17 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
     [Fact]
     public async Task Rule_jobs_apply_rules_afterwards_and_report_per_node()
     {
-        var label = await RuleAsync(new RuleRequest("Label", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status")], [new RuleAction("label", "{fnc.find(status)}!")], IsActive: false));
-        var pages = await RuleAsync(new RuleRequest("Pages", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.EqualTo, "status", "bad")], [new RuleAction("pages", "abc")], IsActive: false, SortIndex: 1));
         var root = await FolderAsync("Run");
         var ok = await FolderAsync("ok", root);
         var bad = await FolderAsync("bad", root);
         var empty = await FolderAsync("empty", root);
         await PatchAsync(ok, new() { ["status"] = [Text("fine")] });
         await PatchAsync(bad, new() { ["status"] = [Text("bad")] });
+        await RuleAsync(new RuleRequest("Label", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status")], [new RuleAction("label", "{fnc.find(status)}!")]));
+        await RuleAsync(new RuleRequest("Pages", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.EqualTo, "status", "bad")], [new RuleAction("pages", "abc")], SortIndex: 1));
 
-        var started = await (await Admin.PostAsJsonAsync("/api/v1/rule-jobs", new RuleJobRequest(FolderId: root, RuleIds: [label.Id, pages.Id]), Ct)).Content.ReadFromJsonAsync<RuleJobDto>(Ct);
+        await RuleAsync(new RuleRequest("Live only", [new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.ValueChanged, "status")], [new RuleAction("verdict", "changed"), new RuleAction("verdict", "not changed", OnMatch: false)]));
+        var started = await (await Admin.PostAsJsonAsync("/api/v1/rule-jobs", new RuleJobRequest(FolderId: root), Ct)).Content.ReadFromJsonAsync<RuleJobDto>(Ct);
         var deadline = DateTime.UtcNow.AddSeconds(30);
         RuleJobDto job;
         while ((job = (await Admin.GetFromJsonAsync<RuleJobDto>($"/api/v1/rule-jobs/{started!.Id}", Ct))!).State is RuleJobStates.Queued or RuleJobStates.Running)
@@ -117,6 +119,9 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("pages");
         Get(await MetadataAsync(ok), "label").ShouldBe("fine!");
         Get(await MetadataAsync(empty), "label").ShouldBeNull();
+        Get(await MetadataAsync(empty), "verdict").ShouldBeNull();
+        Get(await MetadataAsync(bad), "label").ShouldBe("bad!");
+        job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("Written by Label");
         (await Admin.GetFromJsonAsync<RuleJobDto[]>("/api/v1/rule-jobs", Ct))!.Select(j => j.Id).ShouldContain(job.Id);
     }
 
@@ -128,6 +133,20 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         (await Admin.PostAsJsonAsync("/api/v1/rules", new RuleRequest("None", [], []), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await Admin.PostAsJsonAsync("/api/v1/rules", new RuleRequest("Odd", [new RuleCondition("sometimes", RuleOperators.HasValue, "code")], [new RuleAction("label", "x")]), Ct))
             .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        foreach (var broken in new[] { "{var.yeer}", "{fnc.nope(code)}", "{fnc.regexExtract(code, ()}", "{fnc.find(code" })
+        {
+            (await Admin.PostAsJsonAsync("/api/v1/rules", new RuleRequest("Broken", [], [new RuleAction("label", broken)]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest, broken);
+        }
+
+        foreach (var target in new[] { "title", "missing" })
+        {
+            (await Admin.PostAsJsonAsync("/api/v1/rules", new RuleRequest("Target", [], [new RuleAction(target, "x")]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest, target);
+        }
+
+        var live = await RuleAsync(new RuleRequest("Live", [new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.IsNewNode)], [new RuleAction("label", "x")], IsActive: false));
+        (await Admin.PostAsJsonAsync("/api/v1/rule-jobs", new RuleJobRequest(NodeIds: [Guid.NewGuid()], RuleIds: [live.Id]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.DeleteAsync($"/api/v1/rules/{live.Id}", Ct)).EnsureSuccessStatusCode();
 
         var rule = await RuleAsync(new RuleRequest("Fine", [], [new RuleAction("label", "x")]));
         (await Admin.PutAsJsonAsync($"/api/v1/rules/{rule.Id}", new RuleRequest("Renamed", [], [new RuleAction("label", "y")], IsActive: false), Ct)).EnsureSuccessStatusCode();

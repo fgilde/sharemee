@@ -2440,6 +2440,9 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<int>("Skipped")
                         .HasColumnType("integer");
 
+                    b.Property<Guid>("StartedBy")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("State")
                         .IsRequired()
                         .HasMaxLength(20)

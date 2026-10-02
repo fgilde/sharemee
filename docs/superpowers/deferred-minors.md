@@ -2,6 +2,14 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P5a (rules)
+
+- [ ] Conditions, `OnlyIfEmpty` and templates look at a node's own values only, not inherited ones.
+- [ ] Rules write one value per property: multi-value targets lose their other values, localized and context-bound targets are refused at save.
+- [ ] Metadata copied without `SetNodeMetadata` (workspace finalise, crop variants) does not trigger rules.
+- [ ] Rule jobs report no realtime progress; the admin page starts jobs for a folder only (the API also takes node ids), selection from Browse/Search is open.
+- [ ] Node type keys are not checked against the catalog when a rule is saved.
+
 ## From P4d (shares)
 
 - [ ] Share tokens are in the stored invitation mail body (OutgoingMail.HtmlBody) and in request paths of logs and telemetry; purge sent mail bodies and redact /public/shares/{token} and /s/{token}, or move the token into the URL fragment.

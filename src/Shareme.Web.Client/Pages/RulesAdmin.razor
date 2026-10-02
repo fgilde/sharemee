@@ -110,6 +110,7 @@
 </MudPaper>
 
 <MudText Typo="Typo.h6" Class="mt-6">Run rules on existing content</MudText>
+<MudText Typo="Typo.body2" Class="mb-2">Rules whose triggers only react to changes, new versions or new nodes run live only. The first version of a file counts as a new version and a new node.</MudText>
 <MudStack Row="true" AlignItems="AlignItems.Center">
     <MudTextField @bind-Value="_jobFolder" Label="Folder (id), everything below it" data-testid="job-folder" />
     <MudButton Variant="Variant.Outlined" OnClick="StartJobAsync" data-testid="start-job">Run active rules</MudButton>

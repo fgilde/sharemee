@@ -7,7 +7,9 @@ using Coworkee.AspNetCore;
 using Coworkee.AspNetCore.Http;
 using Coworkee.BackgroundJobs;
 using Coworkee.Core.Modularity;
+using Coworkee.Core;
 using Coworkee.Core.Results;
+using Coworkee.Core.Security;
 using Coworkee.Domain;
 using Coworkee.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
@@ -96,6 +98,8 @@ public sealed class RuleJob : Entity, IMultiTenant
 
     public List<RuleJobEntryDto> Entries { get; set; } = [];
 
+    public Guid StartedBy { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public Guid TenantId { get; set; }
@@ -147,13 +151,55 @@ internal sealed record RuleContext(Node Node, string TypeKey, IReadOnlySet<strin
 internal sealed record RuleOutcome(bool FiltersMatched, bool TriggersMatched, Dictionary<string, string> Values, List<string> Problems);
 
 /// <summary>Evaluates conditions, renders templates and writes through the regular metadata command, so the same checks and permissions apply.</summary>
-internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog catalog, IDispatcher dispatcher, TimeProvider clock)
+internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IServiceScopeFactory scopes, TimeProvider clock)
 {
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(200);
 
     // arguments end at the first ")}", so patterns may contain parentheses
-    [GeneratedRegex(@"\{(var\.[a-z]+|fnc\.([a-zA-Z]+)\((.*?)\))\}")]
+    [GeneratedRegex(@"\{(var\.[a-zA-Z]+|fnc\.([a-zA-Z]+)\((.*?)\))\}")]
     private static partial Regex Token();
+
+    private static readonly HashSet<string> Variables = ["var.year", "var.month", "var.day", "var.hour", "var.minute", "var.second", "var.date", "var.name"];
+
+    /// <summary>Unknown tokens and broken patterns, checked when a rule is saved.</summary>
+    public static IEnumerable<string> TemplateProblems(string template)
+    {
+        foreach (Match match in Token().Matches(template))
+        {
+            var args = match.Groups[3].Value.Split(',', 2, StringSplitOptions.TrimEntries);
+            var problem = match.Groups[1].Value.StartsWith("var.", StringComparison.Ordinal)
+                ? Variables.Contains(match.Groups[1].Value) ? null : $"Unknown variable {match.Value}."
+                : match.Groups[2].Value switch
+                {
+                    "find" or "findInAscendants" when args is [{ Length: > 0 }] => null,
+                    "regexExtract" when args is [{ Length: > 0 }, { } pattern] => ValidPattern(pattern) ? null : $"The pattern in {match.Value} is not a valid regular expression.",
+                    _ => $"Unknown function or arguments {match.Value}.",
+                };
+            if (problem is not null)
+            {
+                yield return problem;
+            }
+        }
+
+        var rest = Token().Replace(template, string.Empty);
+        if (rest.Contains("{var.", StringComparison.Ordinal) || rest.Contains("{fnc.", StringComparison.Ordinal))
+        {
+            yield return "A {var.…} or {fnc.…} token is not closed.";
+        }
+    }
+
+    public static bool ValidPattern(string pattern)
+    {
+        try
+        {
+            _ = new Regex(pattern, RegexOptions.None, RegexTimeout);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     public async Task<Context?> ContextAsync(Guid nodeId, IReadOnlySet<string> changed, bool isNewVersion, bool isNewNode, CancellationToken cancellationToken)
     {
@@ -167,6 +213,12 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
     }
 
     public sealed record Context(RuleContext Rule);
+
+    private static readonly HashSet<string> ChangeOperators = [RuleOperators.ValueChanged, RuleOperators.IsNewVersion, RuleOperators.IsNewNode];
+
+    /// <summary>All triggers look at what just happened, so the rule only makes sense live.</summary>
+    public static bool ReactsOnlyToChanges(Rule rule) =>
+        rule.Conditions.Where(c => c.Kind == RuleConditionKinds.Trigger).ToList() is { Count: > 0 } triggers && triggers.All(t => ChangeOperators.Contains(t.Operator));
 
     public async Task<RuleOutcome> EvaluateAsync(Rule rule, RuleContext context, CancellationToken cancellationToken)
     {
@@ -190,12 +242,19 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         {
             foreach (var action in rule.Actions.Where(a => a.OnMatch == triggersMatched))
             {
-                if (action.OnlyIfEmpty && context.Node.Metadata.TryGetValue(action.PropertyKey, out var existing) && existing.Count > 0)
+                var current = context.Node.Metadata.TryGetValue(action.PropertyKey, out var existing) ? existing : [];
+                if (action.OnlyIfEmpty && current.Count > 0)
                 {
                     continue;
                 }
 
-                values[action.PropertyKey] = await RenderAsync(action.Template, context.Node, problems, cancellationToken);
+                // a template that failed to render is not written, so a broken pattern never clears a value; unchanged values are not written either
+                var before = problems.Count;
+                var text = await RenderAsync(action.Template, context.Node, problems, cancellationToken);
+                if (problems.Count == before && !(current.Count == 1 ? Text(current[0]) == text : current.Count == 0 && text.Length == 0))
+                {
+                    values[action.PropertyKey] = text;
+                }
             }
         }
 
@@ -217,10 +276,19 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
             update[key] = text.Length == 0 ? null : definitions.TryGetValue(key, out var definition) ? [ToValue(definition, text)] : [new MetadataValue(V: JsonSerializer.SerializeToElement(text))];
         }
 
-        var result = await dispatcher.SendAsync(new SetNodeMetadata(node.Id, update, Replace: false, MetadataSources.Rule), cancellationToken);
-        return result.IsSuccess ? null : result.Error!.Details is { Count: > 0 } details
-            ? string.Join("; ", details.Select(d => $"{d.Key}: {string.Join(" ", d.Value)}"))
-            : result.Error.Message;
+        // its own scope: a failed save does not stay tracked in the caller's context, and jobs do not pile up tracked nodes
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var result = await scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync(new SetNodeMetadata(node.Id, update, Replace: false, MetadataSources.Rule), cancellationToken);
+            return result.IsSuccess ? null : result.Error!.Details is { Count: > 0 } details
+                ? string.Join("; ", details.Select(d => $"{d.Key}: {string.Join(" ", d.Value)}"))
+                : result.Error.Message;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return exception is ConcurrencyConflictException ? "The node was changed at the same time." : "The values could not be saved.";
+        }
     }
 
     private async Task<bool> HoldsAsync(RuleCondition condition, RuleContext context, List<string> problems, CancellationToken cancellationToken)
@@ -230,9 +298,9 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         switch (condition.Operator)
         {
             case RuleOperators.EqualTo:
-                return values.Any(v => string.Equals(v, expected, StringComparison.OrdinalIgnoreCase));
+                return values.Any(v => Compare(v, expected) == 0);
             case RuleOperators.NotEqualTo:
-                return !values.Any(v => string.Equals(v, expected, StringComparison.OrdinalIgnoreCase));
+                return !values.Any(v => Compare(v, expected) == 0);
             case RuleOperators.Contains:
                 return values.Any(v => v.Contains(expected, StringComparison.OrdinalIgnoreCase));
             case RuleOperators.Regex:
@@ -247,7 +315,7 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
                 }
 
             case RuleOperators.GreaterThan or RuleOperators.GreaterThanOrEquals or RuleOperators.LessThan or RuleOperators.LessThanOrEquals:
-                return values.Any(v => Compare(v, expected) is { } order && condition.Operator switch
+                return values.Any(v => Compare(v, expected) is var order && condition.Operator switch
                 {
                     RuleOperators.GreaterThan => order > 0,
                     RuleOperators.GreaterThanOrEquals => order >= 0,
@@ -274,10 +342,10 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         }
     }
 
-    /// <summary>Numbers, then dates, then text; null when one side is no number or date while the other is.</summary>
-    private static int? Compare(string value, string expected)
+    /// <summary>As numbers when both are numbers, as dates when both are dates, else as text ignoring case.</summary>
+    private static int Compare(string value, string expected)
     {
-        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var a) && decimal.TryParse(expected, NumberStyles.Number, CultureInfo.InvariantCulture, out var b))
+        if (decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var a) && decimal.TryParse(expected, NumberStyles.Float, CultureInfo.InvariantCulture, out var b))
         {
             return a.CompareTo(b);
         }
@@ -350,7 +418,8 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         var ancestors = await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).ToDictionaryAsync(n => n.Id, cancellationToken);
         foreach (var id in Enumerable.Reverse(ids))
         {
-            if (ancestors.TryGetValue(id, out var ancestor) && First(ancestor, key) is { Length: > 0 } found)
+            // only what the current user may read, as access inheritance may be cut off above the node
+            if (ancestors.TryGetValue(id, out var ancestor) && First(ancestor, key) is { Length: > 0 } found && await access.CanAsync(Shareme.Contracts.Graph.NodePermissions.Read, id, cancellationToken))
             {
                 return found;
             }
@@ -389,14 +458,15 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
     /// <summary>The rendered text as a value of the property's type; the metadata checks report what does not fit.</summary>
     private static MetadataValue ToValue(PropertyDefinition definition, string text)
     {
-        if (definition.ListMode != ListModes.None)
+        if (definition.ListMode != ListModes.None && (!definition.AllowCustomValues || definition.ListValues.Any(v => v.Key == text)))
         {
             return new MetadataValue(List: text);
         }
 
         return definition.ValueType switch
         {
-            PropertyValueTypes.Integer or PropertyValueTypes.Decimal when decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var number) =>
+            PropertyValueTypes.Integer when long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var whole) => new MetadataValue(V: JsonSerializer.SerializeToElement(whole)),
+            PropertyValueTypes.Decimal when decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) =>
                 new MetadataValue(V: JsonSerializer.SerializeToElement(number)),
             PropertyValueTypes.Boolean when bool.TryParse(text, out var flag) => new MetadataValue(V: JsonSerializer.SerializeToElement(flag)),
             _ => new MetadataValue(V: JsonSerializer.SerializeToElement(text)),
@@ -437,6 +507,12 @@ internal sealed class RuleTriggers(CoworkeeDbContext db, RuleEngine engine, ILog
         foreach (var rule in rules.Where(r => r.AppliesTo(context.Rule.TypeKey)))
         {
             var outcome = await engine.EvaluateAsync(rule, context.Rule, cancellationToken);
+            if (outcome.Problems.Count > 0)
+            {
+                logger.LogWarning("Rule {Rule} on node {NodeId}: {Problems}", rule.Name, nodeId, string.Join(" ", outcome.Problems));
+            }
+
+            // writes never throw, so a failed rule does not replay the event's other handlers
             if (outcome.FiltersMatched && await engine.WriteAsync(context.Rule.Node, outcome.Values, cancellationToken) is { } problem)
             {
                 logger.LogWarning("Rule {Rule} could not write node {NodeId}: {Problem}", rule.Name, nodeId, problem);
@@ -473,7 +549,7 @@ public sealed record GetRuleJobs : IQuery<Result<IReadOnlyList<RuleJobDto>>>;
 [RequiresPermission(AutomationPermissions.ManageRules)]
 public sealed record GetRuleJob(Guid Id) : IQuery<Result<RuleJobDto>>;
 
-internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, NodeAccess access, IBackgroundJobs jobs, TimeProvider clock)
+internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, MetadataCatalog catalog, NodeAccess access, ICurrentUser currentUser, IBackgroundJobs jobs, TimeProvider clock)
     : IHandler<GetRules, Result<IReadOnlyList<RuleDto>>>,
       IHandler<SaveRule, Result<RuleDto>>,
       IHandler<DeleteRule, Result>,
@@ -515,22 +591,35 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Node
                 return Error.Validation("Conditions", $"'{condition.Operator}' needs a property.");
             }
 
-            if (condition.Operator == RuleOperators.Regex)
+            if (condition.Operator == RuleOperators.Regex && !RuleEngine.ValidPattern(condition.Value ?? string.Empty))
             {
-                try
-                {
-                    _ = new Regex(condition.Value ?? string.Empty, RegexOptions.None, TimeSpan.FromMilliseconds(200));
-                }
-                catch (ArgumentException)
-                {
-                    return Error.Validation("Conditions", "The pattern is not a valid regular expression.");
-                }
+                return Error.Validation("Conditions", "The pattern is not a valid regular expression.");
+            }
+
+            if (condition.Operator == RuleOperators.HasRelation && string.IsNullOrWhiteSpace(condition.Value))
+            {
+                return Error.Validation("Conditions", "'hasRelation' needs a relation type key.");
             }
         }
 
         if (request.Actions.Any(a => string.IsNullOrWhiteSpace(a.PropertyKey) || a.Template is null || a.Template.Length > 2000))
         {
             return Error.Validation("Actions", "Every action names a property and a template of up to 2000 characters.");
+        }
+
+        var definitions = (await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key);
+        foreach (var action in request.Actions)
+        {
+            // ponytail: rules write one value without language or context; add both to RuleAction when such targets are needed
+            if (!definitions.TryGetValue(action.PropertyKey, out var target) || target.Localizable || target.HasContext || !target.Editable || target.IsSystem)
+            {
+                return Error.Validation("Actions", $"'{action.PropertyKey}' is no editable property without languages and contexts.");
+            }
+
+            if (RuleEngine.TemplateProblems(action.Template).FirstOrDefault() is { } problem)
+            {
+                return Error.Validation("Actions", problem);
+            }
         }
 
         Rule rule;
@@ -599,22 +688,46 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Node
             return Error.Validation("NodeIds", $"Choose up to {RuleJobRunner.MaxNodes} nodes or one folder.");
         }
 
-        var job = new RuleJob { NodeIds = request.NodeIds?.Distinct().ToList() ?? [], FolderId = request.FolderId, RuleIds = request.RuleIds?.Distinct().ToList() ?? [], CreatedAt = clock.GetUtcNow() };
+        if (request.FolderId is { } folderId && !await access.CanAsync(Shareme.Contracts.Graph.NodePermissions.Read, folderId, cancellationToken))
+        {
+            return Error.NotFound("nodes.not_found", "The folder does not exist.");
+        }
+
+        if (request.RuleIds is { Count: > 0 } ruleIds)
+        {
+            var chosen = await db.Set<Rule>().AsNoTracking().Where(r => ruleIds.Contains(r.Id)).ToListAsync(cancellationToken);
+            if (chosen.Count != ruleIds.Distinct().Count())
+            {
+                return NotFound;
+            }
+
+            if (chosen.FirstOrDefault(RuleEngine.ReactsOnlyToChanges) is { } live)
+            {
+                return Error.Validation("RuleIds", $"'{live.Name}' reacts to changes, new versions or new nodes only and runs live.");
+            }
+        }
+
+        var job = new RuleJob
+        {
+            NodeIds = request.NodeIds?.Distinct().ToList() ?? [], FolderId = request.FolderId, RuleIds = request.RuleIds?.Distinct().ToList() ?? [],
+            StartedBy = currentUser.UserId ?? Guid.Empty, CreatedAt = clock.GetUtcNow(),
+        };
         db.Add(job);
         await db.SaveChangesAsync(cancellationToken);
         jobs.Enqueue<RuleJobRunner, Guid>(job.Id);
         return Map(job);
     }
 
+    // a manager sees the runs they started, with the nodes and messages only they were allowed to see
     public async Task<Result<IReadOnlyList<RuleJobDto>>> HandleAsync(GetRuleJobs query, CancellationToken cancellationToken)
     {
-        IReadOnlyList<RuleJobDto> runs = (await db.Set<RuleJob>().AsNoTracking().OrderByDescending(j => j.CreatedAt).Take(20).ToListAsync(cancellationToken))
+        IReadOnlyList<RuleJobDto> runs = (await db.Set<RuleJob>().AsNoTracking().Where(j => j.StartedBy == currentUser.UserId).OrderByDescending(j => j.CreatedAt).Take(20).ToListAsync(cancellationToken))
             .Select(j => Map(j) with { Entries = [] }).ToList();
         return Result<IReadOnlyList<RuleJobDto>>.Success(runs);
     }
 
     public async Task<Result<RuleJobDto>> HandleAsync(GetRuleJob query, CancellationToken cancellationToken) =>
-        await db.Set<RuleJob>().AsNoTracking().SingleOrDefaultAsync(j => j.Id == query.Id, cancellationToken) is { } job
+        await db.Set<RuleJob>().AsNoTracking().SingleOrDefaultAsync(j => j.Id == query.Id && j.StartedBy == currentUser.UserId, cancellationToken) is { } job
             ? Map(job)
             : Error.NotFound("rules.job_not_found", "The run does not exist.");
 
@@ -631,30 +744,55 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
 
     public async Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        if (await db.Set<RuleJob>().SingleOrDefaultAsync(j => j.Id == jobId && j.State == RuleJobStates.Queued, cancellationToken) is not { } job)
+        // claimed atomically, so a second delivery of the same job does nothing
+        if (await db.Set<RuleJob>().Where(j => j.Id == jobId && j.State == RuleJobStates.Queued)
+                .ExecuteUpdateAsync(u => u.SetProperty(j => j.State, RuleJobStates.Running), cancellationToken) == 0)
         {
             return;
         }
 
-        job.State = RuleJobStates.Running;
-        await db.SaveChangesAsync(cancellationToken);
+        var job = await db.Set<RuleJob>().SingleAsync(j => j.Id == jobId, cancellationToken);
         try
         {
-            var rules = await db.Set<Rule>().AsNoTracking().Where(r => job.RuleIds.Count == 0 ? r.IsActive : job.RuleIds.Contains(r.Id))
-                .OrderBy(r => r.SortIndex).ThenBy(r => r.Name).ToListAsync(cancellationToken);
+            // rules that only react to changes cannot hold afterwards; running them would write their "else" branch everywhere
+            var rules = (await db.Set<Rule>().AsNoTracking().Where(r => job.RuleIds.Count == 0 ? r.IsActive : job.RuleIds.Contains(r.Id))
+                .OrderBy(r => r.SortIndex).ThenBy(r => r.Name).ToListAsync(cancellationToken)).Where(r => !RuleEngine.ReactsOnlyToChanges(r)).ToList();
             var nodeIds = job.FolderId is { } folderId
                 ? await db.Set<Node>().Where(n => n.Path.StartsWith(db.Set<Node>().Where(f => f.Id == folderId).Select(f => f.Path).First()) && n.Id != folderId)
-                    .OrderBy(n => n.Path).Select(n => n.Id).Take(MaxNodes).ToListAsync(cancellationToken)
+                    .OrderBy(n => n.Path).Select(n => n.Id).Take(MaxNodes + 1).ToListAsync(cancellationToken)
                 : job.NodeIds;
+            if (nodeIds.Count > MaxNodes)
+            {
+                nodeIds = nodeIds[..MaxNodes];
+                job.Error = $"The folder holds more than {MaxNodes} nodes; the first {MaxNodes} were processed.";
+            }
+
             job.Total = nodeIds.Count;
             foreach (var nodeId in nodeIds)
             {
-                await RunAsync(job, rules, nodeId, cancellationToken);
+                try
+                {
+                    await RunAsync(job, rules, nodeId, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    logger.LogWarning(exception, "Rule run {JobId} failed on node {NodeId}.", jobId, nodeId);
+                    job.Failed++;
+                    Note(job, nodeId, "failed", "An internal error occurred.");
+                }
+
+                await db.SaveChangesAsync(cancellationToken);
             }
 
             job.State = RuleJobStates.Completed;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            // back in the queue for the retry
+            await db.Set<RuleJob>().Where(j => j.Id == jobId).ExecuteUpdateAsync(u => u.SetProperty(j => j.State, RuleJobStates.Queued), CancellationToken.None);
+            throw;
+        }
+        catch (Exception exception)
         {
             logger.LogWarning(exception, "Rule run {JobId} failed.", jobId);
             job.State = RuleJobStates.Failed;
@@ -671,17 +809,17 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
         {
             job.Skipped++;
             Note(job, nodeId, "skipped", "Not visible to you.");
-            await db.SaveChangesAsync(cancellationToken);
             return;
         }
 
         var matched = false;
-        var wrote = false;
-        string? problem = null;
+        var wrote = new List<string>();
+        var problems = new List<string>();
         foreach (var rule in rules.Where(r => r.AppliesTo(context.Rule.TypeKey)))
         {
             var outcome = await engine.EvaluateAsync(rule, context.Rule, cancellationToken);
             matched |= outcome.FiltersMatched && outcome.TriggersMatched;
+            problems.AddRange(outcome.Problems.Select(p => $"{rule.Name}: {p}"));
             if (!outcome.FiltersMatched || outcome.Values.Count == 0)
             {
                 continue;
@@ -689,23 +827,24 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
 
             if (await engine.WriteAsync(context.Rule.Node, outcome.Values, cancellationToken) is { } failure)
             {
-                problem = $"{rule.Name}: {failure}";
-                break;
+                problems.Add($"{rule.Name}: {failure}");
+                continue;
             }
 
-            wrote = true;
+            wrote.Add(rule.Name);
             context = await engine.ContextAsync(nodeId, new HashSet<string>(), false, false, cancellationToken) ?? context;
         }
 
-        if (problem is not null)
+        var written = wrote.Count > 0 ? $"Written by {string.Join(", ", wrote)}." : null;
+        if (problems.Count > 0)
         {
             job.Failed++;
-            Note(job, nodeId, "failed", problem);
+            Note(job, nodeId, "failed", string.Join(" ", problems.Prepend(written).OfType<string>()));
         }
-        else if (wrote)
+        else if (wrote.Count > 0)
         {
             job.Executed++;
-            Note(job, nodeId, "executed", null);
+            Note(job, nodeId, "executed", written);
         }
         else
         {
@@ -716,8 +855,6 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
         {
             job.Matched++;
         }
-
-        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static void Note(RuleJob job, Guid nodeId, string result, string? message)
