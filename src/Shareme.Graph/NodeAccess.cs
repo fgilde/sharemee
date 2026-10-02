@@ -34,8 +34,17 @@ internal sealed class NodeHierarchy(CoworkeeDbContext db) : IResourceHierarchy
     }
 }
 
-internal sealed class NodeAccess(IPermissionChecker permissions)
+internal sealed class NodeAccess(IPermissionChecker permissions, Restrictions restrictions)
 {
+    /// <summary>What the current user's roles take away; single node checks apply hidden list values already, lists filter with it.</summary>
+    public Task<RestrictionSet> RestrictionsAsync(CancellationToken cancellationToken) => restrictions.CurrentAsync(cancellationToken);
+
+    public Task<HashSet<Guid>> VisibleIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken) => restrictions.VisibleIdsAsync(ids, cancellationToken);
+
+    /// <summary>Leaves out nodes with a list value hidden from the current user.</summary>
+    public Task<IQueryable<T>> VisibleAsync<T>(IQueryable<T> nodes, CancellationToken cancellationToken)
+        where T : Node => restrictions.VisibleAsync(nodes, cancellationToken);
+
     /// <summary>For each node on a path (root first): readable through a direct grant or inherited from a readable parent.</summary>
     public static bool[] Readable(IReadOnlyList<Guid> pathIds, IReadOnlySet<Guid> granted, IReadOnlySet<Guid> interrupted)
     {

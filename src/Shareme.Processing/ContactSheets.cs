@@ -43,9 +43,12 @@ internal sealed class ContactSheetHandler(CoworkeeDbContext db, IBlobStorage sto
 
         var assets = await AssetSelection.WithPermissionAsync(db, access, resolved.Value.Assets, NodePermissions.Read, cancellationToken);
         var versionIds = assets.Select(a => a.CurrentVersionId).OfType<Guid>().ToList();
-        var thumbnails = await db.Set<Derivation>().AsNoTracking()
-            .Where(d => versionIds.Contains(d.VersionId) && d.Kind == DerivationKinds.Thumbnail && d.State == DerivationStates.Ready && d.BlobKey != null)
-            .ToDictionaryAsync(d => d.VersionId, d => d.BlobKey!, cancellationToken);
+        // a blocked thumbnail leaves the sheet with names only
+        var thumbnails = (await access.RestrictionsAsync(cancellationToken)).BlockedRenditions.Contains(DerivationKinds.Thumbnail)
+            ? []
+            : await db.Set<Derivation>().AsNoTracking()
+                .Where(d => versionIds.Contains(d.VersionId) && d.Kind == DerivationKinds.Thumbnail && d.State == DerivationStates.Ready && d.BlobKey != null)
+                .ToDictionaryAsync(d => d.VersionId, d => d.BlobKey!, cancellationToken);
         if (assets.Count == 0)
         {
             return Error.Validation("AssetIds", "None of these files can be shown.");

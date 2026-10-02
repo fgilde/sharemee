@@ -57,7 +57,9 @@ internal sealed class EdgeHandlers(CoworkeeDbContext db, NodeAccess access)
                            select new EdgeDto(edge.Id, type.Key, edge.FromNodeId, edge.ToNodeId, source.Name, target.Name)).ToListAsync(cancellationToken);
         if (await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
         {
-            return edges;
+            // restrictions apply to global readers too
+            var others = await access.VisibleIdsAsync(edges.Select(e => e.FromNodeId == query.NodeId ? e.ToNodeId : e.FromNodeId).Distinct().ToList(), cancellationToken);
+            return edges.Where(e => others.Contains(e.FromNodeId == query.NodeId ? e.ToNodeId : e.FromNodeId)).ToList();
         }
 
         var visible = new List<EdgeDto>();

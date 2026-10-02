@@ -296,7 +296,8 @@ internal sealed class DataHandlers(
                 names[ancestor] = "…";
             }
         }
-        var definitions = await catalog.DefinitionsAsync(cancellationToken);
+        var hidden = (await access.RestrictionsAsync(cancellationToken)).HiddenProperties;
+        var definitions = (await catalog.DefinitionsAsync(cancellationToken)).Where(d => !hidden.Contains(d.Key)).ToList();
         var language = (await catalog.LanguagesAsync(cancellationToken)).FirstOrDefault(l => l.IsDefault)?.Code ?? MetadataCatalog.FallbackLanguage.Code;
         var presentTypes = nodes.Select(n => types[n.NodeTypeId]).ToHashSet();
 
@@ -334,10 +335,14 @@ internal sealed class DataHandlers(
         return Result<IReadOnlyList<DataJobDto>>.Success(runs);
     }
 
-    public async Task<Result<DataJobDto>> HandleAsync(GetDataJob query, CancellationToken cancellationToken) =>
-        await db.Set<DataJob>().AsNoTracking().SingleOrDefaultAsync(j => j.Id == query.Id && j.StartedBy == currentUser.UserId, cancellationToken) is { } job
+    // their own runs, and every run for admins (the overview lists them)
+    public async Task<Result<DataJobDto>> HandleAsync(GetDataJob query, CancellationToken cancellationToken)
+    {
+        var admin = await access.IsGlobalAsync(NodePermissions.Admin, cancellationToken);
+        return await db.Set<DataJob>().AsNoTracking().SingleOrDefaultAsync(j => j.Id == query.Id && (admin || j.StartedBy == currentUser.UserId), cancellationToken) is { } job
             ? Map(job)
             : Error.NotFound("data.job_not_found", "The run does not exist.");
+    }
 
     internal static DataJobDto Map(DataJob j) => new(j.Id, j.Kind, j.State, j.DryRun, j.Total, j.Executed, j.Skipped, j.Failed, j.Error, j.Entries, j.CreatedAt);
 

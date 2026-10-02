@@ -1,0 +1,65 @@
+@page "/jobs"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Automation
+@using Shareme.Web.Client.Metadata
+@inject IDataApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>My runs</PageTitle>
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">My runs</MudText>
+    <MudSpacer />
+    <MudIconButton Icon="@Icons.Material.Outlined.Refresh" aria-label="Refresh" OnClick="LoadAsync" />
+    @if (_overview?.DashboardUrl is { } dashboard)
+    {
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Schedule" Href="@dashboard" Target="_blank" data-testid="hangfire">Background jobs</MudButton>
+    }
+</MudStack>
+
+<MudSimpleTable Dense="true" Hover="true" data-testid="runs">
+    <thead><tr><th>Started</th><th>Kind</th><th>State</th><th>Total</th><th>Done</th><th>Failed</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var run in _overview?.Runs ?? [])
+        {
+            <tr data-kind="@run.Kind">
+                <td>@run.CreatedAt.ToLocalTime().ToString("g")</td>
+                <td>@Kind(run.Kind)</td>
+                <td>@run.State @run.Error</td>
+                <td>@run.Total</td>
+                <td>@run.Done</td>
+                <td>@run.Failed</td>
+                <td style="text-align:right"><MudLink Href="@run.Link">Report</MudLink></td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    private JobsOverviewDto? _overview;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _overview = await Api.GetOverviewAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private static string Kind(string kind) => kind switch
+    {
+        DataJobKinds.MassEdit => "Mass edit",
+        DataJobKinds.Import => "Import",
+        DataJobKinds.Extraction => "AI tagging",
+        JobKinds.Rules => "Rule run",
+        JobKinds.Archive => "Archive extraction",
+        JobKinds.Reindex => "Search reindex",
+        _ => kind,
+    };
+}

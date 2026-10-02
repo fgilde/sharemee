@@ -79,3 +79,16 @@ public static class TableColumns
     /// <summary>Values of multi valued properties in one cell.</summary>
     public const string Separator = "; ";
 }
+
+public static class JobKinds
+{
+    public const string Rules = "rules";
+    public const string Archive = "archive";
+    public const string Reindex = "reindex";
+}
+
+/// <summary>One run of any kind; <see cref="Done"/> counts what was written or extracted, <see cref="Link"/> leads to its report.</summary>
+public sealed record JobSummaryDto(Guid Id, string Kind, string State, int Total, int Done, int Failed, string? Error, DateTimeOffset CreatedAt, string Link);
+
+/// <summary><see cref="DashboardUrl"/> is the Hangfire dashboard, for those allowed to see it.</summary>
+public sealed record JobsOverviewDto(IReadOnlyList<JobSummaryDto> Runs, string? DashboardUrl);

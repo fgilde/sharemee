@@ -93,7 +93,7 @@ internal sealed class MetadataCatalog(CoworkeeDbContext db)
         d.ListValues.OrderBy(v => v.SortIndex).ThenBy(v => v.Key).Select(v => new PropertyListValueDto(v.Key, v.Name, v.SortIndex, v.IsActive)).ToList());
 }
 
-internal sealed class CatalogHandlers(CoworkeeDbContext db, MetadataCatalog catalog)
+internal sealed class CatalogHandlers(CoworkeeDbContext db, MetadataCatalog catalog, Shareme.Graph.Restrictions restrictions)
     : IHandler<GetPropertyGroups, Result<IReadOnlyList<PropertyGroupDto>>>,
       IHandler<SavePropertyGroup, Result<PropertyGroupDto>>,
       IHandler<DeletePropertyGroup, Result>,
@@ -167,7 +167,8 @@ internal sealed class CatalogHandlers(CoworkeeDbContext db, MetadataCatalog cata
     public async Task<Result<IReadOnlyList<PropertyDefinitionDto>>> HandleAsync(GetPropertyDefinitions query, CancellationToken cancellationToken)
     {
         var definitions = await catalog.DefinitionsAsync(cancellationToken);
-        IReadOnlyList<PropertyDefinitionDto> mapped = definitions.Where(d => query.NodeType is null || d.AppliesTo(query.NodeType)).Select(MetadataCatalog.Map).ToList();
+        var hidden = (await restrictions.CurrentAsync(cancellationToken)).HiddenProperties;
+        IReadOnlyList<PropertyDefinitionDto> mapped = definitions.Where(d => (query.NodeType is null || d.AppliesTo(query.NodeType)) && !hidden.Contains(d.Key)).Select(MetadataCatalog.Map).ToList();
         return Result<IReadOnlyList<PropertyDefinitionDto>>.Success(mapped);
     }
 

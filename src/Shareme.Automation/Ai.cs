@@ -293,7 +293,8 @@ internal sealed class AiHandlers(
 
     public async Task<Result<IReadOnlyList<ExtractionSuggestionDto>>> HandleAsync(GetSuggestions query, CancellationToken cancellationToken)
     {
-        // pages through until enough are visible, so hidden ones do not crowd out older visible ones
+        // pages through until enough are visible, so hidden ones do not crowd out older visible ones; suggestions for hidden properties are not shown
+        var hidden = (await access.RestrictionsAsync(cancellationToken)).HiddenProperties;
         var visible = new List<ExtractionSuggestionDto>();
         for (var skip = 0; visible.Count < 200 && skip < 5000; skip += 200)
         {
@@ -305,7 +306,7 @@ internal sealed class AiHandlers(
                               select new { suggestion, definition.Name, NodeName = node.Name }).Skip(skip).Take(200).ToListAsync(cancellationToken);
             foreach (var item in page)
             {
-                if (visible.Count < 200 && await access.CanAsync(NodePermissions.Read, item.suggestion.NodeId, cancellationToken))
+                if (visible.Count < 200 && !hidden.Contains(item.suggestion.TargetKey) && await access.CanAsync(NodePermissions.Read, item.suggestion.NodeId, cancellationToken))
                 {
                     var s = item.suggestion;
                     visible.Add(new ExtractionSuggestionDto(s.Id, s.DefinitionId, item.Name, s.NodeId, item.NodeName, s.TargetKey, s.Findings, s.Values, s.State, s.CreatedAt));
