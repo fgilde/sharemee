@@ -37,7 +37,7 @@
 
 <MudPaper Outlined="true" Class="pa-4 mt-4">
     <MudText Typo="Typo.h6">Search index</MudText>
-    <MudText Typo="Typo.body2" Class="mb-2">Rebuilds the index of all folders and assets, for example after changing which properties are searchable.</MudText>
+    <MudText Typo="Typo.body2" Class="mb-2">Rebuilds the index of this organisation's folders and assets, for example after changing which properties are searchable. Search keeps working meanwhile.</MudText>
     <MudButton Variant="Variant.Outlined" OnClick="ReindexAsync" data-testid="reindex">Rebuild index</MudButton>
     @foreach (var run in _runs)
     {
@@ -53,7 +53,19 @@
         try
         {
             await SearchApi.StartReindexAsync();
-            _runs = await SearchApi.GetReindexRunsAsync();
+
+            // follows the run for a while; the list stays correct on the next visit anyway
+            for (var poll = 0; poll < 60; poll++)
+            {
+                _runs = await SearchApi.GetReindexRunsAsync();
+                StateHasChanged();
+                if (_runs is [{ State: not ("queued" or "running") }, ..])
+                {
+                    break;
+                }
+
+                await Task.Delay(2000);
+            }
         }
         catch (ApiException exception)
         {

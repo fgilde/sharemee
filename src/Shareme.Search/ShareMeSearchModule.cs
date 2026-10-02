@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Shareme.Assets;
+using Shareme.Graph;
 using Shareme.Contracts.Search;
 
 namespace Shareme.Search;
@@ -23,10 +24,10 @@ public sealed class ShareMeSearchModule : CoworkeeModule, IWebModule
         var services = context.Services;
         services.AddMessagingFromAssembly(typeof(ShareMeSearchModule).Assembly);
         services.AddSingleton<IModelContributor, SearchModelContributor>();
-        services.AddSingleton<IPermissionDefinitionContributor, SearchPermissionDefinitions>();
         services.AddSingleton<SearchSettings>();
         services.AddScoped<NodeDocuments>();
         services.AddScoped<NodeIndexer>();
+        services.AddScoped<INodePurgeListener, SearchPurgeListener>();
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -43,12 +44,4 @@ public sealed class ShareMeSearchModule : CoworkeeModule, IWebModule
         saved.MapPut("/{id:guid}", (Guid id, SaveSearchRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveSearch(id, body), ct).ToHttpResult());
         saved.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteSavedSearch(id), ct).ToHttpResult());
     }
-}
-
-internal sealed class SearchPermissionDefinitions : IPermissionDefinitionContributor
-{
-    public void Define(PermissionDefinitionContext context) =>
-        context.Group(SearchPermissions.GroupName, "Saved searches")
-            .Add(SearchPermissions.UseSavedSearch, "Use a shared search")
-            .Add(SearchPermissions.ManageSavedSearch, "Change or delete a shared search", SearchPermissions.UseSavedSearch);
 }

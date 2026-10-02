@@ -17,6 +17,7 @@ public sealed record SearchNodes(SearchRequest Request) : IQuery<Result<SearchRe
 
 public sealed record SuggestNodes(SuggestRequest Request) : IQuery<Result<IReadOnlyList<SuggestionDto>>>;
 
+/// <summary>Rebuilds the caller's organisation in the index.</summary>
 [RequiresPermission(NodePermissions.Admin)]
 public sealed record StartReindex : ICommand<Result<ReindexRunDto>>;
 
@@ -51,7 +52,7 @@ internal sealed class SearchFieldMap(IReadOnlyDictionary<string, PropertyDefinit
 
 internal sealed class SearchHandlers(
     CoworkeeDbContext db, ISearchIndex index, SearchSettings settings, NodeAccess access, IResourceAccessReader principals, ICurrentUser currentUser,
-    NodeMapper mapper, MetadataCatalog catalog, IBackgroundJobs jobs, IPermissionChecker permissions, NodeIndexer indexer, TimeProvider clock)
+    NodeMapper mapper, MetadataCatalog catalog, IBackgroundJobs jobs, NodeIndexer indexer, TimeProvider clock)
     : IHandler<SearchNodes, Result<SearchResponse>>,
       IHandler<SuggestNodes, Result<IReadOnlyList<SuggestionDto>>>,
       IHandler<StartReindex, Result<ReindexRunDto>>,
@@ -60,6 +61,10 @@ internal sealed class SearchHandlers(
       IHandler<SaveSearch, Result<SavedSearchDto>>,
       IHandler<DeleteSavedSearch, Result>
 {
+    private const int MaxTermLength = 500;
+    private const int MaxValues = 100;
+    private const int MaxValueLength = 256;
+
     private static readonly Dictionary<string, FilterOperator> Operators = new(StringComparer.Ordinal)
     {
         [SearchOperators.HasValue] = FilterOperator.HasValue,
@@ -79,35 +84,16 @@ internal sealed class SearchHandlers(
 
     private static readonly string[] TextFields = [SearchFields.Name, SearchFields.FileName, NodeFields.Fulltext];
 
+    private static SearchResponse Empty => new([], 0, new Dictionary<string, IReadOnlyList<FacetValueDto>>(), null);
+
     public async Task<Result<SearchResponse>> HandleAsync(SearchNodes query, CancellationToken cancellationToken)
     {
         var request = query.Request;
         var map = new SearchFieldMap((await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key));
-        if (await ScopeAsync(request.FolderId, cancellationToken) is not { } filters)
-        {
-            return new SearchResponse([], 0, new Dictionary<string, IReadOnlyList<FacetValueDto>>(), null);
-        }
-
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        foreach (var filter in request.Filters ?? [])
+        if (request.Term is { Length: > MaxTermLength })
         {
-            var values = filter.Values ?? [];
-            if (map.Resolve(filter.Field, filter.Lang) is not { } field)
-            {
-                errors[filter.Field] = [$"'{filter.Field}' cannot be searched."];
-            }
-            else if (!Operators.TryGetValue(filter.Operator, out var op))
-            {
-                errors[filter.Field] = [$"Use one of: {string.Join(", ", SearchOperators.All)}."];
-            }
-            else if (op == FilterOperator.Between ? values.Count != 2 : op is not (FilterOperator.HasValue or FilterOperator.HasNoValue) && values.Count == 0)
-            {
-                errors[filter.Field] = [op == FilterOperator.Between ? "Between needs a lower and an upper value." : "A value is required."];
-            }
-            else
-            {
-                filters.Add(new SearchFilter(field, op, values));
-            }
+            errors["Term"] = [$"Up to {MaxTermLength} characters."];
         }
 
         var facets = new List<(string Logical, string Field)>();
@@ -120,6 +106,34 @@ internal sealed class SearchHandlers(
             else
             {
                 errors[facet] = [$"'{facet}' cannot be used as a facet."];
+            }
+        }
+
+        // equality on a requested facet is a facet selection: it filters the hits but not its own facet
+        var filters = new List<SearchFilter>();
+        var facetFilters = new List<SearchFilter>();
+        foreach (var filter in request.Filters ?? [])
+        {
+            var values = filter.Values ?? [];
+            if (map.Resolve(filter.Field, filter.Lang) is not { } field)
+            {
+                errors[filter.Field] = [$"'{filter.Field}' cannot be searched."];
+            }
+            else if (!Operators.TryGetValue(filter.Operator, out var op))
+            {
+                errors[filter.Field] = [$"Use one of: {string.Join(", ", SearchOperators.All)}."];
+            }
+            else if (values.Count > MaxValues || values.Any(v => v is null || v.Length > MaxValueLength))
+            {
+                errors[filter.Field] = [$"Up to {MaxValues} values of up to {MaxValueLength} characters."];
+            }
+            else if (op == FilterOperator.Between ? values.Count != 2 : op is not (FilterOperator.HasValue or FilterOperator.HasNoValue) && values.Count == 0)
+            {
+                errors[filter.Field] = [op == FilterOperator.Between ? "Between needs a lower and an upper value." : "A value is required."];
+            }
+            else
+            {
+                (op == FilterOperator.Equals && facets.Any(f => f.Field == field) ? facetFilters : filters).Add(new SearchFilter(field, op, values));
             }
         }
 
@@ -141,24 +155,37 @@ internal sealed class SearchHandlers(
             return Error.Validation(errors);
         }
 
-        await indexer.EnsureIndexAsync(cancellationToken);
-        var result = await index.SearchAsync(settings.Alias, new SearchQuery
+        if (await ScopeAsync(request.FolderId, request.Recursive, cancellationToken) is not { } scope)
+        {
+            return Empty;
+        }
+
+        filters.AddRange(scope);
+        SearchResult result;
+        try
+        {
+            await indexer.EnsureIndexAsync(cancellationToken);
+            result = await index.SearchAsync(settings.Alias, new SearchQuery
             {
                 Term = request.Term,
                 Exact = request.Exact,
                 AllWords = request.AllWords,
                 TextFields = TextFields,
                 Filters = filters,
+                FacetFilters = facetFilters,
                 Facets = [.. facets.Select(f => f.Field)],
                 Sort = sort,
                 Size = Math.Clamp(request.Size, 1, 200),
                 Cursor = request.Cursor,
             }, cancellationToken);
+        }
+        catch (SearchIndexException exception) when (exception.IsInvalidRequest)
+        {
+            return Error.Validation("Request", "The search could not be run with these values.");
+        }
 
-        // the database is the truth for what is shown: deleted meanwhile, renamed, current thumbnail
-        var ids = result.Hits.Select(h => Guid.Parse(h.Id)).ToList();
-        var nodes = (await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).ToListAsync(cancellationToken)).ToDictionary(n => n.Id);
-        var items = await mapper.MapAsync(ids.Where(nodes.ContainsKey).Select(id => nodes[id]), cancellationToken);
+        var nodes = await VisibleAsync(result.Hits.Select(h => Guid.Parse(h.Id)).ToList(), cancellationToken);
+        var items = await mapper.MapAsync(nodes, cancellationToken);
         var labels = await LabelsAsync(map, facets, cancellationToken);
         var facetResult = facets.ToDictionary(
             f => f.Logical,
@@ -168,22 +195,26 @@ internal sealed class SearchHandlers(
 
     public async Task<Result<IReadOnlyList<SuggestionDto>>> HandleAsync(SuggestNodes query, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(query.Request.Prefix) || await ScopeAsync(query.Request.FolderId, cancellationToken) is not { } filters)
+        var prefix = query.Request.Prefix?.Trim();
+        if (string.IsNullOrEmpty(prefix) || prefix.Length > MaxValueLength || await ScopeAsync(query.Request.FolderId, recursive: true, cancellationToken) is not { } filters)
         {
             return Result<IReadOnlyList<SuggestionDto>>.Success([]);
         }
 
         await indexer.EnsureIndexAsync(cancellationToken);
-        var hits = await index.SuggestAsync(settings.Alias, query.Request.Prefix.Trim(), [SearchFields.Name, SearchFields.FileName], filters, Math.Clamp(query.Request.Size, 1, 20), cancellationToken);
-
-        var ids = hits.Select(h => Guid.Parse(h.Id)).ToList();
-        var nodes = (await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).ToListAsync(cancellationToken)).ToDictionary(n => n.Id);
-        IReadOnlyList<SuggestionDto> suggestions = ids.Where(nodes.ContainsKey).Select(id => new SuggestionDto(id, nodes[id].Name, nodes[id].Semantic.ToString().ToLowerInvariant())).ToList();
+        var hits = await index.SuggestAsync(settings.Alias, prefix, [SearchFields.Name, SearchFields.FileName], filters, Math.Clamp(query.Request.Size, 1, 20), cancellationToken);
+        IReadOnlyList<SuggestionDto> suggestions = (await VisibleAsync(hits.Select(h => Guid.Parse(h.Id)).ToList(), cancellationToken))
+            .Select(n => new SuggestionDto(n.Id, n.Name, n.Semantic.ToString().ToLowerInvariant())).ToList();
         return Result<IReadOnlyList<SuggestionDto>>.Success(suggestions);
     }
 
     public async Task<Result<ReindexRunDto>> HandleAsync(StartReindex command, CancellationToken cancellationToken)
     {
+        if (await db.Set<ReindexRun>().AnyAsync(r => r.State == "queued" || r.State == "running", cancellationToken))
+        {
+            return Error.Conflict("search.reindex_running", "A rebuild is already running.");
+        }
+
         var run = new ReindexRun { State = "queued", StartedAt = clock.GetUtcNow(), StartedBy = currentUser.UserId };
         db.Add(run);
         await db.SaveChangesAsync(cancellationToken);
@@ -200,9 +231,8 @@ internal sealed class SearchHandlers(
     public async Task<Result<IReadOnlyList<SavedSearchDto>>> HandleAsync(GetSavedSearches query, CancellationToken cancellationToken)
     {
         var userId = currentUser.UserId;
-        var shared = await permissions.GetGrantedResourcesAsync(SearchPermissions.UseSavedSearch, SearchPermissions.SavedSearchResourceType, cancellationToken);
-        IReadOnlyList<SavedSearchDto> saved = (await db.Set<SavedSearch>().AsNoTracking().Where(s => s.OwnerId == userId || shared.Contains(s.Id)).OrderBy(s => s.Name).ToListAsync(cancellationToken))
-            .Select(s => new SavedSearchDto(s.Id, s.Name, s.Request, s.OwnerId, s.OwnerId == userId)).ToList();
+        IReadOnlyList<SavedSearchDto> saved = (await db.Set<SavedSearch>().AsNoTracking().Where(s => s.OwnerId == userId || s.IsShared).OrderBy(s => s.Name).ToListAsync(cancellationToken))
+            .Select(Map).ToList();
         return Result<IReadOnlyList<SavedSearchDto>>.Success(saved);
     }
 
@@ -214,6 +244,12 @@ internal sealed class SearchHandlers(
             return Error.Validation("Name", "A name of up to 200 characters is required.");
         }
 
+        var request = command.Request.Request with { Cursor = null };
+        if (request.Filters is { Count: > 50 } || request.Term is { Length: > MaxTermLength })
+        {
+            return Error.Validation("Request", "Saved searches keep up to 50 filters and a term of up to 500 characters.");
+        }
+
         SavedSearch saved;
         if (command.Id is { } id)
         {
@@ -222,22 +258,23 @@ internal sealed class SearchHandlers(
                 return Error.NotFound("search.not_found", "The saved search does not exist.");
             }
 
-            if (!await MayManageAsync(existing, cancellationToken))
+            if (existing.OwnerId != currentUser.UserId)
             {
-                return Error.Forbidden("auth.forbidden", "Only the owner or a manager of this search can change it.");
+                return Error.Forbidden("auth.forbidden", "Only the owner can change this search.");
             }
 
             saved = existing;
             saved.Name = name;
-            saved.Request = command.Request.Request with { Cursor = null };
+            saved.Request = request;
         }
         else
         {
-            saved = new SavedSearch { Name = name, Request = command.Request.Request with { Cursor = null }, OwnerId = currentUser.UserId!.Value };
+            saved = new SavedSearch { Name = name, Request = request, OwnerId = currentUser.UserId!.Value };
             db.Add(saved);
         }
 
-        return new SavedSearchDto(saved.Id, saved.Name, saved.Request, saved.OwnerId, saved.OwnerId == currentUser.UserId);
+        saved.IsShared = command.Request.Shared;
+        return Map(saved);
     }
 
     public async Task<Result> HandleAsync(DeleteSavedSearch command, CancellationToken cancellationToken)
@@ -247,9 +284,9 @@ internal sealed class SearchHandlers(
             return Error.NotFound("search.not_found", "The saved search does not exist.");
         }
 
-        if (!await MayManageAsync(saved, cancellationToken))
+        if (saved.OwnerId != currentUser.UserId)
         {
-            return Error.Forbidden("auth.forbidden", "Only the owner or a manager of this search can delete it.");
+            return Error.Forbidden("auth.forbidden", "Only the owner can delete this search.");
         }
 
         db.Remove(saved);
@@ -257,7 +294,7 @@ internal sealed class SearchHandlers(
     }
 
     /// <summary>Tenant, readers and folder conditions every query gets; null when the caller can see nothing.</summary>
-    private async Task<List<SearchFilter>?> ScopeAsync(Guid? folderId, CancellationToken cancellationToken)
+    private async Task<List<SearchFilter>?> ScopeAsync(Guid? folderId, bool recursive, CancellationToken cancellationToken)
     {
         if (currentUser.TenantId is not { } tenantId)
         {
@@ -278,11 +315,29 @@ internal sealed class SearchHandlers(
 
         if (folderId is { } folder)
         {
-            filters.Add(new SearchFilter(NodeFields.PathIds, FilterOperator.IdentifierEquals, [folder.ToString()]));
+            filters.Add(recursive
+                ? new SearchFilter(NodeFields.PathIds, FilterOperator.IdentifierEquals, [folder.ToString()])
+                : new SearchFilter(NodeFields.ParentId, FilterOperator.IdentifierEquals, [folder.ToString()]));
             filters.Add(new SearchFilter(NodeFields.Id, FilterOperator.IdentifierNotEquals, [folder.ToString()]));
         }
 
         return filters;
+    }
+
+    /// <summary>The hits as they are now, in hit order: deleted ones dropped, and for non-global readers only what they may still read (the index can lag behind a revoked grant).</summary>
+    private async Task<List<Node>> VisibleAsync(List<Guid> ids, CancellationToken cancellationToken)
+    {
+        var nodes = (await db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)).ToListAsync(cancellationToken)).ToDictionary(n => n.Id);
+        var ordered = ids.Where(nodes.ContainsKey).Select(id => nodes[id]).ToList();
+        if (ordered.Count == 0 || await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
+        {
+            return ordered;
+        }
+
+        var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
+        var pathIds = ordered.SelectMany(n => n.PathIds).Distinct().ToList();
+        var interrupted = (await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id) && n.InterruptInheritance).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
+        return ordered.Where(n => NodeAccess.Readable(n.PathIds, granted, interrupted)[^1]).ToList();
     }
 
     private async Task<Dictionary<(string, string), string>> LabelsAsync(SearchFieldMap map, List<(string Logical, string Field)> facets, CancellationToken cancellationToken)
@@ -307,10 +362,7 @@ internal sealed class SearchHandlers(
         return labels;
     }
 
-    private async Task<bool> MayManageAsync(SavedSearch saved, CancellationToken cancellationToken) =>
-        saved.OwnerId == currentUser.UserId
-        || await permissions.IsGrantedAsync(SearchPermissions.ManageSavedSearch, SearchPermissions.SavedSearchResourceType, saved.Id, cancellationToken);
+    private SavedSearchDto Map(SavedSearch saved) => new(saved.Id, saved.Name, saved.Request, saved.OwnerId, saved.OwnerId == currentUser.UserId, saved.IsShared);
 
     private static ReindexRunDto Map(ReindexRun run) => new(run.Id, run.State, run.StartedAt, run.FinishedAt, run.Indexed, run.Failed, run.Error);
 }
-

@@ -23,6 +23,7 @@ internal static class NodeFields
     public const string PathIds = "pathIds";
     public const string Id = "id";
     public const string Fulltext = "fulltext";
+    public const string IndexedAt = "indexedAt";
 
     public static readonly IReadOnlyList<SearchField> Static =
     [
@@ -45,6 +46,7 @@ internal static class NodeFields
         new(SearchFields.Sha256, SearchFieldType.Keyword),
         new(SearchFields.Status, SearchFieldType.Keyword),
         new(Fulltext, SearchFieldType.Text),
+        new(IndexedAt, SearchFieldType.Date),
     ];
 
     public static readonly IReadOnlySet<string> StaticLogical = new HashSet<string>(
@@ -98,7 +100,7 @@ internal sealed class SearchSettings(IConfiguration configuration)
 }
 
 /// <summary>Builds index documents for nodes of the current tenant, with readers materialised along the inheritance chain.</summary>
-internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader access, MetadataCatalog catalog)
+internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader access, MetadataCatalog catalog, TimeProvider clock)
 {
     public async Task<SearchSchema> SchemaAsync(string alias, CancellationToken cancellationToken) =>
         NodeFields.Schema(alias, await catalog.DefinitionsAsync(cancellationToken), (await catalog.LanguagesAsync(cancellationToken)).Select(l => l.Code));
@@ -123,6 +125,7 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
         var interrupted = (await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id) && n.InterruptInheritance).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
         var principals = await access.GetPrincipalsAsync(NodePermissions.Read, NodePermissions.ResourceType, pathIds, cancellationToken);
 
+        var indexedAt = clock.GetUtcNow();
         var documents = new List<SearchDocument>(nodes.Count);
         foreach (var node in nodes)
         {
@@ -150,7 +153,8 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
                 [SearchFields.Type] = typeKey,
                 [SearchFields.Semantic] = node.Semantic.ToString().ToLowerInvariant(),
                 [SearchFields.CreatedAt] = node.CreatedAt,
-                [SearchFields.ModifiedAt] = node.ModifiedAt,
+                [SearchFields.ModifiedAt] = node.ModifiedAt ?? node.CreatedAt,
+                [NodeFields.IndexedAt] = indexedAt,
                 [SearchFields.CreatedBy] = node.CreatedBy?.ToString(),
             };
 

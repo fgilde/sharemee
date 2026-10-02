@@ -2,10 +2,10 @@ using Coworkee.Application.Authorization;
 using Coworkee.Application.Messaging;
 using Coworkee.BackgroundJobs;
 using Coworkee.Core.Security;
+using Coworkee.Identity.Domain;
 using Coworkee.Infrastructure.Persistence;
 using Coworkee.Search;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shareme.Contracts.Graph;
 using Shareme.Graph;
@@ -19,7 +19,7 @@ internal static class SearchQueue
 }
 
 /// <summary>Writes documents for nodes of the current tenant; keeps the mapping in step with the metadata catalog.</summary>
-internal sealed class NodeIndexer(ISearchIndex index, NodeDocuments documents, SearchSettings settings)
+internal sealed class NodeIndexer(ISearchIndex index, NodeDocuments documents, SearchSettings settings, ILogger<NodeIndexer> logger)
 {
     /// <summary>Creates the alias and adds the current catalog's fields; cheap after the first call for an unchanged catalog.</summary>
     public async Task EnsureIndexAsync(CancellationToken cancellationToken)
@@ -35,35 +35,53 @@ internal sealed class NodeIndexer(ISearchIndex index, NodeDocuments documents, S
         settings.Ensured[signature] = true;
     }
 
-    public async Task<(int Indexed, int Failed)> IndexAsync(IReadOnlyCollection<Guid> ids, string? target, CancellationToken cancellationToken)
+    /// <summary>Indexes the nodes and removes documents of nodes that are gone; returns how many were written and the refused ones.</summary>
+    public async Task<(int Indexed, IReadOnlyList<SearchWriteError> Errors)> IndexAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
     {
         if (ids.Count == 0)
         {
-            return (0, 0);
+            return (0, []);
         }
 
-        var destination = target ?? settings.Alias;
-        if (target is null)
-        {
-            await EnsureIndexAsync(cancellationToken);
-        }
-
+        await EnsureIndexAsync(cancellationToken);
         var (built, removed) = await documents.BuildAsync(ids, cancellationToken);
-        var failed = await index.UpsertAsync(destination, built, cancellationToken);
+        var errors = await index.UpsertAsync(settings.Alias, built, cancellationToken);
         if (removed.Count > 0)
         {
-            await index.DeleteAsync(destination, removed, cancellationToken);
+            await index.DeleteAsync(settings.Alias, removed, cancellationToken);
         }
 
-        return (built.Count - failed.Count, failed.Count);
+        foreach (var error in errors.Take(5))
+        {
+            logger.LogWarning("Node {NodeId} was refused by the search index: {Reason}", error.Id, error.Reason);
+        }
+
+        return (built.Count - errors.Count, errors);
     }
+
+    public Task DeleteAsync(IEnumerable<string> ids, CancellationToken cancellationToken) => index.DeleteAsync(settings.Alias, ids, cancellationToken);
+
+    /// <summary>Removes the tenant's documents that were not written since <paramref name="before"/>, i.e. of nodes a full pass did not see.</summary>
+    public Task DeleteStaleAsync(Guid tenantId, DateTimeOffset before, CancellationToken cancellationToken) => index.DeleteWhereAsync(settings.Alias,
+        [new SearchFilter(NodeFields.Tenant, FilterOperator.Equals, [tenantId.ToString()]), new SearchFilter(NodeFields.IndexedAt, FilterOperator.LessThanOrEquals, [before.ToString("O")])],
+        cancellationToken);
 }
+
+/// <summary>Thrown so the job is retried: some documents were refused.</summary>
+internal sealed class IndexingFailedException(string message) : Exception(message);
 
 public sealed record IndexNodes(Guid[] Ids);
 
 internal sealed class IndexNodesJob(NodeIndexer indexer) : IBackgroundJob<IndexNodes>
 {
-    public Task ExecuteAsync(IndexNodes args, CancellationToken cancellationToken) => indexer.IndexAsync(args.Ids, null, cancellationToken);
+    public async Task ExecuteAsync(IndexNodes args, CancellationToken cancellationToken)
+    {
+        var (_, errors) = await indexer.IndexAsync(args.Ids, cancellationToken);
+        if (errors.Count > 0)
+        {
+            throw new IndexingFailedException($"{errors.Count} nodes were refused, first: {errors[0].Reason}");
+        }
+    }
 }
 
 /// <summary>Re-indexes a node and everything below it, deleted nodes included (their documents are removed).</summary>
@@ -74,10 +92,10 @@ internal sealed class IndexSubtreeJob(CoworkeeDbContext db, NodeIndexer indexer)
         var all = db.Set<Node>().IgnoreQueryFilters([CoworkeeDbContext.SoftDeleteFilter]).AsNoTracking();
         if (await all.Where(n => n.Id == rootId).Select(n => n.Path).SingleOrDefaultAsync(cancellationToken) is not { } path)
         {
-            await indexer.IndexAsync([rootId], null, cancellationToken);
             return;
         }
 
+        var failed = 0;
         Guid? after = null;
         while (true)
         {
@@ -85,109 +103,72 @@ internal sealed class IndexSubtreeJob(CoworkeeDbContext db, NodeIndexer indexer)
                 .Take(SearchQueue.BatchSize).ToListAsync(cancellationToken);
             if (batch.Count == 0)
             {
-                return;
+                break;
             }
 
-            await indexer.IndexAsync(batch, null, cancellationToken);
+            failed += (await indexer.IndexAsync(batch, cancellationToken)).Errors.Count;
             after = batch[^1];
         }
-    }
-}
 
-/// <summary>Refreshes every node of the current tenant, for changes that may touch any of them (role permissions, memberships, the catalog).</summary>
-internal sealed class IndexTenantJob(CoworkeeDbContext db, NodeIndexer indexer) : IBackgroundJob<string>
-{
-    public async Task ExecuteAsync(string reason, CancellationToken cancellationToken)
-    {
-        Guid? after = null;
-        while (true)
+        if (failed > 0)
         {
-            var batch = await db.Set<Node>().AsNoTracking().Where(n => after == null || n.Id.CompareTo(after.Value) > 0).OrderBy(n => n.Id).Select(n => n.Id)
-                .Take(SearchQueue.BatchSize).ToListAsync(cancellationToken);
-            if (batch.Count == 0)
-            {
-                return;
-            }
-
-            await indexer.IndexAsync(batch, null, cancellationToken);
-            after = batch[^1];
+            throw new IndexingFailedException($"{failed} nodes below {rootId} were refused.");
         }
     }
 }
 
-/// <summary>Builds a fresh index for all tenants, swaps the alias and catches up on changes made meanwhile.</summary>
-internal sealed class ReindexJob(IServiceScopeFactory scopes, ISearchIndex index, SearchSettings settings, TimeProvider clock, ILogger<ReindexJob> logger) : IBackgroundJob<Guid>
+/// <summary>Rebuilds the current tenant's documents in place: writes every node, then removes documents the pass did not write.</summary>
+internal sealed class ReindexJob(CoworkeeDbContext db, NodeIndexer indexer, ICurrentUser currentUser, TimeProvider clock, ILogger<ReindexJob> logger) : IBackgroundJob<Guid>
 {
     public async Task ExecuteAsync(Guid runId, CancellationToken cancellationToken)
     {
+        if (await db.Set<ReindexRun>().SingleOrDefaultAsync(r => r.Id == runId, cancellationToken) is not { } run || currentUser.TenantId is not { } tenantId)
+        {
+            return;
+        }
+
         var started = clock.GetUtcNow();
-        var (indexed, failed) = (0, 0);
+        run.State = "running";
+        await db.SaveChangesAsync(cancellationToken);
+        var errors = new List<SearchWriteError>();
         try
         {
-            List<Guid> tenants;
-            await using (var scope = scopes.CreateAsyncScope())
+            Guid? after = null;
+            while (true)
             {
-                tenants = await scope.ServiceProvider.GetRequiredService<CoworkeeDbContext>().Set<Node>().IgnoreQueryFilters().Select(n => n.TenantId).Distinct().ToListAsync(cancellationToken);
-            }
-
-            // the mapping must know the fields of every tenant's catalog
-            var fields = new List<SearchField>();
-            foreach (var tenant in tenants)
-            {
-                using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenant));
-                await using var scope = scopes.CreateAsyncScope();
-                fields.AddRange((await scope.ServiceProvider.GetRequiredService<NodeDocuments>().SchemaAsync(settings.Alias, cancellationToken)).Fields);
-            }
-
-            var target = await index.CreateIndexAsync(new SearchSchema(settings.Alias, [.. NodeFields.Static.Concat(fields).DistinctBy(f => f.Name)]), cancellationToken);
-            foreach (var tenant in tenants)
-            {
-                using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenant));
-                Guid? after = null;
-                while (true)
+                var batch = await db.Set<Node>().AsNoTracking().Where(n => after == null || n.Id.CompareTo(after.Value) > 0).OrderBy(n => n.Id).Select(n => n.Id)
+                    .Take(SearchQueue.BatchSize).ToListAsync(cancellationToken);
+                if (batch.Count == 0)
                 {
-                    await using var scope = scopes.CreateAsyncScope();
-                    var batch = await scope.ServiceProvider.GetRequiredService<CoworkeeDbContext>().Set<Node>().AsNoTracking()
-                        .Where(n => after == null || n.Id.CompareTo(after.Value) > 0).OrderBy(n => n.Id).Select(n => n.Id).Take(SearchQueue.BatchSize).ToListAsync(cancellationToken);
-                    if (batch.Count == 0)
-                    {
-                        break;
-                    }
-
-                    var (ok, bad) = await scope.ServiceProvider.GetRequiredService<NodeIndexer>().IndexAsync(batch, target, cancellationToken);
-                    (indexed, failed) = (indexed + ok, failed + bad);
-                    after = batch[^1];
-                    await ReportAsync(runId, "running", indexed, failed, null, null, cancellationToken);
+                    break;
                 }
+
+                var (indexed, refused) = await indexer.IndexAsync(batch, cancellationToken);
+                errors.AddRange(refused);
+                run.Indexed += indexed;
+                run.Failed = errors.Count;
+                after = batch[^1];
+                await db.SaveChangesAsync(cancellationToken);
             }
 
-            await index.SwapAsync(settings.Alias, target, cancellationToken);
-
-            // changes written to the old index while this ran
-            foreach (var tenant in tenants)
+            // documents written by incremental jobs meanwhile are newer than the start and stay; on errors nothing is removed
+            if (errors.Count == 0)
             {
-                using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenant));
-                await using var scope = scopes.CreateAsyncScope();
-                var changed = await scope.ServiceProvider.GetRequiredService<CoworkeeDbContext>().Set<Node>().IgnoreQueryFilters([CoworkeeDbContext.SoftDeleteFilter]).AsNoTracking()
-                    .Where(n => n.CreatedAt >= started || n.ModifiedAt >= started || n.DeletedAt >= started).Select(n => n.Id).ToListAsync(cancellationToken);
-                await scope.ServiceProvider.GetRequiredService<NodeIndexer>().IndexAsync(changed, null, cancellationToken);
+                await indexer.DeleteStaleAsync(tenantId, started, cancellationToken);
             }
 
-            await ReportAsync(runId, "completed", indexed, failed, null, clock.GetUtcNow(), cancellationToken);
+            run.State = errors.Count == 0 ? "completed" : "completed with errors";
+            run.Error = errors.Count == 0 ? null : string.Join(" | ", errors.Take(3).Select(e => $"{e.Id}: {e.Reason}"));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogError(exception, "Reindex {RunId} failed.", runId);
-            await ReportAsync(runId, "failed", indexed, failed, exception.Message, clock.GetUtcNow(), CancellationToken.None);
+            run.State = "failed";
+            run.Error = exception.Message.Length > 2000 ? exception.Message[..2000] : exception.Message;
         }
-    }
 
-    private async Task ReportAsync(Guid runId, string state, int indexed, int failed, string? error, DateTimeOffset? finished, CancellationToken cancellationToken)
-    {
-        await using var scope = scopes.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<CoworkeeDbContext>().Set<ReindexRun>().IgnoreQueryFilters().Where(r => r.Id == runId)
-            .ExecuteUpdateAsync(r => r.SetProperty(x => x.State, state).SetProperty(x => x.Indexed, indexed).SetProperty(x => x.Failed, failed)
-                .SetProperty(x => x.Error, error).SetProperty(x => x.FinishedAt, finished), cancellationToken);
+        run.FinishedAt = clock.GetUtcNow();
+        await db.SaveChangesAsync(CancellationToken.None);
     }
 }
 
@@ -209,7 +190,7 @@ internal sealed class IndexOnNodeChanged(IBackgroundJobs jobs) : IDomainEventHan
     }
 }
 
-internal sealed class IndexOnAccessChanged(IBackgroundJobs jobs) : IDomainEventHandler<ResourceAccessChanged>, IDomainEventHandler<AccessRulesChanged>
+internal sealed class IndexOnAccessChanged(CoworkeeDbContext db, IBackgroundJobs jobs) : IDomainEventHandler<ResourceAccessChanged>, IDomainEventHandler<AccessRulesChanged>
 {
     public Task HandleAsync(ResourceAccessChanged domainEvent, CancellationToken cancellationToken)
     {
@@ -221,10 +202,27 @@ internal sealed class IndexOnAccessChanged(IBackgroundJobs jobs) : IDomainEventH
         return Task.CompletedTask;
     }
 
-    // ponytail: refreshes the whole tenant; narrow to the nodes granting the changed roles when tenants grow large
-    public Task HandleAsync(AccessRulesChanged domainEvent, CancellationToken cancellationToken)
+    /// <summary>Only the nodes granting one of the changed roles can have other readers now; roles shared by all tenants are followed into every tenant.</summary>
+    public async Task HandleAsync(AccessRulesChanged domainEvent, CancellationToken cancellationToken)
     {
-        jobs.Enqueue<IndexTenantJob, string>("access rules changed", SearchQueue.Name);
-        return Task.CompletedTask;
+        var roleIds = domainEvent.RoleIds;
+        var grants = await db.Set<ResourcePermission>().IgnoreQueryFilters()
+            .Where(p => p.ResourceType == NodePermissions.ResourceType && roleIds.Contains(p.RoleId))
+            .Select(p => new { p.TenantId, p.ResourceId }).Distinct().ToListAsync(cancellationToken);
+        foreach (var tenant in grants.GroupBy(g => g.TenantId))
+        {
+            using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenant.Key));
+            foreach (var grant in tenant)
+            {
+                jobs.Enqueue<IndexSubtreeJob, Guid>(grant.ResourceId, SearchQueue.Name);
+            }
+        }
     }
+}
+
+/// <summary>Purged nodes leave the index with the purge, whether or not their deletion was indexed already.</summary>
+internal sealed class SearchPurgeListener(NodeIndexer indexer) : INodePurgeListener
+{
+    public async Task OnPurgingAsync(IQueryable<Guid> nodeIds, CancellationToken cancellationToken) =>
+        await indexer.DeleteAsync((await nodeIds.ToListAsync(cancellationToken)).Select(id => id.ToString()), cancellationToken);
 }

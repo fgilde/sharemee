@@ -17,6 +17,7 @@ namespace Shareme.Infrastructure.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uuid", nullable: false),
                     State = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     StartedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     FinishedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
@@ -39,6 +40,7 @@ namespace Shareme.Infrastructure.Migrations
                     Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Request = table.Column<string>(type: "jsonb", nullable: false),
                     OwnerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    IsShared = table.Column<bool>(type: "boolean", nullable: false),
                     TenantId = table.Column<Guid>(type: "uuid", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     CreatedBy = table.Column<Guid>(type: "uuid", nullable: true),

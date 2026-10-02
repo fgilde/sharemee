@@ -2,14 +2,6 @@ using Shareme.Contracts.Graph;
 
 namespace Shareme.Contracts.Search;
 
-public static class SearchPermissions
-{
-    public const string GroupName = "Search";
-    public const string SavedSearchResourceType = "SavedSearch";
-    public const string UseSavedSearch = "SavedSearches.Use";
-    public const string ManageSavedSearch = "SavedSearches.Manage";
-}
-
 /// <summary>Logical field names for filters, facets and sorting; metadata fields are "meta:{key}".</summary>
 public static class SearchFields
 {
@@ -75,8 +67,8 @@ public sealed record SuggestRequest(string Prefix, Guid? FolderId = null, int Si
 
 public sealed record SuggestionDto(Guid Id, string Name, string Semantic);
 
-public sealed record SavedSearchDto(Guid Id, string Name, SearchRequest Request, Guid OwnerId, bool IsOwner);
+public sealed record SavedSearchDto(Guid Id, string Name, SearchRequest Request, Guid OwnerId, bool IsOwner, bool IsShared);
 
-public sealed record SaveSearchRequest(string Name, SearchRequest Request);
+public sealed record SaveSearchRequest(string Name, SearchRequest Request, bool Shared = false);
 
 public sealed record ReindexRunDto(Guid Id, string State, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, int Indexed, int Failed, string? Error);

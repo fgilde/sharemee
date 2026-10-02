@@ -14,13 +14,18 @@ public sealed class SavedSearch : AuditedEntity, IMultiTenant
 
     public Guid OwnerId { get; set; }
 
+    /// <summary>Everyone in the organisation can use it; only the owner changes it.</summary>
+    public bool IsShared { get; set; }
+
     public Guid TenantId { get; set; }
 }
 
-/// <summary>One full rebuild of the search index, across all tenants.</summary>
+/// <summary>One rebuild of a tenant's part of the search index.</summary>
 [NotAudited]
-public sealed class ReindexRun : Entity
+public sealed class ReindexRun : Entity, IMultiTenant
 {
+    public Guid TenantId { get; set; }
+
     public string State { get; set; } = "queued";
 
     public DateTimeOffset StartedAt { get; set; }

@@ -104,19 +104,70 @@ public sealed class SearchTests(ApiFixture api) : IAsyncLifetime
     [Fact]
     public async Task Saved_searches_belong_to_their_owner_until_shared()
     {
-        var (bob, bobId, _) = await ReaderAsync(await FolderAsync("Anything"));
+        var (bob, _, _) = await ReaderAsync(await FolderAsync("Anything"));
         var saved = await (await Admin.PostAsJsonAsync("/api/v1/saved-searches", new SaveSearchRequest("Blue things", new SearchRequest("blue")), Ct)).Content.ReadFromJsonAsync<SavedSearchDto>(Ct);
 
         (await Admin.GetFromJsonAsync<SavedSearchDto[]>("/api/v1/saved-searches", Ct))!.Single().Request.Term.ShouldBe("blue");
         (await bob.GetFromJsonAsync<SavedSearchDto[]>("/api/v1/saved-searches", Ct))!.ShouldBeEmpty();
         (await bob.DeleteAsync($"/api/v1/saved-searches/{saved!.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
 
-        var role = await RoleAsync(SearchPermissions.UseSavedSearch);
-        (await Admin.PostAsJsonAsync($"/api/v1/identity/resource-permissions/{SearchPermissions.SavedSearchResourceType}/{saved.Id}",
-            new GrantResourcePermissionRequest(PrincipalType.User, bobId, role), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PutAsJsonAsync($"/api/v1/saved-searches/{saved.Id}", new SaveSearchRequest("Blue things", new SearchRequest("blue"), Shared: true), Ct)).EnsureSuccessStatusCode();
 
-        (await bob.GetFromJsonAsync<SavedSearchDto[]>("/api/v1/saved-searches", Ct))!.Single().IsOwner.ShouldBeFalse();
+        var shared = (await bob.GetFromJsonAsync<SavedSearchDto[]>("/api/v1/saved-searches", Ct))!.Single();
+        shared.IsOwner.ShouldBeFalse();
+        shared.IsShared.ShouldBeTrue();
+        (await bob.PutAsJsonAsync($"/api/v1/saved-searches/{saved.Id}", new SaveSearchRequest("Mine now", new SearchRequest("x")), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await Admin.DeleteAsync($"/api/v1/saved-searches/{saved.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Facet_selections_keep_other_values_selectable()
+    {
+        var color = await DefineAsync(new PropertyDefinitionRequest("tint", "Tint", ListMode: ListModes.Single, Searchable: SearchModes.Filter, Facet: true));
+        (await Admin.PutAsJsonAsync($"/api/v1/metadata/definitions/{color.Id}/list-values", new[] { new PropertyListValueDto("blue", "Blue", 0, true), new PropertyListValueDto("red", "Red", 1, true) }, Ct))
+            .EnsureSuccessStatusCode();
+        var box = await FolderAsync("Tints");
+        foreach (var (name, value) in new[] { ("One", "blue"), ("Two", "red") })
+        {
+            var node = await FolderAsync(name, box);
+            (await Admin.PutAsJsonAsync($"/api/v1/nodes/{node}/metadata", new Dictionary<string, List<MetadataValue>> { ["tint"] = [new(List: value)] }, Ct)).EnsureSuccessStatusCode();
+        }
+
+        await EventuallyAsync(Admin, new SearchRequest(FolderId: box, Filters: [new(SearchFields.Meta("tint"), SearchOperators.HasValue)]), r => r.Total == 2);
+        var picked = await SearchAsync(Admin, new SearchRequest(FolderId: box, Facets: [SearchFields.Meta("tint")], Filters: [new(SearchFields.Meta("tint"), SearchOperators.Is, ["blue"])]));
+
+        picked.Items.Select(i => i.Name).ShouldBe(["One"]);
+        picked.Facets[SearchFields.Meta("tint")].Select(f => f.Value).ShouldBe(["blue", "red"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Odd_input_is_answered_with_bad_request_not_a_server_error()
+    {
+        (await SearchAsync(Admin, new SearchRequest(Filters: [new(SearchFields.Name, SearchOperators.Contains, ["*"])]))).Total.ShouldBe(0);
+        (await Admin.PostAsJsonAsync("/api/v1/search", new SearchRequest(Cursor: "tampered"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/search", new SearchRequest(new string('x', 600)), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/search", new SearchRequest(Filters: [new(SearchFields.Size, SearchOperators.Between, ["1"])]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Group_grants_count_and_a_role_losing_its_read_permission_hides_its_folders()
+    {
+        var team = await FolderAsync("Team room");
+        var doc = await FolderAsync("Team agenda", team);
+        var user = (await (await Admin.PostAsJsonAsync("/api/v1/identity/users", new CreateUserRequest($"{Guid.NewGuid():N}@acme.test", "Passw0rd!x", null, null), Ct)).Content.ReadFromJsonAsync<UserDto>(Ct))!;
+        var group = (await (await Admin.PostAsJsonAsync("/api/v1/identity/groups", new GroupRequest("Team " + Guid.NewGuid().ToString("N")[..6], null), Ct)).Content.ReadFromJsonAsync<Guid>(Ct))!;
+        (await Admin.PutAsJsonAsync($"/api/v1/identity/groups/{group}/members", new IdListRequest([user.Id]), Ct)).EnsureSuccessStatusCode();
+        var role = await RoleAsync(NodePermissions.Read);
+        (await Admin.PostAsJsonAsync($"/api/v1/identity/resource-permissions/{NodePermissions.ResourceType}/{team}",
+            new GrantResourcePermissionRequest(PrincipalType.Group, group, role), Ct)).EnsureSuccessStatusCode();
+        var member = api.As(user.Id, _setup.TenantId);
+
+        (await EventuallyAsync(member, new SearchRequest("agenda"), r => r.Total == 1)).Items.Single().Id.ShouldBe(doc);
+
+        (await Admin.PutAsJsonAsync($"/api/v1/identity/permissions/grants/Role/{role}", new NameListRequest([]), Ct)).EnsureSuccessStatusCode();
+
+        await EventuallyAsync(member, new SearchRequest("agenda"), r => r.Items.Count == 0);
+        (await member.PostAsync("/api/v1/search/reindex", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     [Fact]
