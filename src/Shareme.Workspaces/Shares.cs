@@ -156,7 +156,7 @@ internal sealed class ShareHandlers(
             return Error.Validation("RenditionKinds", "Share originals or at least one rendition.");
         }
 
-        if (Emails(request.RecipientEmails) is not { Count: > 0 and <= MaxRecipients } emails)
+        if (Emails(request.RecipientEmails ?? []) is not { Count: > 0 and <= MaxRecipients } emails)
         {
             return Error.Validation("RecipientEmails", $"Name 1 to {MaxRecipients} valid e-mail addresses.");
         }
@@ -188,13 +188,14 @@ internal sealed class ShareHandlers(
 
     public async Task<Result<ShareDto>> HandleAsync(AddShareRecipient command, CancellationToken cancellationToken)
     {
-        if (await ManagedAsync(command.ShareId, cancellationToken) is not { RevokedAt: null } share)
+        // new links act with the owner's rights, so only the owner hands them out
+        if (await ManagedAsync(command.ShareId, cancellationToken) is not { RevokedAt: null } share || share.ValidUntil <= clock.GetUtcNow() || share.OwnerId != currentUser.UserId)
         {
             return NotFound;
         }
 
         var existing = await db.Set<ShareRecipient>().Where(r => r.ShareId == share.Id).ToListAsync(cancellationToken);
-        if (Emails([command.Request.Email]) is not [var email] || existing.Count >= MaxRecipients)
+        if (Emails([command.Request.Email ?? string.Empty]) is not [var email] || existing.Count >= MaxRecipients)
         {
             return Error.Validation("Email", "A valid e-mail address is required (up to 50 recipients).");
         }
@@ -231,14 +232,26 @@ internal sealed class ShareHandlers(
         recipient.LastAccessAt = clock.GetUtcNow();
         using (ActAs(share))
         {
+            if (!await WorkspaceReachableAsync(share, cancellationToken))
+            {
+                return Gone;
+            }
+
             var assets = await SharedAssetsAsync(share, cancellationToken);
             var versionIds = assets.Select(a => a.CurrentVersionId).OfType<Guid>().ToList();
+            // the owner's download right covers originals and renditions that are as good as them, as everywhere else
+            var downloadable = (await AssetSelection.WithPermissionAsync(db, access, assets, AssetPermissions.Download, cancellationToken)).Select(a => a.Id).ToHashSet();
+            var watermarked = await RenditionAccess.WatermarkedAsync(db, cancellationToken);
+            var assetOfVersion = assets.Where(a => a.CurrentVersionId is not null).ToDictionary(a => a.CurrentVersionId!.Value, a => a.Id);
             var ready = (await db.Set<Derivation>().AsNoTracking().Where(d => versionIds.Contains(d.VersionId) && d.State == DerivationStates.Ready && share.RenditionKinds.Contains(d.Kind))
-                .Select(d => new { d.VersionId, d.Kind }).ToListAsync(cancellationToken)).ToLookup(d => d.VersionId, d => d.Kind);
+                    .Select(d => new { d.VersionId, d.Kind, d.IsManual }).ToListAsync(cancellationToken))
+                .Where(d => !RenditionAccess.NeedsDownload(d.Kind, d.IsManual, watermarked) || downloadable.Contains(assetOfVersion[d.VersionId]))
+                .ToLookup(d => d.VersionId, d => d.Kind);
             var mimeTypes = await db.Set<AssetVersion>().AsNoTracking().Where(v => versionIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id, v => v.MimeType, cancellationToken);
-            var downloadable = share.AllowOriginals
-                ? (await AssetSelection.WithPermissionAsync(db, access, assets, AssetPermissions.Download, cancellationToken)).Select(a => a.Id).ToHashSet()
-                : [];
+            if (!share.AllowOriginals)
+            {
+                downloadable = [];
+            }
             var items = assets.Select(a => new PublicShareItemDto(
                 a.Id, a.Name, a.CurrentVersionId is { } v ? mimeTypes.GetValueOrDefault(v) : null,
                 [.. downloadable.Contains(a.Id) ? [DownloadKinds.Original] : Array.Empty<string>(), .. a.CurrentVersionId is { } version ? ready[version] : []])).ToList();
@@ -257,7 +270,7 @@ internal sealed class ShareHandlers(
         var share = resolved.Share;
         using (ActAs(share))
         {
-            if ((await SharedAssetsAsync(share, cancellationToken)).FirstOrDefault(a => a.Id == query.AssetId) is not { CurrentVersionId: { } versionId } asset)
+            if (!await WorkspaceReachableAsync(share, cancellationToken) || await SharedAssetAsync(share, query.AssetId, cancellationToken) is not { CurrentVersionId: { } versionId } asset)
             {
                 return Gone;
             }
@@ -277,6 +290,8 @@ internal sealed class ShareHandlers(
             if (!share.RenditionKinds.Contains(query.Kind)
                 || await db.Set<Derivation>().AsNoTracking().SingleOrDefaultAsync(d => d.VersionId == versionId && d.Kind == query.Kind && d.State == DerivationStates.Ready, cancellationToken)
                     is not { BlobKey: { } key } derivation
+                || (RenditionAccess.NeedsDownload(derivation.Kind, derivation.IsManual, await RenditionAccess.WatermarkedAsync(db, cancellationToken))
+                    && !await access.CanAsync(AssetPermissions.Download, asset.Id, cancellationToken))
                 || await storage.OpenReadAsync(key, cancellationToken) is not { } content)
             {
                 return Gone;
@@ -303,10 +318,17 @@ internal sealed class ShareHandlers(
                 return Error.Validation("Kind", "This share does not include these files.");
             }
 
+            if (!await WorkspaceReachableAsync(share, cancellationToken))
+            {
+                return Gone;
+            }
+
             var assets = await SharedAssetsAsync(share, cancellationToken);
+            var downloadable = (await AssetSelection.WithPermissionAsync(db, access, assets, AssetPermissions.Download, cancellationToken)).Select(a => a.Id).ToHashSet();
+            var watermarked = await RenditionAccess.WatermarkedAsync(db, cancellationToken);
             if (original)
             {
-                assets = (await AssetSelection.WithPermissionAsync(db, access, assets, AssetPermissions.Download, cancellationToken)).ToList();
+                assets = assets.Where(a => downloadable.Contains(a.Id)).ToList();
             }
 
             var versions = await AssetSelection.CurrentVersionsAsync(db, assets, cancellationToken);
@@ -322,7 +344,7 @@ internal sealed class ShareHandlers(
                 {
                     items.Add(new DownloadItem(version.BlobKey, Unique(FileNames.Clean(version.FileName), taken)));
                 }
-                else if (derivations.TryGetValue(version.Id, out var derivation))
+                else if (derivations.TryGetValue(version.Id, out var derivation) && (!RenditionAccess.NeedsDownload(derivation.Kind, derivation.IsManual, watermarked) || downloadable.Contains(asset.Id)))
                 {
                     items.Add(new DownloadItem(derivation.BlobKey!, Unique(FileNames.Clean(Path.GetFileNameWithoutExtension(version.FileName)) + DerivationFormats.Extension(derivation.MimeType), taken)));
                 }
@@ -338,7 +360,8 @@ internal sealed class ShareHandlers(
                 UserId = share.OwnerId,
                 Name = FileNames.Clean(share.Name),
                 Items = items,
-                ExpiresAt = clock.GetUtcNow().AddHours(1),
+                // never longer than the share itself
+                ExpiresAt = new[] { clock.GetUtcNow().AddHours(1), share.ValidUntil }.Min(),
             };
             db.Add(package);
 
@@ -374,16 +397,28 @@ internal sealed class ShareHandlers(
     /// <summary>The workspace's own assets and the linked ones the owner may read; nothing when the workspace is gone or the owner lost access.</summary>
     private async Task<List<Asset>> SharedAssetsAsync(Share share, CancellationToken cancellationToken)
     {
-        if (!await access.CanAsync(NodePermissions.Read, share.WorkspaceId, cancellationToken))
-        {
-            return [];
-        }
-
+        var prefix = await db.Set<Workspace>().Where(w => w.Id == share.WorkspaceId).Select(w => w.Path).SingleAsync(cancellationToken);
         var linkedIds = db.Set<Edge>().Where(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == share.WorkspaceId).Select(e => e.ToNodeId);
-        var assets = await db.Set<Asset>().AsNoTracking().Where(a => (a.ParentId == share.WorkspaceId || linkedIds.Contains(a.Id)) && a.CurrentVersionId != null)
+        var assets = await db.Set<Asset>().AsNoTracking().Where(a => (a.Path.StartsWith(prefix) || linkedIds.Contains(a.Id)) && a.CurrentVersionId != null)
             .OrderBy(a => a.Name).Take(2000).ToListAsync(cancellationToken);
         return (await AssetSelection.WithPermissionAsync(db, access, assets, NodePermissions.Read, cancellationToken)).ToList();
     }
+
+    /// <summary>One file of the share (anywhere below the workspace or linked to it) if the owner may read it.</summary>
+    private async Task<Asset?> SharedAssetAsync(Share share, Guid assetId, CancellationToken cancellationToken)
+    {
+        var prefix = await db.Set<Workspace>().Where(w => w.Id == share.WorkspaceId).Select(w => w.Path).SingleAsync(cancellationToken);
+        var linked = db.Set<Edge>().Any(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == share.WorkspaceId && e.ToNodeId == assetId);
+        return await db.Set<Asset>().AsNoTracking().SingleOrDefaultAsync(a => a.Id == assetId && (a.Path.StartsWith(prefix) || linked), cancellationToken) is { } asset
+            && await access.CanAsync(NodePermissions.Read, asset.Id, cancellationToken)
+                ? asset
+                : null;
+    }
+
+    /// <summary>The workspace still exists (not in the recycle bin) and the owner may still read it; otherwise the link is dead.</summary>
+    private async Task<bool> WorkspaceReachableAsync(Share share, CancellationToken cancellationToken) =>
+        await db.Set<Workspace>().AnyAsync(w => w.Id == share.WorkspaceId, cancellationToken)
+        && await access.CanAsync(NodePermissions.Read, share.WorkspaceId, cancellationToken);
 
     private async Task<Share?> ManagedAsync(Guid shareId, CancellationToken cancellationToken) =>
         await db.Set<Share>().SingleOrDefaultAsync(s => s.Id == shareId, cancellationToken) is { } share
@@ -413,7 +448,7 @@ internal sealed class ShareHandlers(
     }
 
     private static List<string> Emails(IEnumerable<string> emails) =>
-        emails.Select(e => e.Trim().ToLowerInvariant()).Where(e => e.Length is > 3 and <= 254 && System.Net.Mail.MailAddress.TryCreate(e, out var parsed) && parsed.Address == e).Distinct().ToList();
+        emails.Where(e => e is not null).Select(e => e.Trim().ToLowerInvariant()).Where(e => e.Length is > 3 and <= 254 && System.Net.Mail.MailAddress.TryCreate(e, out var parsed) && parsed.Address == e).Distinct().ToList();
 
     private static string Unique(string name, HashSet<string> taken) => FileNames.Unique(name, Path.GetExtension(name).TrimStart('.'), taken);
 

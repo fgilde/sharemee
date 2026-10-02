@@ -225,7 +225,8 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(memberId), Ct)).EnsureSuccessStatusCode();
         using var red = new ImageMagick.MagickImage(ImageMagick.MagickColors.Red, 80, 40);
         var first = await UploadAsync(owner, "logo.png", red.ToByteArray(ImageMagick.MagickFormat.Png), workspace.Id);
-        var second = await UploadAsync(owner, "banner.png", red.ToByteArray(ImageMagick.MagickFormat.Png), workspace.Id);
+        var folder = (await (await owner.PostAsJsonAsync("/api/v1/nodes", new CreateNodeRequest(workspace.Id, "Web"), Ct)).Content.ReadFromJsonAsync<NodeDto>(Ct))!;
+        var second = await UploadAsync(owner, "banner.png", red.ToByteArray(ImageMagick.MagickFormat.Png), folder.Id);
         await RenderedAsync(owner, first.AssetId);
         await RenderedAsync(owner, second.AssetId);
 
@@ -234,6 +235,10 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/shares", request with { RecipientEmails = ["not an address"] }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         var share = (await (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/shares", request, Ct)).Content.ReadFromJsonAsync<ShareDto>(Ct))!;
         share.Recipients.Single().Email.ShouldBe("journalist@paper.test");
+
+        // a co-owner cannot hand out links that act with the creator's rights
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(memberId, WorkspaceRoles.Owner), Ct)).EnsureSuccessStatusCode();
+        (await member.PostAsJsonAsync($"/api/v1/shares/{share.Id}/recipients", new ShareRecipientRequest("me@mine.test"), Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         var token = await TokenFromMailAsync("journalist@paper.test");
 
         using var outsider = api.Factory.CreateClient();

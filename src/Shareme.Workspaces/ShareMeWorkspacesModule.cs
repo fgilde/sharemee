@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Coworkee.Application.Authorization;
 using Coworkee.Application.Messaging;
 using Coworkee.AspNetCore;
@@ -34,13 +35,14 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
         context.Services.AddSingleton<IModelContributor, WorkspaceModelContributor>();
         context.Services.AddSingleton<Coworkee.Mailing.IMailTemplateContributor, ShareMailTemplates>();
 
-        // anonymous share links are guessed at most this often per address
+        // per link: behind the BFF every caller has the same address, and 256 bit tokens cannot be guessed anyway, so this only caps load per link
+        var perMinute = context.Configuration.GetValue("Shareme:Shares:RequestsPerMinute", 600);
         context.Services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             limiter.AddPolicy(PublicSharePolicy, http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+                http.Request.RouteValues["token"] as string ?? "none",
+                _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = perMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
     }
 
@@ -100,6 +102,10 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
             response.Headers.XContentTypeOptions = "nosniff";
             response.Headers.CacheControl = "private, no-store";
             response.Headers["Referrer-Policy"] = "no-referrer";
+            if (inline)
+            {
+                response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'";
+            }
             return Results.File(result.Value.Content, result.Value.MimeType, inline ? null : result.Value.FileName, enableRangeProcessing: true);
         });
         shared.MapPost("/zip", (string token, string? kind, IDispatcher d, CancellationToken ct) =>

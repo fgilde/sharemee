@@ -32,7 +32,7 @@
     <MudText Typo="Typo.h6">Share with people outside</MudText>
     <MudGrid>
         <MudItem xs="12" sm="6"><MudTextField @bind-Value="_name" Label="Name" data-testid="share-name" /></MudItem>
-        <MudItem xs="12" sm="6"><MudDatePicker @bind-Date="_until" Label="Valid until" MinDate="DateTime.Today.AddDays(1)" MaxDate="DateTime.Today.AddDays(365)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudDatePicker @bind-Date="_until" Label="Valid until" MinDate="DateTime.Today.AddDays(1)" MaxDate="DateTime.Today.AddDays(364)" /></MudItem>
         <MudItem xs="12"><MudTextField @bind-Value="_emails" Label="E-mail addresses (comma or line separated)" Lines="2" data-testid="share-emails" /></MudItem>
         <MudItem xs="12" sm="6">
             <MudSelect T="string" @bind-SelectedValues="_kinds" MultiSelection="true" Label="Renditions">
