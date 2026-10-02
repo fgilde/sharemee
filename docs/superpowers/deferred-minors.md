@@ -2,6 +2,21 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P2 (search)
+
+- [ ] Bulks use `refresh=wait_for` everywhere, also during tenant rebuilds; batch by bytes rather than count once documents carry content (P3).
+- [ ] `EnsureAsync` on an existing alias cannot change analyzers or settings; a cluster wide rebuild with alias swap (`CreateIndexAsync`/`SwapAsync`) needs a platform level trigger.
+- [ ] RichText HTML goes into `fulltext` untagged; booleans and dates add noise to it.
+- [ ] Date definitions used as facets give per-value buckets (use a date histogram or disallow).
+- [ ] The metadata catalog is loaded several times per search and per suggest keystroke (cache per tenant).
+- [ ] Inherited metadata (`InheritToChildren`) is not indexed on descendants; decide before P3.
+- [ ] No highlights; `names.{lang}` not indexed; definition changes need the manual rebuild (spec says automatic).
+- [ ] A grant on another tenant's node id removes that node's document (grant handler does not validate the resource).
+- [ ] Changing a definition's `ListMode` moves its field prefix; old documents keep the old field until a rebuild.
+- [ ] Saved searches are shared with everyone or no one (no per user or group sharing yet); applying one replays filters as equality and ignores its folder.
+- [ ] Suggestion list has no arrow-key navigation; `Total` can exceed the shown hits after the read-time access check.
+- [ ] Overriding `Coworkee:Jobs:Queues` for the api must keep `search`.
+
 ## From P1d (processing, asset UI)
 
 - [ ] No ImageMagick security policy; coders are pinned from the checked MIME type, but a policy disabling MSVG/MVG/PS/PDF/URL/TEXT coders is defence in depth.

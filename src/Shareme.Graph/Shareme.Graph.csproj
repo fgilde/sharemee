@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Shareme.Search" />
     <InternalsVisibleTo Include="Shareme.Metadata" />
     <InternalsVisibleTo Include="Shareme.Assets" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

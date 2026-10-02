@@ -175,7 +175,7 @@ internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser curr
         node.DeletedAt = null;
         node.DeletedBy = null;
         node.DeletedWithId = null;
-        node.MarkChanged("restored");
+        node.MarkChanged(NodeChangeKinds.Restored);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result.Success();

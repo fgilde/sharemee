@@ -35,6 +35,7 @@ else if (_detail is not null)
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
         <MudText Typo="Typo.h4">@_detail.Node.Name</MudText>
         <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch" Href="@($"/search?folder={_detail.Node.Id}")" aria-label="Search in this folder" data-testid="search-here" />
         <MudTooltip Text="@(_detail.IsSubscribed ? "Stop notifications" : "Notify me about changes")">
             <MudIconButton Icon="@(_detail.IsSubscribed ? Icons.Material.Filled.NotificationsActive : Icons.Material.Outlined.NotificationsNone)"
                            OnClick="ToggleSubscriptionAsync" aria-label="Notifications for this folder" data-testid="subscribe" />

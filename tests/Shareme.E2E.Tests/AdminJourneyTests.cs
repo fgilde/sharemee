@@ -121,6 +121,21 @@ public sealed class AdminJourneyTests
         await first.Locator("[data-testid='asset-status']").WaitForAsync(new() { Timeout = Timeout });
         // MudExFileDisplay shows images in its zoomable canvas viewer
         await first.Locator("[data-testid='preview'] .MudExImageView-container canvas").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
+
+        // indexing runs in the background, so the search is repeated until the upload shows up
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (true)
+        {
+            await first.GotoAsync(web + "/search?q=pixel");
+            await first.Locator("[data-testid='total']").WaitForAsync(new() { Timeout = Timeout });
+            if (await first.Locator("tr[data-hit]", new() { HasTextString = "pixel.png" }).CountAsync() > 0)
+            {
+                break;
+            }
+
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the upload was not found by the search");
+            await first.WaitForTimeoutAsync(1000);
+        }
     }
 
     private static async Task<IPage> NewPageAsync(IBrowser browser)

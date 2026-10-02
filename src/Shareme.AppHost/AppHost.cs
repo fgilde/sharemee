@@ -26,6 +26,8 @@ var api = builder.AddProject<Projects.Shareme_Api>("shareme-api")
     .WithReference(infrastructure.Redis)
     .WaitFor(infrastructure.Redis)
     .WithEnvironment("Coworkee__Storage__FileSystem__Root", blobRoot)
+    // search is optional at start: the index is created on first use and index jobs retry until Elasticsearch answers
+    .WithReference(infrastructure.Search)
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints();
 
@@ -35,6 +37,7 @@ builder.AddProject<Projects.Shareme_Processing_Host>("shareme-processing")
     .WithReference(infrastructure.Redis)
     .WaitFor(infrastructure.Redis)
     .WithEnvironment("Coworkee__Storage__FileSystem__Root", blobRoot)
+    .WithReference(infrastructure.Search)
     .WithHttpHealthCheck("/health");
 
 if (builder.Configuration["Shareme:SetupToken"] is { Length: > 0 } setupToken)
