@@ -249,9 +249,9 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return NodeErrors.NotFound;
         }
 
-        if (parent.Semantic == NodeSemantic.Asset)
+        if (parent.Semantic is NodeSemantic.Asset or NodeSemantic.Task)
         {
-            return Error.Validation("ParentId", "Assets cannot contain other nodes.");
+            return Error.Validation("ParentId", "Assets and tasks cannot contain other nodes.");
         }
 
         var tenantId = currentUser.TenantId;
@@ -318,9 +318,9 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return node is Workspace ? Error.Conflict("nodes.workspace_is_root", "Workspaces stay where they are.") : NodeErrors.RootIsFixed;
         }
 
-        if (target.Path.StartsWith(node.Path, StringComparison.Ordinal) || target.Semantic == NodeSemantic.Asset)
+        if (target.Path.StartsWith(node.Path, StringComparison.Ordinal) || target.Semantic is NodeSemantic.Asset or NodeSemantic.Task || node is WorkTask)
         {
-            return Error.Conflict("nodes.invalid_target", "A node cannot move into itself, its descendants or an asset.");
+            return Error.Conflict("nodes.invalid_target", "A node cannot move into itself, its descendants, an asset or a task; tasks stay in their workspace.");
         }
 
         if (!await access.CanAsync(NodePermissions.Create, target.Id, cancellationToken))

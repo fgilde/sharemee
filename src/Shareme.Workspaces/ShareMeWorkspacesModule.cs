@@ -48,6 +48,18 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
         workspaces.MapGet("/{id:guid}/items", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetWorkspaceItems(id), ct).ToHttpResult());
         workspaces.MapPost("/{id:guid}/links", (Guid id, LinkAssetsRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new LinkAssets(id, body), ct).ToHttpResult());
         workspaces.MapDelete("/{id:guid}/links/{assetId:guid}", (Guid id, Guid assetId, IDispatcher d, CancellationToken ct) => d.SendAsync(new UnlinkAsset(id, assetId), ct).ToHttpResult());
+        workspaces.MapGet("/{id:guid}/states", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetStates(id), ct).ToHttpResult());
+        workspaces.MapPost("/{id:guid}/states", (Guid id, StateRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveState(id, null, body), ct).ToHttpResult());
+        workspaces.MapPut("/{id:guid}/states/{stateId:guid}", (Guid id, Guid stateId, StateRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveState(id, stateId, body), ct).ToHttpResult());
+        workspaces.MapDelete("/{id:guid}/states/{stateId:guid}", (Guid id, Guid stateId, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteState(id, stateId), ct).ToHttpResult());
+        workspaces.MapPut("/{id:guid}/states/order", (Guid id, Guid[] body, IDispatcher d, CancellationToken ct) => d.SendAsync(new OrderStates(id, body), ct).ToHttpResult());
+        workspaces.MapGet("/{id:guid}/tasks", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetTasks(id), ct).ToHttpResult());
+        workspaces.MapPost("/{id:guid}/tasks", (Guid id, TaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateTask(id, body), ct).ToHttpResult());
+
+        var tasks = app.MapGroup("/api/v1/tasks").WithTags("Workspaces").RequireAuthorization();
+        tasks.MapPut("/{id:guid}", (Guid id, TaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new UpdateTask(id, body), ct).ToHttpResult());
+        tasks.MapPost("/{id:guid}/move", (Guid id, MoveTaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new MoveTask(id, body), ct).ToHttpResult());
+        tasks.MapPost("/{id:guid}/links", (Guid id, LinkAssetsRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new LinkTaskAssets(id, body), ct).ToHttpResult());
         workspaces.MapPost("/{id:guid}/finalize", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new FinalizeWorkspace(id), ct).ToHttpResult());
     }
 }
@@ -73,13 +85,25 @@ public sealed class WorkspaceRoleBinding : Coworkee.Domain.Entity, Coworkee.Doma
 
 internal sealed class WorkspaceModelContributor : IModelContributor
 {
-    public void Apply(ModelBuilder modelBuilder) =>
+    public void Apply(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<WorkspaceRoleBinding>(binding =>
         {
             binding.ToTable("WorkspaceRoleBindings", "sm");
             binding.Property(b => b.Key).HasMaxLength(20);
             binding.HasIndex(b => new { b.TenantId, b.Key }).IsUnique();
         });
+
+        modelBuilder.Entity<WorkflowState>(state =>
+        {
+            state.ToTable("WorkflowStates", "sm");
+            state.Ignore(s => s.RealtimeTopics);
+            state.Property(s => s.Name).HasMaxLength(100);
+            state.Property(s => s.AllowedTargets).HasColumnType("jsonb");
+            state.HasIndex(s => s.WorkspaceId);
+            state.HasOne<Node>().WithMany().HasForeignKey(s => s.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        });
+    }
 }
 
 /// <summary>The owner and collaborator roles of a tenant, made on first use; admins may rename them or change their permissions like any role.</summary>
@@ -204,7 +228,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         var list = await workspaces.OrderBy(w => w.Name).ToListAsync(cancellationToken);
         var myRoles = await MyRolesAsync(list.Select(w => w.Id).ToList(), cancellationToken);
         var ids = list.Select(w => w.Id).ToList();
-        var counts = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId != null && ids.Contains(n.ParentId.Value)).GroupBy(n => n.ParentId!.Value)
+        var counts = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId != null && ids.Contains(n.ParentId.Value) && !(n is WorkTask)).GroupBy(n => n.ParentId!.Value)
             .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, cancellationToken);
         IReadOnlyList<WorkspaceDto> dtos = list.Select(w => Map(w, counts.GetValueOrDefault(w.Id), myRoles.GetValueOrDefault(w.Id))).ToList();
         return Result<IReadOnlyList<WorkspaceDto>>.Success(dtos);
@@ -267,6 +291,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         workspace.PlaceUnder(null);
         workspace.MarkChanged("created");
         db.Add(workspace);
+        await WorkflowStates.AddAsync(db, workspace.Id, template?.Id, cancellationToken);
 
         // the creator owns it; the collaborators of a template (users or groups) become collaborators of every workspace made from it, its owners do not
         var ownerRole = await roles.RoleIdAsync(WorkspaceRoles.Owner, cancellationToken);
@@ -467,7 +492,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
     /// <summary>Children and linked assets the caller may read: children with their own permissions and linked assets keep their rights.</summary>
     private async Task<(IReadOnlyList<Node> Children, IReadOnlyList<Asset> Linked)> VisibleItemsAsync(Guid id, CancellationToken cancellationToken)
     {
-        var children = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == id).OrderBy(n => n.Name).ToListAsync(cancellationToken);
+        var children = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == id && !(n is WorkTask)).OrderBy(n => n.Name).ToListAsync(cancellationToken);
         var linkedIds = db.Set<Edge>().Where(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == id).Select(e => e.ToNodeId);
         var linked = await db.Set<Asset>().AsNoTracking().Where(a => linkedIds.Contains(a.Id)).OrderBy(a => a.Name).ToListAsync(cancellationToken);
         return (await AssetSelection.WithPermissionAsync(db, access, children, NodePermissions.Read, cancellationToken),
@@ -550,7 +575,8 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
 
         // ponytail: the whole content is loaded and moved in memory (one save); a set-based rebase like MoveNode when workspaces hold many thousand nodes
         var prefix = workspace.Path;
-        var content = await db.Set<Node>().Where(n => n.Path.StartsWith(prefix) && n.Id != workspace.Id).OrderBy(n => n.Depth).ToListAsync(cancellationToken);
+        // tasks stay on the board
+        var content = await db.Set<Node>().Where(n => n.Path.StartsWith(prefix) && n.Id != workspace.Id && !(n is WorkTask)).OrderBy(n => n.Depth).ToListAsync(cancellationToken);
         var byId = content.ToDictionary(n => n.Id);
         foreach (var node in content)
         {

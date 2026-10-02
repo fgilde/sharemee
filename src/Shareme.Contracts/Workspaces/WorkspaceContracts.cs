@@ -54,3 +54,17 @@ public sealed record LinkAssetsRequest(IReadOnlyList<Guid> AssetIds);
 public sealed record WorkspaceItemDto(NodeDto Node, bool IsLinked);
 
 public sealed record FinalizeResultDto(int Moved, Guid FolderId);
+
+/// <summary>A column of a workspace's board; <see cref="AllowedTargets"/> lists the states tasks may move on to (empty: any), owners-only columns take tasks only from owners.</summary>
+public sealed record StateDto(Guid Id, string Name, int SortIndex, bool IsDefault, bool IsDone, bool OwnersOnly, IReadOnlyList<Guid> AllowedTargets);
+
+public sealed record StateRequest(string Name, bool IsDefault = false, bool IsDone = false, bool OwnersOnly = false, IReadOnlyList<Guid>? AllowedTargets = null);
+
+public sealed record TaskDto(
+    Guid Id, Guid WorkspaceId, string Title, string? Description, DateOnly? DueDate, Guid? StateId, IReadOnlyList<Guid> AssigneeIds, int SortIndex, uint Version,
+    DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, IReadOnlyList<Guid> LinkedAssetIds);
+
+public sealed record TaskRequest(string Title, string? Description = null, DateOnly? DueDate = null, Guid? StateId = null, IReadOnlyList<Guid>? AssigneeIds = null);
+
+/// <summary>Moves a task into a state at a position; <see cref="Version"/> is the task version the client saw, so concurrent moves are noticed.</summary>
+public sealed record MoveTaskRequest(Guid StateId, int Index, uint Version);

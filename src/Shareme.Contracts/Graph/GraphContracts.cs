@@ -5,6 +5,7 @@ public static class NodeTypeKeys
     public const string Folder = "folder";
     public const string Asset = "asset";
     public const string Workspace = "workspace";
+    public const string Task = "task";
 }
 
 public static class EdgeTypeKeys

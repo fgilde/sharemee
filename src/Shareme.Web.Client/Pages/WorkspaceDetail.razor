@@ -40,6 +40,12 @@ else
     </MudStack>
 
     <MudTabs Elevation="0" Outlined="true">
+        @if (_workspace.Kind == WorkspaceKinds.Collaboration && !_workspace.IsTemplate)
+        {
+            <MudTabPanel Text="Board">
+                <div class="pa-4"><TaskBoard WorkspaceId="_workspace.Id" Members="_members" IsOwner="IsOwner" /></div>
+            </MudTabPanel>
+        }
         <MudTabPanel Text="Items">
             <div class="pa-4">
                 @if (_workspace is { IsTemplate: false, FinalizedAt: null } && _workspace.Kind != WorkspaceKinds.Collection)
