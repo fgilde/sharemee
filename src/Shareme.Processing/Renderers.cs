@@ -79,6 +79,7 @@ internal sealed class ModelSource(ProcessingTools tools) : IRenditionSource
         scene.render.engine = "CYCLES"
         scene.cycles.device = "CPU"
         scene.cycles.samples = 16
+        scene.cycles.use_denoising = False
         scene.render.film_transparent = True
         scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 1600, 1200, 100
         scene.render.image_settings.file_format = "PNG"
