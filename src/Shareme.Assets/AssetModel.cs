@@ -2,6 +2,7 @@ using Coworkee.Domain;
 using Coworkee.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Shareme.Contracts.Assets;
+using Shareme.Contracts.Graph;
 using Shareme.Graph;
 
 namespace Shareme.Assets;
@@ -103,6 +104,36 @@ public sealed class UploadChunk
     public long Size { get; set; }
 }
 
+/// <summary>A rendition of a version (thumbnail, preview); viewers of the asset are told when its state changes.</summary>
+[NotAudited]
+[Realtime(NodePermissions.Read, ResourceType = NodePermissions.ResourceType)]
+public sealed class Derivation : Entity, IMultiTenant, IHasRealtimeTopics
+{
+    public Guid VersionId { get; set; }
+
+    public Guid AssetId { get; set; }
+
+    public required string Kind { get; set; }
+
+    public string State { get; set; } = DerivationStates.Pending;
+
+    public string? BlobKey { get; set; }
+
+    public string? MimeType { get; set; }
+
+    public long Size { get; set; }
+
+    public int? Width { get; set; }
+
+    public int? Height { get; set; }
+
+    public string? Error { get; set; }
+
+    public Guid TenantId { get; set; }
+
+    public IEnumerable<string> RealtimeTopics => [GraphTopics.Children(AssetId)];
+}
+
 /// <summary>A stored file whose rows are gone; the cleanup job deletes it.</summary>
 [NotAudited]
 public sealed class OrphanBlob : Entity
@@ -156,6 +187,21 @@ internal sealed class AssetModelContributor : IModelContributor
             version.HasIndex(v => new { v.TenantId, v.Sha256 });
             version.HasIndex(v => v.BlobKey);
             version.HasOne<Node>().WithMany().HasForeignKey(v => v.AssetId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Derivation>(derivation =>
+        {
+            derivation.ToTable("Derivations", Schema);
+            derivation.Ignore(d => d.RealtimeTopics);
+            derivation.Property(d => d.Kind).HasMaxLength(50);
+            derivation.Property(d => d.State).HasMaxLength(20);
+            derivation.Property(d => d.BlobKey).HasMaxLength(512);
+            derivation.Property(d => d.MimeType).HasMaxLength(100);
+            derivation.Property(d => d.Error).HasMaxLength(1000);
+            derivation.HasIndex(d => new { d.VersionId, d.Kind }).IsUnique();
+            derivation.HasIndex(d => d.AssetId);
+            derivation.HasIndex(d => d.BlobKey);
+            derivation.HasOne<AssetVersion>().WithMany().HasForeignKey(d => d.VersionId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<UploadSession>(session =>
