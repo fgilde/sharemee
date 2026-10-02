@@ -3095,6 +3095,93 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("Comments", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Workspaces.Share", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AllowOriginals")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<string>("RenditionKinds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ValidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("Shares", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Workspaces.ShareRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<DateTimeOffset?>("LastAccessAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ShareId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShareId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("ShareRecipients", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Workspaces.WorkflowState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3531,6 +3618,24 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasOne("Shareme.Graph.Node", null)
                         .WithMany()
                         .HasForeignKey("NodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Workspaces.Share", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Workspaces.ShareRecipient", b =>
+                {
+                    b.HasOne("Shareme.Workspaces.Share", null)
+                        .WithMany()
+                        .HasForeignKey("ShareId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Coworkee.Application.Authorization;
 using Coworkee.Application.Messaging;
 using Coworkee.AspNetCore;
@@ -32,10 +33,24 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
         context.Services.AddSingleton<IPermissionDefinitionContributor, WorkspacePermissionDefinitions>();
         context.Services.AddScoped<WorkspaceRoleStore>();
         context.Services.AddSingleton<IModelContributor, WorkspaceModelContributor>();
+        context.Services.AddSingleton<Coworkee.Mailing.IMailTemplateContributor, ShareMailTemplates>();
+
+        // per link: behind the BFF every caller has the same address, and 256 bit tokens cannot be guessed anyway, so this only caps load per link
+        var perMinute = context.Configuration.GetValue("Shareme:Shares:RequestsPerMinute", 600);
+        context.Services.AddRateLimiter(limiter =>
+        {
+            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            limiter.AddPolicy(PublicSharePolicy, http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                http.Request.RouteValues["token"] as string ?? "none",
+                _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = perMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        });
     }
+
+    public const string PublicSharePolicy = "public-shares";
 
     public void ConfigureApplication(WebApplication app)
     {
+        app.UseRateLimiter();
         var workspaces = app.MapGroup("/api/v1/workspaces").WithTags("Workspaces").RequireAuthorization();
         workspaces.MapGet("/", (bool? templates, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetWorkspaces(templates == true), ct).ToHttpResult());
         workspaces.MapPost("/", (CreateWorkspaceRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateWorkspace(body), ct).ToHttpResult());
@@ -62,6 +77,39 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
         var comments = app.MapGroup("/api/v1/comments").WithTags("Comments").RequireAuthorization();
         comments.MapPut("/{id:guid}", (Guid id, CommentRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new EditComment(id, body), ct).ToHttpResult());
         comments.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteComment(id), ct).ToHttpResult());
+
+        workspaces.MapGet("/{id:guid}/shares", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetShares(id), ct).ToHttpResult());
+        workspaces.MapPost("/{id:guid}/shares", (Guid id, ShareRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateShare(id, body), ct).ToHttpResult());
+        var shares = app.MapGroup("/api/v1/shares").WithTags("Shares").RequireAuthorization();
+        shares.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new RevokeShare(id), ct).ToHttpResult());
+        shares.MapPost("/{id:guid}/recipients", (Guid id, ShareRecipientRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new AddShareRecipient(id, body), ct).ToHttpResult());
+        shares.MapDelete("/{id:guid}/recipients/{recipientId:guid}", (Guid id, Guid recipientId, IDispatcher d, CancellationToken ct) =>
+            d.SendAsync(new RemoveShareRecipient(id, recipientId), ct).ToHttpResult());
+
+        // the token is the authorisation; unknown, expired and revoked links all answer 404
+        var shared = app.MapGroup("/api/v1/public/shares/{token}").WithTags("Shares").AllowAnonymous().RequireRateLimiting(PublicSharePolicy);
+        shared.MapGet("/", (string token, IDispatcher d, CancellationToken ct) => d.SendAsync(new OpenShare(token), ct).ToHttpResult());
+        shared.MapGet("/assets/{assetId:guid}/{kind}", async (string token, Guid assetId, string kind, bool? download, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        {
+            var result = await d.SendAsync(new FetchSharedFile(token, assetId, kind), ct);
+            if (!result.IsSuccess)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            // renditions are shown inline, originals always downloaded; nothing may be sniffed
+            var inline = download != true && kind != Shareme.Contracts.Assets.DownloadKinds.Original;
+            response.Headers.XContentTypeOptions = "nosniff";
+            response.Headers.CacheControl = "private, no-store";
+            response.Headers["Referrer-Policy"] = "no-referrer";
+            if (inline)
+            {
+                response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'";
+            }
+            return Results.File(result.Value.Content, result.Value.MimeType, inline ? null : result.Value.FileName, enableRangeProcessing: true);
+        });
+        shared.MapPost("/zip", (string token, string? kind, IDispatcher d, CancellationToken ct) =>
+            d.SendAsync(new PackShare(token, kind ?? Shareme.Contracts.Assets.DerivationKinds.Preview), ct).ToHttpResult());
 
         var tasks = app.MapGroup("/api/v1/tasks").WithTags("Workspaces").RequireAuthorization();
         tasks.MapPut("/{id:guid}", (Guid id, TaskRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new UpdateTask(id, body), ct).ToHttpResult());
@@ -99,6 +147,25 @@ internal sealed class WorkspaceModelContributor : IModelContributor
             binding.ToTable("WorkspaceRoleBindings", "sm");
             binding.Property(b => b.Key).HasMaxLength(20);
             binding.HasIndex(b => new { b.TenantId, b.Key }).IsUnique();
+        });
+
+        modelBuilder.Entity<Share>(share =>
+        {
+            share.ToTable("Shares", "sm");
+            share.Property(s => s.Name).HasMaxLength(200);
+            share.Property(s => s.RenditionKinds).HasColumnType("jsonb");
+            share.HasIndex(s => s.WorkspaceId);
+            share.HasOne<Node>().WithMany().HasForeignKey(s => s.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ShareRecipient>(recipient =>
+        {
+            recipient.ToTable("ShareRecipients", "sm");
+            recipient.Property(r => r.Email).HasMaxLength(254);
+            recipient.Property(r => r.TokenHash).HasMaxLength(64);
+            recipient.HasIndex(r => r.TokenHash).IsUnique();
+            recipient.HasIndex(r => r.ShareId);
+            recipient.HasOne<Share>().WithMany().HasForeignKey(r => r.ShareId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Comment>(comment =>

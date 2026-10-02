@@ -1,0 +1,16 @@
+@inherits LayoutComponentBase
+
+@* for visitors without an account: no navigation, no calls that need a sign-in *@
+<HeadContent><meta name="referrer" content="no-referrer" /></HeadContent>
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudLayout>
+    <MudAppBar Elevation="0" Dense="true" Color="Color.Primary">
+        <MudText Typo="Typo.h6">Sharemee</MudText>
+    </MudAppBar>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">@Body</MudContainer>
+    </MudMainContent>
+</MudLayout>

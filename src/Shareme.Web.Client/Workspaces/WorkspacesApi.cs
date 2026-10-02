@@ -50,6 +50,22 @@ public interface IWorkspacesApi
     Task EditCommentAsync(Guid commentId, CommentRequest request, CancellationToken cancellationToken = default);
 
     Task DeleteCommentAsync(Guid commentId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ShareDto>> GetSharesAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task CreateShareAsync(Guid id, ShareRequest request, CancellationToken cancellationToken = default);
+
+    Task RevokeShareAsync(Guid shareId, CancellationToken cancellationToken = default);
+
+    Task<PublicShareDto> OpenShareAsync(string token, CancellationToken cancellationToken = default);
+
+    Task<Shareme.Contracts.Assets.DownloadPackageDto> PackShareAsync(string token, string kind, CancellationToken cancellationToken = default);
+}
+
+public static class ShareUrls
+{
+    public static string File(string token, Guid assetId, string kind, bool download = false) =>
+        $"api/v1/public/shares/{Uri.EscapeDataString(token)}/assets/{assetId}/{kind}" + (download ? "?download=true" : string.Empty);
 }
 
 internal sealed class WorkspacesApi(HttpClient http) : ApiClientBase(http), IWorkspacesApi
@@ -108,6 +124,18 @@ internal sealed class WorkspacesApi(HttpClient http) : ApiClientBase(http), IWor
     public Task EditCommentAsync(Guid commentId, CommentRequest request, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Put, $"api/v1/comments/{commentId}", request, cancellationToken);
 
     public Task DeleteCommentAsync(Guid commentId, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"api/v1/comments/{commentId}", null, cancellationToken);
+
+    public async Task<IReadOnlyList<ShareDto>> GetSharesAsync(Guid id, CancellationToken cancellationToken = default) => await GetAsync<ShareDto[]>($"{Base}/{id}/shares", cancellationToken);
+
+    public Task CreateShareAsync(Guid id, ShareRequest request, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Post, $"{Base}/{id}/shares", request, cancellationToken);
+
+    public Task RevokeShareAsync(Guid shareId, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"api/v1/shares/{shareId}", null, cancellationToken);
+
+    public Task<PublicShareDto> OpenShareAsync(string token, CancellationToken cancellationToken = default) =>
+        GetAsync<PublicShareDto>($"api/v1/public/shares/{Uri.EscapeDataString(token)}", cancellationToken);
+
+    public Task<Shareme.Contracts.Assets.DownloadPackageDto> PackShareAsync(string token, string kind, CancellationToken cancellationToken = default) =>
+        SendAsync<Shareme.Contracts.Assets.DownloadPackageDto>(HttpMethod.Post, $"api/v1/public/shares/{Uri.EscapeDataString(token)}/zip?kind={Uri.EscapeDataString(kind)}", null, cancellationToken);
 
     public Task<FinalizeResultDto> FinalizeAsync(Guid id, CancellationToken cancellationToken = default) =>
         SendAsync<FinalizeResultDto>(HttpMethod.Post, $"{Base}/{id}/finalize", null, cancellationToken);

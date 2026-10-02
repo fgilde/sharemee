@@ -144,6 +144,12 @@ else
                 </div>
             </MudTabPanel>
         }
+        @if (IsOwner && !_workspace.IsTemplate)
+        {
+            <MudTabPanel Text="Shares">
+                <div class="pa-4"><SharesPanel WorkspaceId="_workspace.Id" /></div>
+            </MudTabPanel>
+        }
         <MudTabPanel Text="Activity">
             <div class="pa-4"><AuditTimeline EntityType="Workspace" EntityId="@_workspace.Id.ToString()" /></div>
         </MudTabPanel>

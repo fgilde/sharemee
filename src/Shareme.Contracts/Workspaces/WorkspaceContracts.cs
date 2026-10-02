@@ -73,3 +73,19 @@ public sealed record MoveTaskRequest(Guid StateId, int Index, uint Version);
 public sealed record CommentDto(Guid Id, Guid NodeId, Guid AuthorId, string AuthorName, string Text, IReadOnlyList<Guid> MentionIds, DateTimeOffset CreatedAt, DateTimeOffset? EditedAt, bool CanEdit);
 
 public sealed record CommentRequest(string Text, IReadOnlyList<Guid>? MentionIds = null);
+
+/// <summary>A share of a workspace's files with people outside; each recipient gets a link of their own by mail.</summary>
+public sealed record ShareDto(
+    Guid Id, Guid WorkspaceId, string Name, DateTimeOffset ValidUntil, bool AllowOriginals, IReadOnlyList<string> RenditionKinds, IReadOnlyList<ShareRecipientDto> Recipients,
+    DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
+
+public sealed record ShareRecipientDto(Guid Id, string Email, DateTimeOffset? LastAccessAt);
+
+public sealed record ShareRequest(string Name, DateTimeOffset ValidUntil, IReadOnlyList<string> RecipientEmails, bool AllowOriginals = false, IReadOnlyList<string>? RenditionKinds = null);
+
+public sealed record ShareRecipientRequest(string Email);
+
+/// <summary>What a recipient sees: the files and which versions of them may be fetched.</summary>
+public sealed record PublicShareDto(string Name, DateTimeOffset ValidUntil, bool AllowOriginals, IReadOnlyList<string> RenditionKinds, IReadOnlyList<PublicShareItemDto> Items);
+
+public sealed record PublicShareItemDto(Guid AssetId, string Name, string? MimeType, IReadOnlyList<string> AvailableKinds);

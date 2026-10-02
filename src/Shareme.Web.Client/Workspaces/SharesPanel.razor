@@ -1,0 +1,97 @@
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Assets
+@using Shareme.Contracts.Workspaces
+@inject IWorkspacesApi Api
+@inject ISnackbar Snackbar
+
+<MudSimpleTable Dense="true" data-testid="shares">
+    <thead><tr><th>Name</th><th>Until</th><th>Includes</th><th>Recipients</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var share in _shares)
+        {
+            <tr data-share="@share.Name" style="@(share.RevokedAt is null && share.ValidUntil > DateTimeOffset.UtcNow ? null : "opacity:.5")">
+                <td>@share.Name</td>
+                <td>@share.ValidUntil.ToLocalTime().ToString("d")@(share.RevokedAt is null ? null : " (revoked)")</td>
+                <td>@string.Join(", ", (share.AllowOriginals ? new[] { "originals" } : []).Concat(share.RenditionKinds))</td>
+                <td>@foreach (var recipient in share.Recipients)
+                    {
+                        <div>@recipient.Email <MudText Typo="Typo.caption" Inline="true">@(recipient.LastAccessAt is { } seen ? $"opened {seen.ToLocalTime():g}" : "not opened yet")</MudText></div>
+                    }</td>
+                <td style="text-align:right">
+                    @if (share.RevokedAt is null)
+                    {
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => RunAsync(() => Api.RevokeShareAsync(share.Id))">Revoke</MudButton>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudText Typo="Typo.h6">Share with people outside</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_name" Label="Name" data-testid="share-name" /></MudItem>
+        <MudItem xs="12" sm="6"><MudDatePicker @bind-Date="_until" Label="Valid until" MinDate="DateTime.Today.AddDays(1)" MaxDate="DateTime.Today.AddDays(364)" /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="_emails" Label="E-mail addresses (comma or line separated)" Lines="2" data-testid="share-emails" /></MudItem>
+        <MudItem xs="12" sm="6">
+            <MudSelect T="string" @bind-SelectedValues="_kinds" MultiSelection="true" Label="Renditions">
+                @foreach (var kind in Kinds)
+                {
+                    <MudSelectItem T="string" Value="@kind">@kind</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6"><MudCheckBox @bind-Value="_originals" Label="Originals too (needs your download right)" /></MudItem>
+    </MudGrid>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" Disabled="string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_emails)" OnClick="CreateAsync" data-testid="create-share">Share and send links</MudButton>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<ShareDto> _shares = [];
+    private string? _name, _emails;
+    private DateTime? _until = DateTime.Today.AddDays(14);
+    private IReadOnlyCollection<string> _kinds = [DerivationKinds.Preview];
+    private bool _originals;
+
+    [Parameter, EditorRequired] public Guid WorkspaceId { get; set; }
+
+    /// <summary>Renditions that may be offered (system and the organisation's types).</summary>
+    [Parameter] public IReadOnlyList<string> Kinds { get; set; } = [DerivationKinds.Thumbnail, DerivationKinds.Preview, DerivationKinds.Media];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _shares = await Api.GetSharesAsync(WorkspaceId);
+        }
+        catch (ApiException)
+        {
+            _shares = [];
+        }
+    }
+
+    private Task CreateAsync() => RunAsync(async () =>
+    {
+        var emails = (_emails ?? string.Empty).Split([',', ';', '\n', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var until = new DateTimeOffset(DateTime.SpecifyKind((_until ?? DateTime.Today.AddDays(14)).Date.AddDays(1).AddSeconds(-1), DateTimeKind.Local));
+        await Api.CreateShareAsync(WorkspaceId, new ShareRequest(_name!.Trim(), until, emails, _originals, _kinds.ToList()));
+        Snackbar.Add($"Links were sent to {emails.Length} addresses.", Severity.Success);
+        (_name, _emails) = (null, null);
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+}

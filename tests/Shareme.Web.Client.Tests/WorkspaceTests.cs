@@ -120,6 +120,36 @@ public sealed class WorkspaceTests : BunitContext
         await _api.Received(1).AddCommentAsync(_id, Arg.Is<CommentRequest>(r => r.Text == "Looks good"), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public void A_share_link_shows_its_files_and_a_dead_link_says_so()
+    {
+        var asset = Guid.CreateVersion7();
+        _api.OpenShareAsync("good", Arg.Any<CancellationToken>()).Returns(new PublicShareDto("Press", DateTimeOffset.UtcNow.AddDays(3), false, ["preview"],
+            [new PublicShareItemDto(asset, "logo.png", "image/png", ["preview"])]));
+        _api.OpenShareAsync("dead", Arg.Any<CancellationToken>()).Returns<PublicShareDto>(_ => throw new ApiException(404, "gone", null));
+
+        var page = Render<PublicShare>(p => p.Add(s => s.Token, "good"));
+        page.WaitForAssertion(() => page.Find("[data-testid='share-title']").TextContent.ShouldBe("Press"));
+        page.Find("[data-item='logo.png']").InnerHtml.ShouldContain($"api/v1/public/shares/good/assets/{asset}/preview");
+        page.Find("[data-testid='zip-preview']");
+
+        var dead = Render<PublicShare>(p => p.Add(s => s.Token, "dead"));
+        dead.WaitForAssertion(() => dead.Find("[data-testid='share-state']").TextContent.ShouldContain("not valid"));
+    }
+
+    [Fact]
+    public async Task Shares_are_created_with_their_recipients()
+    {
+        _api.GetSharesAsync(_id, Arg.Any<CancellationToken>()).Returns([]);
+        var panel = Render<SharesPanel>(p => p.Add(s => s.WorkspaceId, _id));
+
+        panel.Find("input[data-testid='share-name'], [data-testid='share-name'] input").Change("Press");
+        panel.Find("textarea[data-testid='share-emails'], [data-testid='share-emails'] textarea").Change("a@paper.test, b@paper.test");
+        await panel.Find("[data-testid='create-share']").ClickAsync(new());
+
+        await _api.Received(1).CreateShareAsync(_id, Arg.Is<ShareRequest>(r => r.Name == "Press" && r.RecipientEmails.Count == 2), Arg.Any<CancellationToken>());
+    }
+
     private WorkspaceDto Workspace(string name, string? role) =>
         new(_id, name, WorkspaceKinds.Upload, false, null, null, false, null, null, DateTimeOffset.UtcNow, 0, role, role == WorkspaceRoles.Owner, role == WorkspaceRoles.Owner);
 }

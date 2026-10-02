@@ -2,6 +2,13 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P4d (shares)
+
+- [ ] Share tokens are in the stored invitation mail body (OutgoingMail.HtmlBody) and in request paths of logs and telemetry; purge sent mail bodies and redact /public/shares/{token} and /s/{token}, or move the token into the URL fragment.
+- [ ] The zip package link of a share lives up to an hour (bounded by the share's end) and survives revocation for that time.
+- [ ] Rate limiting is per link (the BFF hides client addresses); per-client limits need forwarded headers trusted only from the BFF.
+- [ ] Public previews claim image/webp in the page (system previews are WebP; custom kinds are only downloaded there).
+
 ## From P4c (comments, notifications, digest)
 
 - [ ] Outbox re-delivery can create duplicate notifications (handlers save on their own); a dedupe key per event, user and type would prevent it.
