@@ -1,0 +1,242 @@
+@page "/search"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Graph
+@using Shareme.Contracts.Metadata
+@using Shareme.Contracts.Search
+@using Shareme.Web.Client.Search
+@inject ISearchApi Api
+@inject IMetadataApi Metadata
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Search</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Search@(FolderId is null ? null : " in folder")</MudText>
+
+<MudStack Row="true" AlignItems="AlignItems.Start" Class="mb-2">
+    <div style="flex:1;position:relative">
+        <MudTextField T="string" @bind-Value="_term" Placeholder="Search names, files and metadata" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Immediate="true" DebounceInterval="250" OnDebounceIntervalElapsed="SuggestAsync" OnKeyDown="OnKeyDown" data-testid="search-term" />
+        @if (_suggestions.Count > 0)
+        {
+            <MudPaper Elevation="4" Class="absolute mud-width-full" Style="z-index:10" data-testid="suggestions">
+                <MudList T="Guid" Dense="true">
+                    @foreach (var suggestion in _suggestions)
+                    {
+                        <MudListItem T="Guid" Icon="@(suggestion.Semantic == "folder" ? Icons.Material.Outlined.Folder : Icons.Material.Outlined.InsertDriveFile)"
+                                     OnClick="() => Open(suggestion)">@suggestion.Name</MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        }
+    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SearchAsync(reset: true)" data-testid="search-button">Search</MudButton>
+</MudStack>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudSwitch T="bool" @bind-Value="_exact" Label="Exact phrase" Color="Color.Primary" />
+    <MudSwitch T="bool" @bind-Value="_allWords" Label="All words" Color="Color.Primary" />
+    <MudSelect T="string" @bind-Value="_sort" Label="Sort" Dense="true" Style="max-width:220px">
+        <MudSelectItem Value="@("relevance")">Relevance</MudSelectItem>
+        <MudSelectItem Value="@SearchFields.Name">Name</MudSelectItem>
+        <MudSelectItem Value="@SearchFields.ModifiedAt">Last changed</MudSelectItem>
+        <MudSelectItem Value="@SearchFields.CreatedAt">Newest</MudSelectItem>
+        <MudSelectItem Value="@SearchFields.Size">Largest</MudSelectItem>
+    </MudSelect>
+    <MudSpacer />
+    <MudSelect T="SavedSearchDto" Value="_saved" ValueChanged="ApplySaved" Label="Saved searches" Dense="true" Clearable="true" ToStringFunc="@(s => s?.Name ?? string.Empty)"
+               Style="max-width:240px" data-testid="saved-searches">
+        @foreach (var saved in _savedSearches)
+        {
+            <MudSelectItem T="SavedSearchDto" Value="saved">@saved.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField T="string" @bind-Value="_saveName" Placeholder="Name" Margin="Margin.Dense" Style="max-width:180px" data-testid="save-name" />
+    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.BookmarkAdd" OnClick="SaveAsync" Disabled="@string.IsNullOrWhiteSpace(_saveName)" data-testid="save-search">Save</MudButton>
+    @if (_saved is { IsOwner: true })
+    {
+        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete saved search" OnClick="DeleteSavedAsync" />
+    }
+</MudStack>
+
+<MudGrid>
+    <MudItem xs="12" md="3">
+        @foreach (var (field, values) in _result?.Facets ?? new Dictionary<string, IReadOnlyList<FacetValueDto>>())
+        {
+            @if (values.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-2">@FacetTitle(field)</MudText>
+                @foreach (var value in values)
+                {
+                    <div data-facet="@field" data-value="@value.Value">
+                        <MudCheckBox T="bool" Value="IsSelected(field, value.Value)" ValueChanged="on => ToggleFacetAsync(field, value.Value, on)" Dense="true" Size="Size.Small"
+                                     Label="@($"{value.Label ?? value.Value} ({value.Count})")" />
+                    </div>
+                }
+            }
+        }
+    </MudItem>
+    <MudItem xs="12" md="9">
+        @if (_result is not null)
+        {
+            <MudText Typo="Typo.body2" Class="mb-2" data-testid="total">@_result.Total hits</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <tbody>
+                    @foreach (var item in _items)
+                    {
+                        <tr data-hit="@item.Id">
+                            <td style="width:44px">
+                                @if (item.Thumbnail is not null)
+                                {
+                                    <img src="@AssetUrls.Derivation(item.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, item.Thumbnail)" alt="" loading="lazy" style="width:32px;height:32px;object-fit:cover" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@(item.Semantic == "folder" ? Icons.Material.Outlined.Folder : Icons.Material.Outlined.InsertDriveFile)" Size="Size.Small" />
+                                }
+                            </td>
+                            <td><MudLink Href="@Link(item)">@item.Name</MudLink></td>
+                            <td>@item.Type</td>
+                            <td>@((item.ModifiedAt ?? item.CreatedAt).ToLocalTime().ToString("g"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+            @if (_result.Cursor is not null)
+            {
+                <MudButton Class="mt-2" OnClick="() => SearchAsync(reset: false)" data-testid="load-more">Load more</MudButton>
+            }
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string? _term;
+    private bool _exact;
+    private bool _allWords = true;
+    private string _sort = "relevance";
+    private readonly Dictionary<string, HashSet<string>> _selected = [];
+    private SearchResponse? _result;
+    private List<NodeDto> _items = [];
+    private IReadOnlyList<SuggestionDto> _suggestions = [];
+    private IReadOnlyList<SavedSearchDto> _savedSearches = [];
+    private IReadOnlyList<PropertyDefinitionDto> _definitions = [];
+    private SavedSearchDto? _saved;
+    private string? _saveName;
+
+    [SupplyParameterFromQuery(Name = "folder")] public Guid? FolderId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _term = Query;
+        await RunAsync(async () =>
+        {
+            _definitions = await Metadata.GetDefinitionsAsync();
+            _savedSearches = await Api.GetSavedAsync();
+        });
+        await SearchAsync(reset: true);
+    }
+
+    private SearchRequest Request(string? cursor) => new(
+        string.IsNullOrWhiteSpace(_term) ? null : _term.Trim(), _exact, _allWords,
+        _selected.Where(s => s.Value.Count > 0).Select(s => new SearchFilterDto(s.Key, SearchOperators.Is, s.Value.ToList())).ToList(),
+        [SearchFields.Type, SearchFields.AssetType, SearchFields.Extension, .. _definitions.Where(d => d.Facet).Select(d => SearchFields.Meta(d.Key))],
+        _sort == "relevance" ? null : [new SearchSortDto(_sort, _sort != SearchFields.Name)],
+        FolderId, Size: 50, Cursor: cursor);
+
+    private Task SearchAsync(bool reset) => RunAsync(async () =>
+    {
+        _suggestions = [];
+        var result = await Api.SearchAsync(Request(reset ? null : _result?.Cursor));
+        _items = reset ? [.. result.Items] : [.. _items, .. result.Items];
+        _result = result;
+    });
+
+    private async Task SuggestAsync(string? text)
+    {
+        _suggestions = text is { Length: >= 2 } ? await Api.SuggestAsync(new SuggestRequest(text, FolderId)) : [];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs args) => args.Key == "Enter" ? SearchAsync(reset: true) : Task.CompletedTask;
+
+    private bool IsSelected(string field, string value) => _selected.TryGetValue(field, out var values) && values.Contains(value);
+
+    private Task ToggleFacetAsync(string field, string value, bool on)
+    {
+        var values = _selected.TryGetValue(field, out var known) ? known : _selected[field] = [];
+        if (on)
+        {
+            values.Add(value);
+        }
+        else
+        {
+            values.Remove(value);
+        }
+
+        return SearchAsync(reset: true);
+    }
+
+    private Task ApplySaved(SavedSearchDto? saved)
+    {
+        _saved = saved;
+        if (saved is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var request = saved.Request;
+        (_term, _exact, _allWords) = (request.Term, request.Exact, request.AllWords);
+        _sort = request.Sort is [{ } first, ..] ? first.Field : "relevance";
+        _selected.Clear();
+        foreach (var filter in request.Filters ?? [])
+        {
+            _selected[filter.Field] = [.. filter.Values ?? []];
+        }
+
+        return SearchAsync(reset: true);
+    }
+
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var saved = await Api.SaveAsync(null, new SaveSearchRequest(_saveName!.Trim(), Request(null)));
+        _savedSearches = await Api.GetSavedAsync();
+        _saved = _savedSearches.FirstOrDefault(s => s.Id == saved.Id);
+        _saveName = null;
+        Snackbar.Add("Search saved.", Severity.Success);
+    });
+
+    private Task DeleteSavedAsync() => RunAsync(async () =>
+    {
+        await Api.DeleteSavedAsync(_saved!.Id);
+        _saved = null;
+        _savedSearches = await Api.GetSavedAsync();
+    });
+
+    private void Open(SuggestionDto suggestion) => Nav.NavigateTo(suggestion.Semantic == "asset" ? $"/assets/{suggestion.Id}" : $"/browse/{suggestion.Id}");
+
+    private string FacetTitle(string field) => field switch
+    {
+        SearchFields.Type => "Type",
+        SearchFields.AssetType => "Kind of file",
+        SearchFields.Extension => "Extension",
+        _ when field.StartsWith(SearchFields.MetaPrefix, StringComparison.Ordinal) => _definitions.FirstOrDefault(d => SearchFields.Meta(d.Key) == field)?.Name ?? field,
+        _ => field,
+    };
+
+    private static string Link(NodeDto node) => node.Semantic == "asset" ? $"/assets/{node.Id}" : $"/browse/{node.Id}";
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Errors is { Count: > 0 } errors ? string.Join(" ", errors.SelectMany(e => e.Value)) : exception.Message, Severity.Error);
+        }
+    }
+}

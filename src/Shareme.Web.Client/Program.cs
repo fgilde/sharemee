@@ -13,6 +13,7 @@ builder.Services.AddHttpClient<ISharemeApi, SharemeApi>(client =>
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
 builder.Services.AddHttpClient<IMetadataApi, MetadataApi>(client => client.BaseAddress = baseAddress);
+builder.Services.AddHttpClient<Shareme.Web.Client.Search.ISearchApi, Shareme.Web.Client.Search.SearchApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddScoped<UploadQueue>();
 builder.Services.AddSingleton<INavigationContributor, SharemeNavigation>();
 await builder.Build().RunAsync();

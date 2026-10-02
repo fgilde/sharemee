@@ -59,7 +59,7 @@ internal sealed class NodeIndexer(ISearchIndex index, NodeDocuments documents, S
     }
 }
 
-public sealed record IndexNodes(IReadOnlyList<Guid> Ids);
+public sealed record IndexNodes(Guid[] Ids);
 
 internal sealed class IndexNodesJob(NodeIndexer indexer) : IBackgroundJob<IndexNodes>
 {
@@ -139,7 +139,7 @@ internal sealed class ReindexJob(IServiceScopeFactory scopes, ISearchIndex index
                 fields.AddRange((await scope.ServiceProvider.GetRequiredService<NodeDocuments>().SchemaAsync(settings.Alias, cancellationToken)).Fields);
             }
 
-            var target = await index.CreateIndexAsync(new SearchSchema(settings.Alias, [.. NodeFields.Static, .. fields.DistinctBy(f => f.Name)]), cancellationToken);
+            var target = await index.CreateIndexAsync(new SearchSchema(settings.Alias, [.. NodeFields.Static.Concat(fields).DistinctBy(f => f.Name)]), cancellationToken);
             foreach (var tenant in tenants)
             {
                 using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenant));
