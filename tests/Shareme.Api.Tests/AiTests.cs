@@ -118,6 +118,10 @@ public sealed class AiTests(ApiFixture api) : IAsyncLifetime
         (await Admin.PutAsJsonAsync($"/api/v1/extractions/{definition.Id}", new ExtractionDefinitionRequest("Renamed", AiProviders.Anthropic, "keywords"), Ct)).EnsureSuccessStatusCode();
         (await Admin.GetFromJsonAsync<ExtractionDefinitionDto[]>("/api/v1/extractions", Ct))!.Single().ShouldSatisfyAllConditions(d => d.Name.ShouldBe("Renamed"), d => d.HasApiKey.ShouldBeTrue());
 
+        // the key does not follow the definition to another address
+        (await Admin.PutAsJsonAsync($"/api/v1/extractions/{definition.Id}", new ExtractionDefinitionRequest("Moved", AiProviders.Anthropic, "keywords", Endpoint: "https://elsewhere.test"), Ct)).EnsureSuccessStatusCode();
+        (await Admin.GetFromJsonAsync<ExtractionDefinitionDto[]>("/api/v1/extractions", Ct))!.Single().HasApiKey.ShouldBeFalse();
+
         var user = (await (await Admin.PostAsJsonAsync("/api/v1/identity/users", new CreateUserRequest($"{Guid.NewGuid():N}@acme.test", "Passw0rd!x", null, null), Ct)).Content.ReadFromJsonAsync<UserDto>(Ct))!;
         var member = api.As(user.Id, _setup.TenantId);
         (await member.GetAsync("/api/v1/extractions", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);

@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261002140548_AutomationAi")]
+    [Migration("20261002141931_AutomationAi")]
     partial class AutomationAi
     {
         /// <inheritdoc />
@@ -2408,6 +2408,9 @@ namespace Shareme.Infrastructure.Migrations
                     b.PrimitiveCollection<string>("NodeIds")
                         .IsRequired()
                         .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("ParentJobId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Skipped")
                         .HasColumnType("integer");

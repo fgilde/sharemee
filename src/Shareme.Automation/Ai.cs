@@ -168,10 +168,45 @@ internal sealed class AiHandlers(
             return Error.Validation("MinConfidence", "The threshold lies between 0 and 1; prompts take up to 4000 characters, up to 500 mappings.");
         }
 
+        var inputKind = request.InputKind.Trim();
+        if (inputKind is not (DerivationKinds.Thumbnail or DerivationKinds.Preview or DerivationKinds.Still) && !await db.Set<DerivationType>().AnyAsync(t => t.Key == inputKind, cancellationToken))
+        {
+            return Error.Validation("InputKind", $"There is no image rendition '{inputKind}'.");
+        }
+
         var target = (await catalog.DefinitionsAsync(cancellationToken)).FirstOrDefault(d => d.Key == request.TargetKey);
         if (target is null || !target.Editable || target.IsSystem || target.HasContext)
         {
             return Error.Validation("TargetKey", $"'{request.TargetKey}' is no editable property without contexts.");
+        }
+
+        if (request.Mode == AiModes.Description && (target.ListMode != ListModes.None || target.ValueType != PropertyValueTypes.String))
+        {
+            return Error.Validation("TargetKey", "Descriptions go into text properties.");
+        }
+
+        // mapped values become list keys; a mapping to a value the list does not have would fail every write
+        var mappings = new List<AiMapping>();
+        foreach (var mapping in request.Mappings ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(mapping?.FromValue) || string.IsNullOrWhiteSpace(mapping.ToValue))
+            {
+                continue;
+            }
+
+            var to = mapping.ToValue.Trim();
+            if (target.ListMode != ListModes.None)
+            {
+                var listValue = target.ListValues.FirstOrDefault(v => v.IsActive && (string.Equals(v.Key, to, StringComparison.OrdinalIgnoreCase) || string.Equals(v.Name, to, StringComparison.OrdinalIgnoreCase)));
+                if (listValue is null && !target.AllowCustomValues)
+                {
+                    return Error.Validation("Mappings", $"'{to}' is no value of the list of '{target.Key}'.");
+                }
+
+                to = listValue?.Key ?? to;
+            }
+
+            mappings.Add(new AiMapping(mapping.FromValue.Trim(), to));
         }
 
         if (request.Language is { } language && !(await catalog.LanguagesAsync(cancellationToken)).Any(l => l.Code == language))
@@ -195,21 +230,28 @@ internal sealed class AiHandlers(
             db.Add(definition);
         }
 
+        // a stored key only ever goes where it was entered for: a new address or provider needs the key again
+        var address = endpoint?.ToString().TrimEnd('/');
+        if (request.ApiKey is null && (definition.Endpoint != address || definition.Provider != request.Provider))
+        {
+            definition.ProtectedApiKey = null;
+        }
+
         definition.Name = request.Name.Trim();
         definition.Provider = request.Provider;
-        definition.Endpoint = endpoint?.ToString().TrimEnd('/');
+        definition.Endpoint = address;
         definition.Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim();
         if (request.ApiKey is { } key)
         {
-            definition.ProtectedApiKey = key.Length == 0 ? null : Protector(protection).Protect(key.Trim());
+            definition.ProtectedApiKey = key.Trim().Length == 0 ? null : Protector(protection).Protect(key.Trim());
         }
 
         definition.Mode = request.Mode;
         definition.Prompt = string.IsNullOrWhiteSpace(request.Prompt) ? null : request.Prompt.Trim();
-        definition.InputKind = request.InputKind.Trim();
+        definition.InputKind = inputKind;
         definition.AssetTypeKeys = request.AssetTypeKeys?.Distinct().ToList() ?? [];
         definition.TargetKey = request.TargetKey;
-        definition.Mappings = request.Mappings?.Where(m => m.FromValue.Trim().Length > 0).ToList() ?? [];
+        definition.Mappings = mappings;
         definition.MinConfidence = request.MinConfidence;
         definition.Language = request.Language;
         definition.AutoApply = request.AutoApply;
@@ -221,6 +263,12 @@ internal sealed class AiHandlers(
         if (await db.Set<ExtractionDefinition>().SingleOrDefaultAsync(d => d.Id == command.Id, cancellationToken) is not { } definition)
         {
             return NotFound;
+        }
+
+        // rules that run it would fail on every node
+        if ((await db.Set<Rule>().AsNoTracking().Select(r => new { r.Name, r.Actions }).ToListAsync(cancellationToken)).FirstOrDefault(r => r.Actions.Any(a => a.ExtractionId == command.Id)) is { } rule)
+        {
+            return Error.Conflict("extractions.in_use", $"The rule '{rule.Name}' runs this extraction.");
         }
 
         db.Remove(definition);
@@ -245,19 +293,28 @@ internal sealed class AiHandlers(
 
     public async Task<Result<IReadOnlyList<ExtractionSuggestionDto>>> HandleAsync(GetSuggestions query, CancellationToken cancellationToken)
     {
-        var pending = await (from suggestion in db.Set<ExtractionSuggestion>().AsNoTracking()
-                             join definition in db.Set<ExtractionDefinition>() on suggestion.DefinitionId equals definition.Id
-                             join node in db.Set<Node>() on suggestion.NodeId equals node.Id
-                             where suggestion.State == SuggestionStates.Pending
-                             orderby suggestion.CreatedAt descending
-                             select new { suggestion, definition.Name, NodeName = node.Name }).Take(500).ToListAsync(cancellationToken);
+        // pages through until enough are visible, so hidden ones do not crowd out older visible ones
         var visible = new List<ExtractionSuggestionDto>();
-        foreach (var item in pending)
+        for (var skip = 0; visible.Count < 200 && skip < 5000; skip += 200)
         {
-            if (visible.Count < 200 && await access.CanAsync(NodePermissions.Read, item.suggestion.NodeId, cancellationToken))
+            var page = await (from suggestion in db.Set<ExtractionSuggestion>().AsNoTracking()
+                              join definition in db.Set<ExtractionDefinition>() on suggestion.DefinitionId equals definition.Id
+                              join node in db.Set<Node>() on suggestion.NodeId equals node.Id
+                              where suggestion.State == SuggestionStates.Pending
+                              orderby suggestion.CreatedAt descending, suggestion.Id
+                              select new { suggestion, definition.Name, NodeName = node.Name }).Skip(skip).Take(200).ToListAsync(cancellationToken);
+            foreach (var item in page)
             {
-                var s = item.suggestion;
-                visible.Add(new ExtractionSuggestionDto(s.Id, s.DefinitionId, item.Name, s.NodeId, item.NodeName, s.TargetKey, s.Findings, s.Values, s.State, s.CreatedAt));
+                if (visible.Count < 200 && await access.CanAsync(NodePermissions.Read, item.suggestion.NodeId, cancellationToken))
+                {
+                    var s = item.suggestion;
+                    visible.Add(new ExtractionSuggestionDto(s.Id, s.DefinitionId, item.Name, s.NodeId, item.NodeName, s.TargetKey, s.Findings, s.Values, s.State, s.CreatedAt));
+                }
+            }
+
+            if (page.Count < 200)
+            {
+                break;
             }
         }
 
@@ -272,6 +329,12 @@ internal sealed class AiHandlers(
             return Error.NotFound("extractions.suggestion_not_found", "The suggestion does not exist (any more).");
         }
 
+        // deciding changes what the node gets, also when rejecting
+        if (!await access.CanAsync(NodePermissions.Update, suggestion.NodeId, cancellationToken))
+        {
+            return Error.Forbidden("extractions.forbidden", "You may not change this node.");
+        }
+
         if (command.Apply)
         {
             // written as the deciding user, so the regular checks and permissions apply
@@ -282,7 +345,7 @@ internal sealed class AiHandlers(
             }
 
             var values = DataJobRunner.Merge(target, node.Metadata.GetValueOrDefault(target.Key) ?? [], suggestion.Values);
-            if (await MetadataWrites.WriteAsync(scopes, new SetNodeMetadata(node.Id, new Dictionary<string, List<MetadataValue>?> { [target.Key] = values }, Replace: false, MetadataSources.Ai), cancellationToken) is { } error)
+            if (await MetadataWrites.WriteAsync(scopes, new SetNodeMetadata(node.Id, new Dictionary<string, List<MetadataValue>?> { [target.Key] = values }, Replace: false, MetadataSources.User), cancellationToken) is { } error)
             {
                 return error;
             }
@@ -313,6 +376,54 @@ internal static class AiRuns
     }
 }
 
+/// <summary>The connection to providers: no redirects (they would carry the key elsewhere) and no addresses inside the network unless allowed.</summary>
+internal static class AiNetwork
+{
+    public static SocketsHttpHandler Handler(bool allowPrivateNetworks) => new()
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = async (context, cancellationToken) =>
+        {
+            var addresses = (await System.Net.Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken)).Where(a => allowPrivateNetworks || !IsInternal(a)).ToArray();
+            if (addresses.Length == 0)
+            {
+                throw new HttpRequestException($"'{context.DnsEndPoint.Host}' is no public address; set Shareme:Ai:AllowPrivateNetworks for providers inside the network.");
+            }
+
+            var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                await socket.ConnectAsync(addresses, context.DnsEndPoint.Port, cancellationToken);
+                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        },
+    };
+
+    public static bool IsInternal(System.Net.IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (System.Net.IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast)
+        {
+            return true;
+        }
+
+        var bytes = address.GetAddressBytes();
+        return address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            ? bytes[0] is 0 or 10 or 127 || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31) || (bytes[0] == 192 && bytes[1] == 168) || (bytes[0] == 169 && bytes[1] == 254)
+              || (bytes[0] == 100 && bytes[1] is >= 64 and <= 127) || bytes[0] >= 224
+            : (bytes[0] & 0xFE) == 0xFC || address.Equals(System.Net.IPAddress.IPv6Any);
+    }
+}
+
 internal sealed record AiOutcome(List<AiFindingDto> Findings, List<MetadataValue> Values, string? Error = null);
 
 /// <summary>Asks the provider about one image and turns the answer into values of the target property.</summary>
@@ -322,7 +433,16 @@ internal sealed class AiExtractor(IHttpClientFactory clients, IDataProtectionPro
 
     public async Task<AiOutcome> ExtractAsync(ExtractionDefinition definition, PropertyDefinition target, string? language, byte[] image, string mimeType, CancellationToken cancellationToken)
     {
-        var key = definition.ProtectedApiKey is { } protectedKey ? AiHandlers.Protector(protection).Unprotect(protectedKey) : null;
+        string? key;
+        try
+        {
+            key = definition.ProtectedApiKey is { } protectedKey ? AiHandlers.Protector(protection).Unprotect(protectedKey) : null;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return new AiOutcome([], [], "The stored API key can no longer be read; enter it again.");
+        }
+
         var client = clients.CreateClient(AiEndpoints.HttpClientName);
         Raw raw;
         try
@@ -338,7 +458,9 @@ internal sealed class AiExtractor(IHttpClientFactory clients, IDataProtectionPro
         {
             return new AiOutcome([], [], exception.Message);
         }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException
+                                              or NullReferenceException or OverflowException or InvalidCastException or Polly.Timeout.TimeoutRejectedException
+                                              or Polly.CircuitBreaker.BrokenCircuitException)
         {
             return new AiOutcome([], [], cancellationToken.IsCancellationRequested ? throw new OperationCanceledException(cancellationToken) : $"The provider could not be asked or answered unexpectedly ({exception.GetType().Name}).");
         }
@@ -346,13 +468,26 @@ internal sealed class AiExtractor(IHttpClientFactory clients, IDataProtectionPro
         return Convert(definition, target, language, raw);
     }
 
+    private const int MaxTags = 50;
+
     private sealed record Raw(List<AiFindingDto> Tags, AiFindingDto? Description);
+
+    private static string Cut(string value, int length) => value.Length > length ? value[..length] : value;
+
+    /// <summary>The largest image each provider takes.</summary>
+    public static long MaxImageBytes(string provider) => provider == AiProviders.Anthropic ? 5L * 1024 * 1024 : 10L * 1024 * 1024;
 
     private sealed class ProviderException(string message) : Exception(message);
 
     /// <summary>Tags above the threshold, mapped to list values where the property has them; or the description.</summary>
     private static AiOutcome Convert(ExtractionDefinition definition, PropertyDefinition target, string? language, Raw raw)
     {
+        // what the image says can steer the model, so how much it writes stays bounded
+        raw = raw with
+        {
+            Tags = raw.Tags.Take(MaxTags).Select(t => t with { Value = Cut(t.Value, 100) }).ToList(),
+            Description = raw.Description is { } d ? d with { Value = Cut(d.Value, 2000) } : null,
+        };
         var lang = target.Localizable ? language : null;
         if (definition.Mode == AiModes.Description)
         {
@@ -463,14 +598,21 @@ internal sealed class AiExtractor(IHttpClientFactory clients, IDataProtectionPro
             },
         });
         var answer = await SendAsync(client, request, cancellationToken);
+        if (answer["stop_reason"]?.GetValue<string>() == "max_tokens")
+        {
+            throw new ProviderException("The answer was cut off at the token limit.");
+        }
+
         return string.Concat(answer["content"]!.AsArray().Where(c => c?["type"]?.GetValue<string>() == "text").Select(c => c!["text"]!.GetValue<string>()));
     }
 
     private static async Task<Raw> AzureAsync(HttpClient client, ExtractionDefinition definition, string? key, string? language, byte[] image, string mimeType, CancellationToken cancellationToken)
     {
+        // captions exist in English only; tags take the base language code
         var features = definition.Mode == AiModes.Description ? "caption" : "tags";
+        var code = definition.Mode == AiModes.Description ? "en" : (language ?? "en").Split('-')[0].ToLowerInvariant();
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            $"{definition.Endpoint}/computervision/imageanalysis:analyze?api-version=2024-02-01&features={features}&language={Uri.EscapeDataString(language ?? "en")}");
+            $"{definition.Endpoint}/computervision/imageanalysis:analyze?api-version=2024-02-01&features={features}&language={Uri.EscapeDataString(code)}");
         request.Headers.Add("Ocp-Apim-Subscription-Key", key ?? string.Empty);
         request.Content = new ByteArrayContent(image);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
@@ -485,7 +627,18 @@ internal sealed class AiExtractor(IHttpClientFactory clients, IDataProtectionPro
         using var response = await client.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new ProviderException($"The provider answered {(int)response.StatusCode} {response.ReasonPhrase}.");
+            // the providers' error messages name the problem (model, quota, format) and never the key
+            var detail = string.Empty;
+            try
+            {
+                var error = JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken))?["error"];
+                detail = (error is JsonValue ? error.GetValue<string>() : error?["message"]?.GetValue<string>()) is { Length: > 0 } message ? $": {Cut(message, 200)}" : string.Empty;
+            }
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+            {
+            }
+
+            throw new ProviderException($"The provider answered {(int)response.StatusCode} {response.ReasonPhrase}{detail}.");
         }
 
         return JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken)) ?? throw new JsonException("empty answer");
@@ -510,6 +663,18 @@ internal sealed class AiExtractor(IHttpClientFactory clients, IDataProtectionPro
         return new Raw(tags, description);
     }
 
-    private static decimal Confidence(JsonNode? node) =>
-        node is null ? 1m : Math.Clamp(decimal.Round(System.Convert.ToDecimal(node.GetValue<double>(), CultureInfo.InvariantCulture), 4), 0m, 1m);
+    /// <summary>0..1; numbers in text and percentages are understood, a missing value counts as certain.</summary>
+    private static decimal Confidence(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return 1m;
+        }
+
+        var value = node.GetValueKind() == JsonValueKind.String
+            ? double.TryParse(node.GetValue<string>().TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0
+            : node.GetValue<double>();
+        value = value > 1 ? value / 100 : value;
+        return decimal.Round((decimal)Math.Clamp(double.IsFinite(value) ? value : 0, 0, 1), 4);
+    }
 }

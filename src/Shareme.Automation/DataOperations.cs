@@ -48,6 +48,9 @@ public sealed class DataJob : Entity, IMultiTenant
     /// <summary>How often an extraction was continued for nodes whose rendition was not ready yet.</summary>
     public int Attempt { get; set; }
 
+    /// <summary>The run this one continues.</summary>
+    public Guid? ParentJobId { get; set; }
+
     public int Total { get; set; }
 
     public int Executed { get; set; }
@@ -573,6 +576,8 @@ internal sealed class DataJobRunner(
         var language = definition.Language ?? (await catalog.LanguagesAsync(cancellationToken)).FirstOrDefault(l => l.IsDefault)?.Code ?? MetadataCatalog.FallbackLanguage.Code;
         job.Total = job.NodeIds.Count;
         var waiting = new List<Guid>();
+        var watermarked = await RenditionAccess.WatermarkedAsync(db, cancellationToken);
+        var maxBytes = AiExtractor.MaxImageBytes(definition.Provider);
         foreach (var nodeId in job.NodeIds)
         {
             await GuardAsync(job, nodeId, null, async () =>
@@ -591,6 +596,14 @@ internal sealed class DataJobRunner(
                 }
 
                 var (rendition, pending) = await RenditionAsync(asset, definition.InputKind, cancellationToken);
+
+                // what the provider sees is what this user may fetch
+                if (rendition is not null && RenditionAccess.NeedsDownload(rendition.Kind, rendition.IsManual, watermarked)
+                    && !await access.CanAsync(AssetPermissions.Download, nodeId, cancellationToken))
+                {
+                    Skip(job, nodeId, null, $"You may not fetch the {definition.InputKind} rendition.");
+                    return;
+                }
                 if (rendition is null)
                 {
                     if (pending && job.Attempt < MaxAttempts)
@@ -605,9 +618,15 @@ internal sealed class DataJobRunner(
                 }
 
                 await using var content = await storage.OpenReadAsync(rendition.BlobKey!, cancellationToken);
-                if (content is null || await RenditionLimits.ReadAsync(content, 10L * 1024 * 1024, cancellationToken) is not { } image)
+                if (rendition.MimeType is not ("image/jpeg" or "image/png" or "image/gif" or "image/webp"))
                 {
-                    Skip(job, nodeId, null, $"The {definition.InputKind} rendition is missing or bigger than 10 MB.");
+                    Skip(job, nodeId, null, $"The {definition.InputKind} rendition is no image ({rendition.MimeType}).");
+                    return;
+                }
+
+                if (content is null || await RenditionLimits.ReadAsync(content, maxBytes, cancellationToken) is not { } image)
+                {
+                    Skip(job, nodeId, null, $"The {definition.InputKind} rendition is missing or bigger than {maxBytes / 1024 / 1024} MB.");
                     return;
                 }
 
@@ -633,29 +652,39 @@ internal sealed class DataJobRunner(
                     return;
                 }
 
-                // one open suggestion per node and extraction: a new run replaces the older one
-                await db.Set<ExtractionSuggestion>().Where(s => s.NodeId == nodeId && s.DefinitionId == definition.Id && s.State == SuggestionStates.Pending).ExecuteDeleteAsync(cancellationToken);
+                var current = (await db.Set<Node>().AsNoTracking().SingleAsync(n => n.Id == nodeId, cancellationToken)).Metadata.GetValueOrDefault(target.Key) ?? [];
+                if (SameIgnoringOrder(current, Merge(target, current, outcome.Values)))
+                {
+                    Skip(job, nodeId, null, $"The node has these values already: {found}.");
+                    return;
+                }
+
+                // one open suggestion per node and extraction: a new run replaces the older one, in the same save
+                db.RemoveRange(await db.Set<ExtractionSuggestion>().Where(s => s.NodeId == nodeId && s.DefinitionId == definition.Id && s.State == SuggestionStates.Pending).ToListAsync(cancellationToken));
                 db.Add(new ExtractionSuggestion { DefinitionId = definition.Id, NodeId = nodeId, TargetKey = target.Key, Findings = outcome.Findings, Values = outcome.Values, CreatedAt = clock.GetUtcNow() });
+                await db.SaveChangesAsync(cancellationToken);
                 job.Executed++;
                 Note(job, new DataJobEntryDto(nodeId, null, null, DataJobResults.Executed, $"Suggested for review: {found}."));
             });
         }
 
-        // fresh uploads are rendered by other jobs; a later run picks them up instead of holding a worker while it waits
-        if (waiting.Count > 0)
+        // fresh uploads are rendered by other jobs; a later run picks them up instead of holding a worker while it waits (once, also when this run is repeated)
+        if (waiting.Count > 0 && !await db.Set<DataJob>().AnyAsync(j => j.ParentJobId == job.Id, cancellationToken))
         {
             var next = new DataJob
             {
-                Kind = DataJobKinds.Extraction, ExtractionId = job.ExtractionId, NodeIds = waiting, StartedBy = job.StartedBy, Attempt = job.Attempt + 1, CreatedAt = clock.GetUtcNow(),
+                Kind = DataJobKinds.Extraction, ExtractionId = job.ExtractionId, NodeIds = waiting, StartedBy = job.StartedBy, Attempt = job.Attempt + 1, ParentJobId = job.Id,
+                CreatedAt = clock.GetUtcNow(),
             };
             db.Add(next);
+            Note(job, new DataJobEntryDto(null, null, null, DataJobResults.Skipped, $"{waiting.Count} files continue in run {next.Id}."));
             await db.SaveChangesAsync(cancellationToken);
             jobs.Schedule<DataJobRunner, Guid>(next.Id, RetryDelay);
         }
     }
 
     private const int MaxAttempts = 30;
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(20);
 
     /// <summary>The ready rendition of the current version, or whether it may still come (a fresh upload that is still rendering).</summary>
     private async Task<(Derivation? Rendition, bool Pending)> RenditionAsync(Asset asset, string kind, CancellationToken cancellationToken)
@@ -667,7 +696,9 @@ internal sealed class DataJobRunner(
         }
 
         var created = await db.Set<AssetVersion>().Where(v => v.Id == asset.CurrentVersionId).Select(v => (DateTimeOffset?)v.CreatedAt).SingleOrDefaultAsync(cancellationToken);
-        return (null, derivation is not { State: DerivationStates.Failed } && created is not null && clock.GetUtcNow() - created < TimeSpan.FromMinutes(10));
+        // without a row the kind may not apply to this file at all, so that gets only a short grace period
+        var age = clock.GetUtcNow() - created;
+        return (null, created is not null && (derivation is null ? age < TimeSpan.FromMinutes(2) : derivation.State != DerivationStates.Failed && age < TimeSpan.FromMinutes(10)));
     }
 
     /// <summary>The values of a slot are replaced where the first of them stood, so the order of the others stays.</summary>
@@ -765,8 +796,8 @@ internal sealed class DataJobRunner(
             Fail(job, nodeId, row, null, "An internal error occurred.");
         }
 
-        // progress and a sign of life now and then, not a rewrite of the whole report per node
-        if (++_unsaved >= SaveEvery)
+        // progress and a sign of life now and then (slow providers: at least every minute), not a rewrite of the whole report per node
+        if (++_unsaved >= SaveEvery || clock.GetUtcNow() - job.ClaimedAt > TimeSpan.FromMinutes(1))
         {
             _unsaved = 0;
             job.ClaimedAt = clock.GetUtcNow();

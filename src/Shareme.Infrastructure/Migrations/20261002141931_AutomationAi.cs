@@ -26,6 +26,13 @@ namespace Shareme.Infrastructure.Migrations
                 type: "uuid",
                 nullable: true);
 
+            migrationBuilder.AddColumn<Guid>(
+                name: "ParentJobId",
+                schema: "sm",
+                table: "DataJobs",
+                type: "uuid",
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "ExtractionDefinitions",
                 schema: "sm",
@@ -108,6 +115,11 @@ namespace Shareme.Infrastructure.Migrations
 
             migrationBuilder.DropColumn(
                 name: "ExtractionId",
+                schema: "sm",
+                table: "DataJobs");
+
+            migrationBuilder.DropColumn(
+                name: "ParentJobId",
                 schema: "sm",
                 table: "DataJobs");
         }

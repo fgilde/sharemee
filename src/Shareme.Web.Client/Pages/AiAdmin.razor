@@ -71,7 +71,7 @@
                 <MudSelectItem Value="@AiModes.Description">Description</MudSelectItem>
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Endpoint" Label="Endpoint (https, empty for the provider's default)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Endpoint" Label="Endpoint (https; OpenAI compatible: base with /v1, Anthropic: base without /v1, Azure: resource address; empty for the default)" /></MudItem>
         <MudItem xs="6" sm="3"><MudTextField @bind-Value="_form.Model" Label="Model" /></MudItem>
         <MudItem xs="6" sm="3"><MudTextField @bind-Value="_form.ApiKey" Label="@(_hasKey ? "API key (stored, empty keeps it)" : "API key")" InputType="InputType.Password" /></MudItem>
         <MudItem xs="12" sm="4">

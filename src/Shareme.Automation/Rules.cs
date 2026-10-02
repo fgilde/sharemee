@@ -15,6 +15,7 @@ using Coworkee.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shareme.Assets;
@@ -38,7 +39,15 @@ public sealed class ShareMeAutomationModule : CoworkeeModule, IWebModule
         context.Services.AddScoped<RuleJobRunner>();
         context.Services.AddScoped<DataJobRunner>();
         context.Services.AddScoped<AiExtractor>();
-        context.Services.AddHttpClient(AiEndpoints.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(90));
+        context.Services.AddHttpClient(AiEndpoints.HttpClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)
+            .ConfigurePrimaryHttpMessageHandler(services => AiNetwork.Handler(services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>().GetValue("Shareme:Ai:AllowPrivateNetworks", false)))
+            .AddStandardResilienceHandler(options =>
+            {
+                // models take their time; rate limits and server errors are retried (honouring Retry-After)
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(90);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(3);
+            });
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -545,7 +554,8 @@ internal sealed class RuleTriggers(CoworkeeDbContext db, RuleEngine engine, ISer
                 logger.LogWarning("Rule {Rule} could not write node {NodeId}: {Problem}", rule.Name, nodeId, problem);
             }
 
-            foreach (var extraction in outcome.FiltersMatched ? outcome.Extractions : [])
+            // paid calls only for new files and versions, not on every edit
+            foreach (var extraction in outcome.FiltersMatched && (context.Rule.IsNewVersion || context.Rule.IsNewNode) ? outcome.Extractions : [])
             {
                 try
                 {
@@ -650,9 +660,14 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Meta
         var actions = new List<RuleAction>();
         foreach (var action in request.Actions)
         {
-            // an AI action writes the extraction's own property
+            // an AI action writes the extraction's own property, and costs: only for those who may run extractions
             if (action.ExtractionId is { } extractionId)
             {
+                if (!await access.IsGlobalAsync(AiPermissions.Run, cancellationToken))
+                {
+                    return Error.Forbidden("rules.ai_forbidden", "You may not run AI extractions.");
+                }
+
                 if (await db.Set<ExtractionDefinition>().AsNoTracking().SingleOrDefaultAsync(d => d.Id == extractionId, cancellationToken) is not { } extraction)
                 {
                     return Error.Validation("Actions", "The AI extraction does not exist.");
@@ -847,6 +862,15 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
                 await db.SaveChangesAsync(cancellationToken);
             }
 
+            // one extraction run per extraction (in chunks) instead of one per node
+            foreach (var (extraction, nodes) in _extractions)
+            {
+                foreach (var chunk in nodes.Distinct().Chunk(AiHandlers.MaxNodes))
+                {
+                    await AiRuns.EnqueueAsync(scopes, extraction, [.. chunk], currentUser.UserId ?? Guid.Empty, clock, cancellationToken);
+                }
+            }
+
             job.State = RuleJobStates.Completed;
         }
         catch (OperationCanceledException)
@@ -864,6 +888,8 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
 
         await db.SaveChangesAsync(CancellationToken.None);
     }
+
+    private readonly Dictionary<Guid, List<Guid>> _extractions = [];
 
     private async Task RunAsync(RuleJob job, List<Rule> rules, Guid nodeId, CancellationToken cancellationToken)
     {
@@ -890,7 +916,7 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
 
             foreach (var extraction in outcome.Extractions)
             {
-                await AiRuns.EnqueueAsync(scopes, extraction, [nodeId], currentUser.UserId ?? Guid.Empty, clock, cancellationToken);
+                (_extractions.TryGetValue(extraction, out var list) ? list : _extractions[extraction] = []).Add(nodeId);
                 wrote.Add($"{rule.Name} (AI extraction queued)");
             }
 

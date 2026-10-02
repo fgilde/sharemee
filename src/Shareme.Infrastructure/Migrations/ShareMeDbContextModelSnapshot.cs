@@ -2406,6 +2406,9 @@ namespace Shareme.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid?>("ParentJobId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Skipped")
                         .HasColumnType("integer");
 
