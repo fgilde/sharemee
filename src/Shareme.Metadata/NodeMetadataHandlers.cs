@@ -22,8 +22,7 @@ public sealed record GetNodeMetadata(Guid Id) : IQuery<Result<NodeMetadataDto>>,
     public string RequiredPermission => NodePermissions.Read;
 }
 
-/// <summary>Replace sets the whole own value set; otherwise only the given keys change and a null list removes a key. <paramref name="Source"/> tells listeners who changed it (rules do not react to their own writes).</summary>
-/// <summary>Sets own values of a node; with <see cref="ValidateOnly"/> it only checks them, for dry runs.</summary>
+/// <summary>Replace sets the whole own value set; otherwise only the given keys change and a null list removes a key. <paramref name="Source"/> tells listeners who changed it (rules do not react to their own writes); <paramref name="ValidateOnly"/> only checks, for dry runs.</summary>
 public sealed record SetNodeMetadata(Guid Id, IReadOnlyDictionary<string, List<MetadataValue>?> Values, bool Replace, string Source = MetadataSources.User, bool ValidateOnly = false) : ICommand<Result>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;

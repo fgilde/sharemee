@@ -9,7 +9,7 @@
 
 <MudPaper Outlined="true" Class="pa-4 mb-2" data-testid="mass-edit">
     <MudText Typo="Typo.h6">Edit metadata of @Scope</MudText>
-    <MudText Typo="Typo.body2" Class="mb-2">Several values of multi valued properties are separated by "; ". Overwrite replaces all values, merge adds values (single valued properties keep other languages), delete removes the property.</MudText>
+    <MudText Typo="Typo.body2" Class="mb-2">Several values of multi valued properties are separated by "; ". Overwrite replaces the values (of the chosen language only, for properties with languages), merge adds values, delete removes them (of the chosen language only).</MudText>
     @foreach (var row in _rows)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" data-testid="mutation">
@@ -80,7 +80,7 @@
     private async Task StartAsync()
     {
         var mutations = _rows.Where(r => r.Key is not null).Select(r => new PropertyMutation(
-            r.Key!, r.Strategy, Texts: r.Strategy == MassEditStrategies.Delete ? null : (r.Text ?? string.Empty).Split(TableColumns.Separator.Trim(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            r.Key!, r.Strategy, Texts: r.Strategy == MassEditStrategies.Delete ? null : Texts(r),
             Lang: Definition(r)?.Localizable == true ? r.Lang ?? _languages.FirstOrDefault(l => l.IsDefault)?.Code : null)).ToList();
         try
         {
@@ -92,6 +92,11 @@
             Snackbar.Add(exception.Message, Severity.Error);
         }
     }
+
+    // only multi valued properties take several values, so a ";" in a single text stays
+    private string[] Texts(Row row) => Definition(row) is { } definition && (definition.MultiValue || definition.ListMode == ListModes.Multi)
+        ? (row.Text ?? string.Empty).Split(TableColumns.Separator.Trim(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        : [row.Text ?? string.Empty];
 
     private sealed class Row
     {

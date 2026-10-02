@@ -89,7 +89,8 @@ internal static class Tables
 {
     public const int MaxRows = DataLimits.MaxNodes + 1;
     public const int MaxColumns = 500;
-    private const long MaxUnpacked = 200L * 1024 * 1024;
+    // ponytail: ClosedXML holds the whole sheet in memory; a streaming reader when imports get bigger than this
+    private const long MaxUnpacked = 40L * 1024 * 1024;
 
     public static byte[] Write(string format, IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<string>> rows)
     {
@@ -131,7 +132,7 @@ internal static class Tables
         {
             return content is [0x50, 0x4B, ..] ? ReadXlsx(content) : ReadCsv(content);
         }
-        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or FormatException or InvalidOperationException or IOException)
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
         {
             return null;
         }
@@ -171,10 +172,13 @@ internal static class Tables
 
     private static string Cell(IXLCell cell)
     {
-        var value = cell.Value;
+        // the values Excel saved, so formulas are not evaluated here
+        var value = cell.CachedValue;
         return (value.Type switch
         {
-            XLDataType.Number => value.GetNumber().ToString(CultureInfo.InvariantCulture),
+            XLDataType.Number => value.GetNumber() is var number && number % 1 == 0 && Math.Abs(number) < 1e15
+                ? ((long)number).ToString(CultureInfo.InvariantCulture)
+                : value.GetNumber().ToString(CultureInfo.InvariantCulture),
             XLDataType.Boolean => value.GetBoolean() ? "true" : "false",
             XLDataType.DateTime => value.GetDateTime() is var date && date.TimeOfDay == TimeSpan.Zero
                 ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
@@ -187,13 +191,24 @@ internal static class Tables
     /// <summary>Comma or semicolon separated (as Excel writes it in many locales), quoted as in RFC 4180.</summary>
     private static List<string[]>? ReadCsv(byte[] content)
     {
-        var text = new UTF8Encoding(false, true).GetString(content).TrimStart('﻿');
+        string text;
+        try
+        {
+            text = new UTF8Encoding(false, true).GetString(content).TrimStart('\uFEFF');
+        }
+        catch (DecoderFallbackException)
+        {
+            // Excel saves CSV in the ANSI code page in many locales
+            text = Encoding.Latin1.GetString(content);
+        }
+
         var firstLine = text.Split('\n', 2)[0];
         var separator = firstLine.Count(c => c == ';') > firstLine.Count(c => c == ',') ? ';' : ',';
         var rows = new List<string[]>();
         var row = new List<string>();
         var cell = new StringBuilder();
         var quoted = false;
+        var wasQuoted = false;
         for (var i = 0; i < text.Length; i++)
         {
             var c = text[i];
@@ -215,11 +230,11 @@ internal static class Tables
             }
             else if (c == '"' && cell.Length == 0)
             {
-                quoted = true;
+                quoted = wasQuoted = true;
             }
             else if (c == separator)
             {
-                row.Add(Unquote(cell));
+                row.Add(Unquote(cell, ref wasQuoted));
             }
             else if (c == '\n' || c == '\r')
             {
@@ -228,11 +243,9 @@ internal static class Tables
                     i++;
                 }
 
-                row.Add(Unquote(cell));
-                if (row.Count > 1 || row[0].Length > 0)
-                {
-                    rows.Add([.. row]);
-                }
+                // blank lines stay as empty rows, so row numbers match the lines
+                row.Add(Unquote(cell, ref wasQuoted));
+                rows.Add([.. row]);
 
                 row.Clear();
                 if (rows.Count > MaxRows)
@@ -248,20 +261,20 @@ internal static class Tables
 
         if (cell.Length > 0 || row.Count > 0)
         {
-            row.Add(Unquote(cell));
+            row.Add(Unquote(cell, ref wasQuoted));
             rows.Add([.. row]);
         }
 
         return rows.Count > MaxRows || rows.Any(r => r.Length > MaxColumns) ? null : rows;
     }
 
-    private static string Unquote(StringBuilder cell)
+    /// <summary>Quoted cells keep their spaces; the guard <see cref="Quote"/> puts in front of formula characters is removed.</summary>
+    private static string Unquote(StringBuilder cell, ref bool wasQuoted)
     {
-        var value = cell.ToString().Trim();
+        var value = wasQuoted ? cell.ToString() : cell.ToString().Trim();
         cell.Clear();
-
-        // the guard Quote puts in front of formula characters
-        return value.Length > 1 && value[0] == '\'' && "=+-@".Contains(value[1]) ? value[1..] : value;
+        wasQuoted = false;
+        return value.Length > 1 && value[0] == '\'' && "=+-@\t\r".Contains(value[1]) ? value[1..] : value;
     }
 
     /// <summary>Quoted when needed; values that Excel would run as a formula get a leading apostrophe.</summary>

@@ -102,6 +102,9 @@ public sealed class RuleJob : Entity, IMultiTenant
 
     public Guid StartedBy { get; set; }
 
+    /// <summary>When a worker took the run, renewed while it runs.</summary>
+    public DateTimeOffset? ClaimedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public Guid TenantId { get; set; }
@@ -720,21 +723,24 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Meta
 }
 
 /// <summary>Applies rules to existing nodes afterwards, as the user who started the run; one node's failure does not stop the others.</summary>
-internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, NodeAccess access, ILogger<RuleJobRunner> logger) : IBackgroundJob<Guid>
+internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, NodeAccess access, TimeProvider clock, ILogger<RuleJobRunner> logger) : IBackgroundJob<Guid>
 {
     public const int MaxNodes = 10_000;
     private const int MaxEntries = 500;
 
     public async Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        // claimed atomically, so a second delivery of the same job does nothing
-        if (await db.Set<RuleJob>().Where(j => j.Id == jobId && j.State == RuleJobStates.Queued)
-                .ExecuteUpdateAsync(u => u.SetProperty(j => j.State, RuleJobStates.Running), cancellationToken) == 0)
+        // claimed atomically, so a second delivery does nothing; a run whose worker died is taken over
+        var now = clock.GetUtcNow();
+        var stale = now - DataJobRunner.Stale;
+        if (await db.Set<RuleJob>().Where(j => j.Id == jobId && (j.State == RuleJobStates.Queued || (j.State == RuleJobStates.Running && j.ClaimedAt < stale)))
+                .ExecuteUpdateAsync(u => u.SetProperty(j => j.State, RuleJobStates.Running).SetProperty(j => j.ClaimedAt, now), cancellationToken) == 0)
         {
             return;
         }
 
         var job = await db.Set<RuleJob>().SingleAsync(j => j.Id == jobId, cancellationToken);
+        (job.Total, job.Matched, job.Executed, job.Skipped, job.Failed, job.Error, job.Entries) = (0, 0, 0, 0, 0, null, []);
         try
         {
             // rules that only react to changes cannot hold afterwards; running them would write their "else" branch everywhere
@@ -764,6 +770,7 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
                     Note(job, nodeId, "failed", "An internal error occurred.");
                 }
 
+                job.ClaimedAt = clock.GetUtcNow();
                 await db.SaveChangesAsync(cancellationToken);
             }
 

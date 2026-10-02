@@ -11,6 +11,13 @@ namespace Shareme.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "ClaimedAt",
+                schema: "sm",
+                table: "RuleJobs",
+                type: "timestamp with time zone",
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "DataJobs",
                 schema: "sm",
@@ -32,6 +39,7 @@ namespace Shareme.Infrastructure.Migrations
                     Entries = table.Column<string>(type: "jsonb", nullable: false),
                     StartedBy = table.Column<Guid>(type: "uuid", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    ClaimedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     TenantId = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
@@ -52,6 +60,11 @@ namespace Shareme.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "DataJobs",
                 schema: "sm");
+
+            migrationBuilder.DropColumn(
+                name: "ClaimedAt",
+                schema: "sm",
+                table: "RuleJobs");
         }
     }
 }

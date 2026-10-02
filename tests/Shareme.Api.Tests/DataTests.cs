@@ -72,6 +72,13 @@ public sealed class DataTests(ApiFixture api) : IAsyncLifetime
 
         var again = await RunAsync(await Admin.PostAsJsonAsync("/api/v1/mass-edits", Edit(false), Ct));
         (again.Executed, again.Skipped).ShouldBe((0, 2));
+
+        var german = await RunAsync(await Admin.PostAsJsonAsync("/api/v1/mass-edits", new MassEditRequest(
+            [new PropertyMutation("title", MassEditStrategies.Overwrite, Texts: ["Neu"], Lang: "de")], NodeIds: [a]), Ct));
+        german.Executed.ShouldBe(1);
+        Values(await MetadataAsync(a), "title").ShouldBe(["en:Title", "de:Neu"]);
+        (await Admin.PostAsJsonAsync("/api/v1/mass-edits", new MassEditRequest([new PropertyMutation("status", MassEditStrategies.Overwrite, Texts: ["x"], Lang: "de")], NodeIds: [a]), Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await Admin.GetFromJsonAsync<DataJobDto[]>("/api/v1/data-jobs", Ct))!.Select(j => j.Id).ShouldContain(run.Id);
     }
 
@@ -111,7 +118,7 @@ public sealed class DataTests(ApiFixture api) : IAsyncLifetime
         await PatchAsync(a, new() { ["status"] = [Text("=1+1")], ["tags"] = [Text("one"), Text("two")], ["title"] = [Text("Title", "en"), Text("Titel", "de")] });
 
         var csv = await ExportAsync(new ExportRequest(FolderId: root, Format: ExportFormats.Csv));
-        var lines = Encoding.UTF8.GetString(csv).TrimStart('﻿').Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        var lines = Encoding.UTF8.GetString(csv).TrimStart('\uFEFF').Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
         var headers = lines[0].Split(',');
         headers[..4].ShouldBe(["id", "name", "type", "path"]);
         headers.ShouldContain("title[de]");
@@ -134,6 +141,9 @@ public sealed class DataTests(ApiFixture api) : IAsyncLifetime
         Values(metadata, "title").ShouldBe(["en:Title", "de:Neuer Titel"], ignoreOrder: true);
         Values(metadata, "status").ShouldBe(["=1+1"]);
         Values(metadata, "tags").ShouldBe(["one", "two"]);
+
+        var unchanged = await RunAsync(await Admin.PutAsync("/api/v1/imports", new ByteArrayContent(changed.ToArray()), Ct));
+        (unchanged.Executed, unchanged.Skipped).ShouldBe((0, 1), JsonSerializer.Serialize(unchanged.Entries));
     }
 
     [Fact]

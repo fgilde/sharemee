@@ -58,6 +58,9 @@ public sealed class DataJob : Entity, IMultiTenant
 
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>When a worker took the job, renewed while it runs.</summary>
+    public DateTimeOffset? ClaimedAt { get; set; }
+
     public Guid TenantId { get; set; }
 }
 
@@ -120,6 +123,8 @@ internal sealed class DataHandlers(
         }
 
         var definitions = (await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key);
+        var languages = (await catalog.LanguagesAsync(cancellationToken)).Select(l => l.Code).ToHashSet();
+        var contexts = (await catalog.ContextsAsync(cancellationToken)).Select(c => c.Key).ToHashSet();
         mutations = mutations.Select(m => m.Values is null && m.Texts is { Count: > 0 } texts && definitions.TryGetValue(m.Key, out var d)
             ? m with { Values = texts.Where(t => t.Trim().Length > 0).Select(t => MetadataText.Parse(d, t.Trim(), m.Lang, m.Ctx)).ToList(), Texts = null }
             : m).ToList();
@@ -139,6 +144,11 @@ internal sealed class DataHandlers(
             {
                 return Error.Validation("Mutations", $"'{mutation.Key}' needs values to {mutation.Strategy}.");
             }
+
+            if ((mutation.Lang is { } lang && (!definition.Localizable || !languages.Contains(lang))) || (mutation.Ctx is { } ctx && (!definition.HasContext || !contexts.Contains(ctx))))
+            {
+                return Error.Validation("Mutations", $"'{mutation.Key}' has no language or context like that.");
+            }
         }
 
         var limit = await LimitAsync(cancellationToken);
@@ -149,9 +159,11 @@ internal sealed class DataHandlers(
         }
         else if (request.Search is { } search)
         {
+            // pages can come back short or empty (hits the user may not read are left out), so the cursor alone decides when the hits end
+            var found = new HashSet<Guid>();
             nodeIds = [];
             string? cursor = null;
-            do
+            for (var pages = 0; pages < limit / 200 + 50; pages++)
             {
                 var page = await dispatcher.SendAsync(new SearchNodes(search with { Size = 200, Cursor = cursor, Facets = null }), cancellationToken);
                 if (!page.IsSuccess)
@@ -159,15 +171,22 @@ internal sealed class DataHandlers(
                     return page.Error!;
                 }
 
-                if (page.Value.Total > limit)
+                nodeIds.AddRange(page.Value.Items.Select(i => i.Id).Where(found.Add));
+                if (nodeIds.Count > limit)
                 {
                     return TooMany(limit);
                 }
 
-                nodeIds.AddRange(page.Value.Items.Select(i => i.Id));
-                cursor = page.Value.Items.Count == 0 ? null : page.Value.Cursor;
+                if ((cursor = page.Value.Cursor) is null)
+                {
+                    break;
+                }
             }
-            while (cursor is not null && nodeIds.Count < limit);
+
+            if (cursor is not null)
+            {
+                return TooMany(limit);
+            }
         }
         else
         {
@@ -207,10 +226,14 @@ internal sealed class DataHandlers(
             return TooMany(limit);
         }
 
+        // the row first: a failed upload leaves a job that fails ("the file is gone") instead of a file nobody deletes
         var job = new DataJob { Kind = DataJobKinds.Import, DryRun = command.DryRun, FolderId = command.FolderId, StartedBy = currentUser.UserId ?? Guid.Empty, CreatedAt = clock.GetUtcNow() };
         job.BlobKey = $"imports/{job.Id}";
+        db.Add(job);
+        await db.SaveChangesAsync(cancellationToken);
         await storage.PutAsync(job.BlobKey, new MemoryStream(bytes), "application/octet-stream", cancellationToken);
-        return await EnqueueAsync(job, cancellationToken);
+        jobs.Enqueue<DataJobRunner, Guid>(job.Id);
+        return Map(job);
     }
 
     public async Task<Result<BlobDownload>> HandleAsync(ExportMetadata query, CancellationToken cancellationToken)
@@ -255,6 +278,15 @@ internal sealed class DataHandlers(
         var types = await db.Set<NodeType>().AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Key, cancellationToken);
         var ancestorIds = nodes.SelectMany(n => n.PathIds).Distinct().ToList();
         var names = await db.Set<Node>().AsNoTracking().Where(n => ancestorIds.Contains(n.Id)).ToDictionaryAsync(n => n.Id, n => n.Name, cancellationToken);
+
+        // folders above may be out of reach where access inheritance is cut off
+        foreach (var ancestor in ancestorIds.Except(readable))
+        {
+            if (names.ContainsKey(ancestor) && !await access.CanAsync(NodePermissions.Read, ancestor, cancellationToken))
+            {
+                names[ancestor] = "…";
+            }
+        }
         var definitions = await catalog.DefinitionsAsync(cancellationToken);
         var language = (await catalog.LanguagesAsync(cancellationToken)).FirstOrDefault(l => l.IsDefault)?.Code ?? MetadataCatalog.FallbackLanguage.Code;
         var presentTypes = nodes.Select(n => types[n.NodeTypeId]).ToHashSet();
@@ -317,20 +349,30 @@ internal sealed class DataHandlers(
 }
 
 /// <summary>Runs mass edits and imports as the user who started them; one node's failure does not stop the others.</summary>
-internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IBlobStorage storage, IServiceScopeFactory scopes, ILogger<DataJobRunner> logger)
+internal sealed class DataJobRunner(
+    CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IBlobStorage storage, IServiceScopeFactory scopes, TimeProvider clock, ILogger<DataJobRunner> logger)
     : IBackgroundJob<Guid>
 {
+    /// <summary>A running job without a sign of life for this long belongs to a worker that died, and is taken over.</summary>
+    public static readonly TimeSpan Stale = TimeSpan.FromMinutes(10);
+
     private const int MaxEntries = 1000;
+    private const int SaveEvery = 25;
+    private int _unsaved;
 
     public async Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        if (await db.Set<DataJob>().Where(j => j.Id == jobId && j.State == RuleJobStates.Queued)
-                .ExecuteUpdateAsync(u => u.SetProperty(j => j.State, RuleJobStates.Running), cancellationToken) == 0)
+        var now = clock.GetUtcNow();
+        var stale = now - Stale;
+        if (await db.Set<DataJob>().Where(j => j.Id == jobId && (j.State == RuleJobStates.Queued || (j.State == RuleJobStates.Running && j.ClaimedAt < stale)))
+                .ExecuteUpdateAsync(u => u.SetProperty(j => j.State, RuleJobStates.Running).SetProperty(j => j.ClaimedAt, now), cancellationToken) == 0)
         {
             return;
         }
 
+        // a retry starts over, so counters and the report describe one complete pass
         var job = await db.Set<DataJob>().SingleAsync(j => j.Id == jobId, cancellationToken);
+        (job.Total, job.Executed, job.Skipped, job.Failed, job.Error, job.Entries) = (0, 0, 0, 0, null, []);
         try
         {
             var definitions = (await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key);
@@ -344,6 +386,10 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
             }
 
             job.State = RuleJobStates.Completed;
+            if (job.Entries.Count >= MaxEntries)
+            {
+                job.Error = $"The report shows the first {MaxEntries} entries.";
+            }
         }
         catch (OperationCanceledException)
         {
@@ -357,7 +403,7 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
             job.Error = "The run stopped because of an internal error.";
         }
 
-        if (job.State != RuleJobStates.Running && job.BlobKey is { } key)
+        if (job.BlobKey is { } key)
         {
             await storage.DeleteAsync(key, CancellationToken.None);
         }
@@ -368,6 +414,7 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
     private async Task MassEditAsync(DataJob job, Dictionary<string, PropertyDefinition> definitions, CancellationToken cancellationToken)
     {
         job.Total = job.NodeIds.Count;
+        var types = await db.Set<NodeType>().AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Key, cancellationToken);
         foreach (var nodeId in job.NodeIds)
         {
             await GuardAsync(job, nodeId, null, async () =>
@@ -378,23 +425,31 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
                     return;
                 }
 
+                // properties that do not apply to this node's type are left out, so mixed selections work
                 var update = new Dictionary<string, List<MetadataValue>?>(StringComparer.Ordinal);
                 foreach (var mutation in job.Mutations)
                 {
+                    if (!definitions.TryGetValue(mutation.Key, out var definition) || !definition.AppliesTo(types[node.NodeTypeId]))
+                    {
+                        continue;
+                    }
+
                     var current = node.Metadata.GetValueOrDefault(mutation.Key) ?? [];
+                    bool InSlot(MetadataValue v) => v.Lang == mutation.Lang && v.Ctx == mutation.Ctx;
+                    var slotted = mutation.Lang is not null || mutation.Ctx is not null;
                     var next = mutation.Strategy switch
                     {
-                        MassEditStrategies.Overwrite => mutation.Values!.ToList(),
-                        MassEditStrategies.Merge => Merge(definitions[mutation.Key], current, mutation.Values!),
-                        _ => [],
+                        MassEditStrategies.Overwrite => slotted ? Replace(current, InSlot, mutation.Values!) : mutation.Values!.ToList(),
+                        MassEditStrategies.Merge => Merge(definition, current, mutation.Values!),
+                        _ => slotted ? current.Where(v => !InSlot(v)).ToList() : [],
                     };
-                    if (!MetadataText.Same(current, next))
+                    if (!SameIgnoringOrder(current, next))
                     {
                         update[mutation.Key] = next.Count == 0 ? null : next;
                     }
                 }
 
-                await WriteAsync(job, node.Id, null, update, MetadataSources.MassEdit, _ => null, cancellationToken);
+                await WriteAsync(job, node, null, update, MetadataSources.MassEdit, _ => null, cancellationToken);
             });
         }
     }
@@ -409,7 +464,7 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
         var id = Array.FindIndex(headers, h => h.Trim().Equals(TableColumns.Id, StringComparison.OrdinalIgnoreCase));
         var name = Array.FindIndex(headers, h => h.Trim().Equals(TableColumns.Name, StringComparison.OrdinalIgnoreCase));
 
-        // property columns; unknown ones are reported once and left out
+        // property columns; unknown and read only ones are reported once and left out
         var columns = new List<(int Index, string Header, PropertyDefinition Definition, string? Lang, string? Ctx)>();
         for (var index = 0; index < headers.Length; index++)
         {
@@ -419,29 +474,48 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
                 continue;
             }
 
-            if (MetadataText.ParseColumn(header) is { } column && definitions.TryGetValue(column.Key, out var definition))
-            {
-                columns.Add((index, header, definition, column.Lang, column.Ctx));
-            }
-            else
+            if (MetadataText.ParseColumn(header) is not { } column || !definitions.TryGetValue(column.Key, out var definition))
             {
                 Note(job, new DataJobEntryDto(null, 1, header, DataJobResults.Skipped, "No such property; the column is left out."));
             }
+            else if (!definition.Editable || definition.IsSystem)
+            {
+                Note(job, new DataJobEntryDto(null, 1, header, DataJobResults.Skipped, "The property cannot be edited; the column is left out."));
+            }
+            else
+            {
+                columns.Add((index, header, definition, column.Lang, column.Ctx));
+            }
         }
 
-        var children = job.FolderId is { } folderId && name >= 0
-            ? (await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == folderId).Select(n => new { n.Id, n.Name }).ToListAsync(cancellationToken))
-                .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Select(n => n.Id).ToList(), StringComparer.OrdinalIgnoreCase)
-            : [];
-        job.Total = rows.Count - 1;
+        // only names the user can see count, so hidden nodes neither match nor show up in messages
+        var children = new Dictionary<string, List<Guid>>(StringComparer.OrdinalIgnoreCase);
+        if (job.FolderId is { } folderId && name >= 0)
+        {
+            foreach (var child in await db.Set<Node>().AsNoTracking().Where(n => n.ParentId == folderId).Select(n => new { n.Id, n.Name }).ToListAsync(cancellationToken))
+            {
+                if (await access.CanAsync(NodePermissions.Read, child.Id, cancellationToken))
+                {
+                    (children.TryGetValue(child.Name, out var list) ? list : children[child.Name] = []).Add(child.Id);
+                }
+            }
+        }
+
+        job.Total = rows.Skip(1).Count(r => r.Any(c => c.Length > 0));
         for (var r = 1; r < rows.Count; r++)
         {
             var row = rows[r];
+            if (row.All(c => c.Length == 0))
+            {
+                continue;
+            }
+
             var number = r + 1;
             string Cell(int index) => index >= 0 && index < row.Length ? row[index] : string.Empty;
             await GuardAsync(job, null, number, async () =>
             {
-                Guid? target = Guid.TryParse(Cell(id), out var parsed) ? parsed
+                Guid? target = Cell(id).Length > 0
+                    ? Guid.TryParse(Cell(id), out var parsed) ? parsed : null
                     : children.TryGetValue(Cell(name), out var matches) && matches.Count == 1 ? matches[0] : null;
                 if (target is null)
                 {
@@ -455,49 +529,97 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
                     return;
                 }
 
-                // empty cells leave values as they are; a filled cell replaces the values of its language and context
+                // empty cells leave values as they are; a filled cell replaces the values of its language and context in place
                 var update = new Dictionary<string, List<MetadataValue>?>(StringComparer.Ordinal);
                 foreach (var group in columns.Where(c => Cell(c.Index).Length > 0).GroupBy(c => c.Definition.Key))
                 {
                     var definition = group.First().Definition;
                     var current = node.Metadata.GetValueOrDefault(definition.Key) ?? [];
-                    var next = current.Where(v => !group.Any(c => c.Lang == v.Lang && c.Ctx == v.Ctx)).ToList();
+                    var next = current;
                     foreach (var column in group)
                     {
                         var texts = MetadataText.IsMulti(definition) ? Cell(column.Index).Split(TableColumns.Separator.Trim(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : [Cell(column.Index)];
-                        next.AddRange(texts.Select(t => MetadataText.Parse(definition, t, column.Lang, column.Ctx)));
+                        next = Replace(next, v => v.Lang == column.Lang && v.Ctx == column.Ctx, texts.Select(t => MetadataText.Parse(definition, t, column.Lang, column.Ctx)));
                     }
 
-                    if (!MetadataText.Same(current, next))
+                    if (!SameIgnoringOrder(current, next))
                     {
                         update[definition.Key] = next;
                     }
                 }
 
-                await WriteAsync(job, node.Id, number, update, MetadataSources.Import,
+                await WriteAsync(job, node, number, update, MetadataSources.Import,
                     key => string.Join(", ", columns.Where(c => c.Definition.Key == key).Select(c => c.Header)) is { Length: > 0 } names ? names : key, cancellationToken);
             });
         }
     }
 
-    /// <summary>Single valued properties keep values in other languages and contexts; multi valued ones gain what they lack.</summary>
-    private static List<MetadataValue> Merge(PropertyDefinition definition, List<MetadataValue> current, IReadOnlyList<MetadataValue> values) =>
-        MetadataText.IsMulti(definition)
-            ? [.. current, .. values.Where(v => !current.Any(c => MetadataText.Same([c], [v])))]
-            : [.. current.Where(c => !values.Any(v => MetadataText.SameSlot(c, v))), .. values];
+    /// <summary>The values of a slot are replaced where the first of them stood, so the order of the others stays.</summary>
+    private static List<MetadataValue> Replace(List<MetadataValue> current, Func<MetadataValue, bool> inSlot, IEnumerable<MetadataValue> values)
+    {
+        var next = new List<MetadataValue>();
+        var inserted = false;
+        foreach (var value in current)
+        {
+            if (!inSlot(value))
+            {
+                next.Add(value);
+            }
+            else if (!inserted)
+            {
+                next.AddRange(values);
+                inserted = true;
+            }
+        }
 
-    private async Task WriteAsync(DataJob job, Guid nodeId, int? row, Dictionary<string, List<MetadataValue>?> update, string source, Func<string, string?> column, CancellationToken cancellationToken)
+        return inserted ? next : [.. next, .. values];
+    }
+
+    /// <summary>Multi valued properties gain what they lack; single valued ones get the given languages and contexts replaced.</summary>
+    private static List<MetadataValue> Merge(PropertyDefinition definition, List<MetadataValue> current, IReadOnlyList<MetadataValue> values)
+    {
+        if (MetadataText.IsMulti(definition))
+        {
+            return [.. current, .. values.Where(v => !current.Any(c => MetadataText.Same([c], [v])))];
+        }
+
+        var next = current;
+        foreach (var slot in values.GroupBy(v => (v.Lang, v.Ctx)))
+        {
+            next = Replace(next, v => (v.Lang, v.Ctx) == slot.Key, slot);
+        }
+
+        return next;
+    }
+
+    private static bool SameIgnoringOrder(IReadOnlyList<MetadataValue> a, IReadOnlyList<MetadataValue> b) =>
+        a.Select(v => JsonSerializer.Serialize(v)).Order().SequenceEqual(b.Select(v => JsonSerializer.Serialize(v)).Order());
+
+    private async Task WriteAsync(DataJob job, Node node, int? row, Dictionary<string, List<MetadataValue>?> update, string source, Func<string, string?> column, CancellationToken cancellationToken)
     {
         if (update.Count == 0)
         {
-            Skip(job, nodeId, row, "Nothing to change.");
+            Skip(job, node.Id, row, "Nothing to change.");
             return;
         }
 
-        if (await MetadataWrites.WriteAsync(scopes, new SetNodeMetadata(nodeId, update, Replace: false, source, ValidateOnly: job.DryRun), cancellationToken) is not { } error)
+        if (await MetadataWrites.WriteAsync(scopes, new SetNodeMetadata(node.Id, update, Replace: false, source, ValidateOnly: job.DryRun), cancellationToken) is not { } error)
         {
+            // what the checks normalised may equal what was there, so a real run reports what actually changed
+            var keys = update.Keys.ToList();
+            if (!job.DryRun && await db.Set<Node>().AsNoTracking().Where(n => n.Id == node.Id).Select(n => n.Metadata).SingleOrDefaultAsync(cancellationToken) is { } after)
+            {
+                keys = keys.Where(k => !MetadataText.Same(node.Metadata.GetValueOrDefault(k), after.GetValueOrDefault(k))).ToList();
+            }
+
+            if (keys.Count == 0)
+            {
+                Skip(job, node.Id, row, "Nothing to change.");
+                return;
+            }
+
             job.Executed++;
-            Note(job, new DataJobEntryDto(nodeId, row, null, DataJobResults.Executed, $"{(job.DryRun ? "Would change" : "Changed")} {string.Join(", ", update.Keys)}."));
+            Note(job, new DataJobEntryDto(node.Id, row, null, DataJobResults.Executed, $"{(job.DryRun ? "Would change" : "Changed")} {string.Join(", ", keys)}."));
             return;
         }
 
@@ -506,12 +628,12 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
         {
             foreach (var (key, messages) in details)
             {
-                Note(job, new DataJobEntryDto(nodeId, row, column(key) ?? key, DataJobResults.Failed, string.Join(" ", messages)));
+                Note(job, new DataJobEntryDto(node.Id, row, column(key) ?? key, DataJobResults.Failed, string.Join(" ", messages)));
             }
         }
         else
         {
-            Note(job, new DataJobEntryDto(nodeId, row, null, DataJobResults.Failed, error.Message));
+            Note(job, new DataJobEntryDto(node.Id, row, null, DataJobResults.Failed, error.Message));
         }
     }
 
@@ -527,7 +649,13 @@ internal sealed class DataJobRunner(CoworkeeDbContext db, MetadataCatalog catalo
             Fail(job, nodeId, row, null, "An internal error occurred.");
         }
 
-        await db.SaveChangesAsync(CancellationToken.None);
+        // progress and a sign of life now and then, not a rewrite of the whole report per node
+        if (++_unsaved >= SaveEvery)
+        {
+            _unsaved = 0;
+            job.ClaimedAt = clock.GetUtcNow();
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
     }
 
     private async Task<Node?> ReadableAsync(Guid nodeId, CancellationToken cancellationToken) =>
