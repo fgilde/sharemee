@@ -365,7 +365,7 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         return (await response.Content.ReadFromJsonAsync<NodeDto>(Ct))!.Id;
     }
 
-    private static async Task<UploadResultDto> UploadAsync(HttpClient client, string fileName, byte[] content, Guid folder)
+    internal static async Task<UploadResultDto> UploadAsync(HttpClient client, string fileName, byte[] content, Guid folder)
     {
         var start = await client.PostAsJsonAsync("/api/v1/uploads", new StartUploadRequest(fileName, content.Length, folder, null, Convert.ToHexStringLower(SHA256.HashData(content))), Ct);
         start.EnsureSuccessStatusCode();

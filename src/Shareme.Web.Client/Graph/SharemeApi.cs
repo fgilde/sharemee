@@ -157,6 +157,7 @@ internal sealed class SharemeNavigation : INavigationContributor
         new("Workspaces", "/workspaces", MudBlazor.Icons.Material.Outlined.Workspaces),
         new("Recycle bin", "/recycle-bin", MudBlazor.Icons.Material.Outlined.Delete),
         new("Metadata", "/admin/metadata", MudBlazor.Icons.Material.Outlined.Label, Shareme.Contracts.Metadata.MetadataPermissions.Manage),
+        new("Rules", "/admin/rules", MudBlazor.Icons.Material.Outlined.Rule, Shareme.Contracts.Automation.AutomationPermissions.ManageRules),
         new("Node types", "/admin/node-types", MudBlazor.Icons.Material.Outlined.Category, NodePermissions.Admin),
         new("Renditions", "/admin/renditions", MudBlazor.Icons.Material.Outlined.PhotoSizeSelectLarge, NodePermissions.Admin),
     ];
