@@ -14,6 +14,11 @@ builder.Services.AddHttpClient<ISharemeApi, SharemeApi>(client =>
 });
 builder.Services.AddHttpClient<IMetadataApi, MetadataApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<IRulesApi, RulesApi>(client => client.BaseAddress = baseAddress);
+builder.Services.AddHttpClient<IDataApi, DataApi>(client =>
+{
+    client.BaseAddress = baseAddress;
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
 builder.Services.AddHttpClient<Shareme.Web.Client.Workspaces.IWorkspacesApi, Shareme.Web.Client.Workspaces.WorkspacesApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<Shareme.Web.Client.Assets.IDownloadsApi, Shareme.Web.Client.Assets.DownloadsApi>(client =>
 {

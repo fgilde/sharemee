@@ -7,6 +7,8 @@
 @using Shareme.Web.Client.Search
 @inject ISearchApi Api
 @inject IMetadataApi Metadata
+@inject IDataApi Data
+@inject MudBlazor.Extensions.Services.MudExFileService Files
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
@@ -84,7 +86,16 @@
     <MudItem xs="12" md="9">
         @if (_result is not null)
         {
-            <MudText Typo="Typo.body2" Class="mb-2" data-testid="total">@_result.Total hits</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                <MudText Typo="Typo.body2" data-testid="total">@_result.Total hits</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.EditNote" OnClick="() => _massEdit = !_massEdit" Disabled="_result.Total == 0" data-testid="edit-hits">Edit metadata of all hits</MudButton>
+                <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.TableView" OnClick="ExportAsync" Disabled="_items.Count == 0" data-testid="export-hits">Export loaded hits</MudButton>
+            </MudStack>
+            @if (_massEdit)
+            {
+                <MassEditPanel Search="Request(null)" Closed="() => _massEdit = false" />
+            }
             <MudSimpleTable Dense="true" Hover="true">
                 <thead><tr><th><span class="d-sr-only">Preview</span></th><th>Name</th><th>Type</th><th>Changed</th></tr></thead>
                 <tbody>
@@ -155,6 +166,21 @@
         _term = Query;
         _selected.Clear();
         await SearchAsync(reset: true);
+    }
+
+    private bool _massEdit;
+
+    private async Task ExportAsync()
+    {
+        try
+        {
+            var content = await Data.ExportAsync(new Shareme.Contracts.Automation.ExportRequest(NodeIds: _items.Select(i => i.Id).ToList()));
+            await Files.DownloadContentAsync(content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "search-metadata.xlsx");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
     }
 
     private SearchRequest Request(string? cursor) => new(

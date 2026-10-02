@@ -2,6 +2,14 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P5b (mass edit, import, export)
+
+- [ ] Exports run one access check per node inside the request; batch via `GrantedNodesAsync` or run large exports as a job.
+- [ ] XLSX imports load the sheet into ClosedXML (unpacked size capped at 40 MB); a streaming reader for bigger files.
+- [ ] Imports match names among direct children only (folder exports include descendants); no marker to clear a value; `;` inside multi values cannot be escaped.
+- [ ] Quoted CSV cells spanning lines shift row numbers in the report.
+- [ ] A job whose enqueue fails after the row was saved stays queued.
+
 ## From P5a (rules)
 
 - [ ] Conditions, `OnlyIfEmpty` and templates look at a node's own values only, not inherited ones.

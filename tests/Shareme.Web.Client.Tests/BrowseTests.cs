@@ -20,6 +20,7 @@ public sealed class BrowseTests : BunitContext
 {
     private readonly ISharemeApi _api = Substitute.For<ISharemeApi>();
     private readonly IDownloadsApi _downloads = Substitute.For<IDownloadsApi>();
+    private readonly Shareme.Web.Client.Metadata.IDataApi _data = Substitute.For<Shareme.Web.Client.Metadata.IDataApi>();
     private readonly Guid _root = Guid.CreateVersion7();
     private readonly Guid _folder = Guid.CreateVersion7();
     private readonly Guid _child = Guid.CreateVersion7();
@@ -30,6 +31,7 @@ public sealed class BrowseTests : BunitContext
         Services.AddMudServices();
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_downloads);
+        Services.AddSingleton(_data);
         Services.AddSingleton(Substitute.For<Shareme.Web.Client.Workspaces.IWorkspacesApi>());
         Services.AddSingleton(_api);
         var metadata = Substitute.For<IMetadataApi>();
@@ -72,6 +74,23 @@ public sealed class BrowseTests : BunitContext
 
         await _downloads.Received(1).CreatePackageAsync(Arg.Is<Shareme.Contracts.Assets.DownloadPackageRequest>(r => r.FolderId == _folder), Arg.Any<CancellationToken>());
         Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.ShouldEndWith("/api/v1/downloads/abc");
+    }
+
+    [Fact]
+    public async Task Selected_nodes_are_exported_and_mass_edited()
+    {
+        _data.MassEditAsync(Arg.Any<Shareme.Contracts.Automation.MassEditRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new Shareme.Contracts.Automation.DataJobDto(Guid.CreateVersion7(), "massEdit", "queued", false, 0, 0, 0, 0, null, [], DateTimeOffset.UtcNow));
+        var page = Render<Browse>(p => p.Add(b => b.Id, _folder));
+        page.WaitForElement($"input[data-testid='select-{_child}'], [data-testid='select-{_child}'] input").Change(true);
+
+        await page.Find("[data-testid='export-selected']").ClickAsync(new());
+        await _data.Received(1).ExportAsync(Arg.Is<Shareme.Contracts.Automation.ExportRequest>(r => r.NodeIds!.Single() == _child), Arg.Any<CancellationToken>());
+
+        await page.Find("[data-testid='edit-selected']").ClickAsync(new());
+        await page.WaitForElement("[data-testid='start-mass-edit']").ClickAsync(new());
+        await _data.Received(1).MassEditAsync(Arg.Is<Shareme.Contracts.Automation.MassEditRequest>(r => r.NodeIds!.Single() == _child && r.Search == null), Arg.Any<CancellationToken>());
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.ShouldContain("/data-jobs/");
     }
 
     [Fact]

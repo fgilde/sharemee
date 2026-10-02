@@ -1,0 +1,98 @@
+@page "/data-jobs"
+@page "/data-jobs/{Id:guid}"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Automation
+@using Shareme.Web.Client.Metadata
+@inject IDataApi Api
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Data runs</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Mass edits and imports</MudText>
+
+@if (_job is { } job)
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="data-job">
+        <MudText Typo="Typo.h6">@Kind(job) @(job.DryRun ? "(dry run)" : null): @job.State</MudText>
+        <MudText Typo="Typo.body2">@job.Total in total, @job.Executed @(job.DryRun ? "would change" : "changed"), @job.Skipped skipped, @job.Failed failed. @job.Error</MudText>
+        <MudSimpleTable Dense="true" Class="mt-2" data-testid="data-job-entries">
+            <thead><tr><th>Row</th><th>Column</th><th>Node</th><th>Result</th><th>Message</th></tr></thead>
+            <tbody>
+                @foreach (var entry in job.Entries)
+                {
+                    <tr data-result="@entry.Result">
+                        <td>@entry.Row</td>
+                        <td>@entry.Column</td>
+                        <td>@if (entry.NodeId is { } node) { <MudLink Href="@($"/nodes/{node}")">@node.ToString()[..8]</MudLink> }</td>
+                        <td>@entry.Result</td>
+                        <td>@entry.Message</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+<MudSimpleTable Dense="true" Hover="true" data-testid="data-jobs">
+    <thead><tr><th>Started</th><th>Kind</th><th>State</th><th>Total</th><th>Changed</th><th>Skipped</th><th>Failed</th></tr></thead>
+    <tbody>
+        @foreach (var run in _jobs)
+        {
+            <tr>
+                <td><MudLink Href="@($"/data-jobs/{run.Id}")">@run.CreatedAt.ToLocalTime().ToString("g")</MudLink></td>
+                <td>@Kind(run) @(run.DryRun ? "(dry run)" : null)</td>
+                <td>@run.State</td>
+                <td>@run.Total</td>
+                <td>@run.Executed</td>
+                <td>@run.Skipped</td>
+                <td>@run.Failed</td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    private IReadOnlyList<DataJobDto> _jobs = [];
+    private DataJobDto? _job;
+    private Timer? _timer;
+
+    [Parameter] public Guid? Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+
+        // a running job is fetched again until it is done
+        _timer?.Dispose();
+        _timer = _job is { State: RuleJobStates.Queued or RuleJobStates.Running }
+            ? new Timer(_ => InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                if (_job is not { State: RuleJobStates.Queued or RuleJobStates.Running })
+                {
+                    _timer?.Dispose();
+                }
+
+                StateHasChanged();
+            }), null, 1000, 1000)
+            : null;
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _job = Id is { } id ? await Api.GetJobAsync(id) : null;
+            _jobs = await Api.GetJobsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private static string Kind(DataJobDto job) => job.Kind == DataJobKinds.Import ? "Import" : "Mass edit";
+
+    public void Dispose() => _timer?.Dispose();
+}
