@@ -2,6 +2,22 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P1b (metadata)
+
+- [ ] Deleting and recreating a definition with the same key revives stored values under the new type (strip `Metadata - 'key'` on delete).
+- [ ] Deleting a language or context leaves values that the editor never shows and the next save drops silently.
+- [ ] Check-then-insert on group, definition and fallback language/context keys gives 500 on concurrent creation (map unique violations to 409).
+- [ ] Set `NodeTypeKey` and definition `NodeTypeKeys` are not validated against existing node types.
+- [ ] Inherited values expose `InheritedFrom` ids of ancestors above the caller's access.
+- [ ] The reference check is an existence oracle for node ids; dangling references after purge stay.
+- [ ] Read-only equality compares serialized JSON (`12` vs `12.0` gives a false "cannot be edited").
+- [ ] Min/Max are ignored for date, boolean and reference types; RichText is stored unsanitized (sanitize before rendering it as HTML).
+- [ ] Integer editor truncates decimals and can overflow; only one custom value can be entered next to list values.
+- [ ] The editor refetches the catalog on every node switch (cache it, invalidate on realtime).
+- [ ] Admin deletes have no confirmation; non-managers see raw error codes; no Sets UI; only folder/asset types are offered.
+- [ ] The `{}` default in the Metadata migration is hand edited; the model snapshot has no default.
+- [ ] `DataLanguage` and `UserContext` are not audited entities.
+
 ## From P1a (graph)
 
 - [ ] `GET /nodes/root` creates the root lazily without a permission and two first calls race on `IX_Nodes_Root` (create in setup or catch the unique violation).

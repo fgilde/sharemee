@@ -8,7 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 using NSubstitute;
 using Shareme.Contracts.Graph;
+using Shareme.Contracts.Metadata;
 using Shareme.Web.Client.Graph;
+using Shareme.Web.Client.Metadata;
 using Shareme.Web.Client.Pages;
 
 namespace Shareme.Web.Client.Tests;
@@ -25,6 +27,14 @@ public sealed class BrowseTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
         Services.AddSingleton(_api);
+        var metadata = Substitute.For<IMetadataApi>();
+        metadata.GetNodeMetadataAsync(default, default).ReturnsForAnyArgs(new NodeMetadataDto(_folder, "folder", new Dictionary<string, EffectivePropertyDto>()));
+        metadata.GetDefinitionsAsync(default, default).ReturnsForAnyArgs([]);
+        metadata.GetGroupsAsync(default).ReturnsForAnyArgs([]);
+        metadata.GetLanguagesAsync(default).ReturnsForAnyArgs([]);
+        metadata.GetContextsAsync(default).ReturnsForAnyArgs([]);
+        metadata.GetSetsAsync(default, default).ReturnsForAnyArgs([]);
+        Services.AddSingleton(metadata);
         Services.AddSingleton(Substitute.For<ICoworkeeApi>());
         Services.AddSingleton(new CoworkeeClientOptions());
         Services.AddSingleton<IRealtimeConnection>(Substitute.For<IRealtimeConnection>());

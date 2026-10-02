@@ -92,6 +92,20 @@ public sealed class AdminJourneyTests
         await first.GotoAsync(web + "/recycle-bin");
         await first.Locator("tr[data-item]", new() { HasTextString = "Brand assets" }).Locator("[data-testid^='restore-']").ClickAsync();
         await second.Locator("tr[data-node]", new() { HasTextString = "Brand assets" }).WaitForAsync(new() { Timeout = Timeout });
+
+        await first.GotoAsync(web + "/admin/metadata");
+        await first.Locator("input[data-testid='definition-key'], [data-testid='definition-key'] input").First.FillAsync("client");
+        await first.Locator("input[data-testid='definition-name'], [data-testid='definition-name'] input").First.FillAsync("Client");
+        await first.Locator("[data-testid='save-definition']").ClickAsync();
+        await first.Locator("tr[data-definition='client']").WaitForAsync(new() { Timeout = Timeout });
+
+        await first.GotoAsync(rootUrl);
+        var clientField = first.Locator("[data-property='client'] input").First;
+        await clientField.FillAsync("Acme");
+        await first.Locator("[data-testid='save-metadata']").ClickAsync();
+        await first.GetByText("Metadata saved.").WaitForAsync(new() { Timeout = Timeout });
+        await first.ReloadAsync();
+        await Assertions.Expect(first.Locator("[data-property='client'] input").First).ToHaveValueAsync("Acme", new() { Timeout = Timeout });
     }
 
     private static async Task<IPage> NewPageAsync(IBrowser browser)

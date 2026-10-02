@@ -95,6 +95,9 @@ else if (_detail is not null)
     }
 
     <MudTabs Elevation="0" Outlined="true" Class="mt-6">
+        <MudTabPanel Text="Metadata">
+            <div class="pa-4"><MetadataEditor @key="_detail.Node.Id" NodeId="_detail.Node.Id" /></div>
+        </MudTabPanel>
         <MudTabPanel Text="Permissions">
             <div class="pa-4">
                 <MudSwitch T="bool" Value="@_detail.Node.InterruptInheritance" ValueChanged="SetInheritanceAsync" Color="Color.Secondary"
