@@ -16,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using Shareme.Assets;
 using Shareme.Contracts.Assets;
 using Shareme.Contracts.Graph;
+using Shareme.Contracts.Metadata;
 using Shareme.Graph;
 
 namespace Shareme.Processing;
@@ -86,7 +87,18 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
             return Error.Conflict("assets.rendering", "The renditions are being created already.");
         }
 
-        foreach (var derivation in existing)
+        // hand made renditions stay; the still is dropped and made again, a renderer update may change it
+        foreach (var still in existing.Where(d => d.Kind == DerivationKinds.Still))
+        {
+            if (still.BlobKey is { } key)
+            {
+                db.Add(new OrphanBlob { Key = key });
+            }
+
+            db.Remove(still);
+        }
+
+        foreach (var derivation in existing.Where(d => !d.IsManual && d.Kind != DerivationKinds.Still))
         {
             if (derivation.BlobKey is { } key)
             {
@@ -99,7 +111,8 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
             derivation.PlannedAt = now;
         }
 
-        db.AddRange(DerivationKinds.For(mimeType).Except(existing.Select(d => d.Kind))
+        var planned = await RenditionPlan.KindsAsync(db, asset.TenantId, mimeType, asset.AssetTypeKey, cancellationToken);
+        db.AddRange(planned.Except(existing.Select(d => d.Kind))
             .Select(kind => new Derivation { VersionId = versionId, AssetId = asset.Id, Kind = kind, PlannedAt = now }));
         asset.RenditionTag = null;
         await db.SaveChangesAsync(cancellationToken);
@@ -108,18 +121,30 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
     }
 }
 
+internal static class RenditionPlan
+{
+    /// <summary>The system renditions of the file type and the organisation's default types for the asset type.</summary>
+    public static async Task<IReadOnlyList<string>> KindsAsync(CoworkeeDbContext db, Guid tenantId, string mimeType, string assetTypeKey, CancellationToken cancellationToken)
+    {
+        var defaults = await db.Set<DerivationType>().IgnoreQueryFilters().AsNoTracking().Where(t => t.TenantId == tenantId && t.IsDefault).ToListAsync(cancellationToken);
+        return [.. DerivationKinds.For(mimeType), .. defaults.Where(t => t.AppliesTo(assetTypeKey)).Select(t => t.Key)];
+    }
+}
+
 /// <summary>Plans the renditions of every new version and hands them to the processing queue.</summary>
-internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs, TimeProvider clock) : IDomainEventHandler<AssetVersionCreated>
+internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs, TimeProvider clock) : IDomainEventHandler<AssetVersionCreated>, IDomainEventHandler<DerivationsRequested>
 {
     public async Task HandleAsync(AssetVersionCreated domainEvent, CancellationToken cancellationToken)
     {
-        if (await db.Set<AssetVersion>().Where(v => v.Id == domainEvent.VersionId).Select(v => v.MimeType).SingleOrDefaultAsync(cancellationToken) is not { } mimeType)
+        if (await db.Set<AssetVersion>().Where(v => v.Id == domainEvent.VersionId).Select(v => new { v.MimeType, v.TenantId }).SingleOrDefaultAsync(cancellationToken) is not { } version
+            || await db.Set<Asset>().Where(a => a.Id == domainEvent.AssetId).Select(a => a.AssetTypeKey).SingleOrDefaultAsync(cancellationToken) is not { } assetType)
         {
             return;
         }
 
         var existing = await db.Set<Derivation>().Where(d => d.VersionId == domainEvent.VersionId).Select(d => new { d.Kind, d.State }).ToListAsync(cancellationToken);
-        var missing = DerivationKinds.For(mimeType).Except(existing.Select(d => d.Kind)).ToList();
+        var planned = await RenditionPlan.KindsAsync(db, version.TenantId, version.MimeType, assetType, cancellationToken);
+        var missing = planned.Except(existing.Select(d => d.Kind)).ToList();
         if (missing.Count > 0)
         {
             db.AddRange(missing.Select(kind => new Derivation { VersionId = domainEvent.VersionId, AssetId = domainEvent.AssetId, Kind = kind, PlannedAt = clock.GetUtcNow() }));
@@ -130,6 +155,50 @@ internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs
         if (missing.Count > 0 || existing.Any(d => d.State == DerivationStates.Pending))
         {
             jobs.Enqueue<RenderDerivationsJob, Guid>(domainEvent.VersionId, ShareMeProcessingModule.Queue);
+        }
+    }
+
+    public Task HandleAsync(DerivationsRequested domainEvent, CancellationToken cancellationToken)
+    {
+        jobs.Enqueue<RenderDerivationsJob, Guid>(domainEvent.VersionId, ShareMeProcessingModule.Queue);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>Renditions with a watermark that depends on a property are made again when the asset's metadata changes; until then they are not served.</summary>
+internal sealed class RerenderTriggeredWatermarks(CoworkeeDbContext db, IBackgroundJobs jobs, TimeProvider clock) : IDomainEventHandler<NodeChanged>
+{
+    public const string MetadataChanged = "metadata changed";
+
+    public async Task HandleAsync(NodeChanged domainEvent, CancellationToken cancellationToken)
+    {
+        if (domainEvent.Kind != MetadataChanged
+            || await db.Set<Asset>().Where(a => a.Id == domainEvent.NodeId).Select(a => a.CurrentVersionId).SingleOrDefaultAsync(cancellationToken) is not { } versionId)
+        {
+            return;
+        }
+
+        var triggered = db.Set<DerivationType>().Where(t => t.WatermarkId != null && db.Set<WatermarkDefinition>().Any(w => w.Id == t.WatermarkId && w.TriggerProperty != null)).Select(t => t.Key);
+        var derivations = await db.Set<Derivation>().Where(d => d.VersionId == versionId && !d.IsManual && d.State == DerivationStates.Ready && triggered.Contains(d.Kind))
+            .ToListAsync(cancellationToken);
+        if (derivations.Count == 0)
+        {
+            return;
+        }
+
+        var busy = await db.Set<Derivation>().AnyAsync(d => d.VersionId == versionId && d.State == DerivationStates.Pending, cancellationToken);
+        foreach (var derivation in derivations)
+        {
+            derivation.State = DerivationStates.Pending;
+            derivation.PlannedAt = clock.GetUtcNow();
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        // ponytail: a job already running for the version leaves these to the rendition sweep (two hours); a row claim would let a second job start at once
+        if (!busy)
+        {
+            jobs.Enqueue<RenderDerivationsJob, Guid>(versionId, ShareMeProcessingModule.Queue);
         }
     }
 }
@@ -172,14 +241,15 @@ internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jo
 
 /// <summary>
 /// Renders the pending derivations of one version: images directly, other media through a source that turns them into a still image
-/// (and for video and audio a playable copy). Runs with or without a tenant (sweeps), so it reads by id across tenants.
+/// (and for video and audio a playable copy). The still of other media is kept, so later renditions skip the heavy tool.
+/// Runs with or without a tenant (sweeps), so it reads by id across tenants.
 /// </summary>
 internal sealed class RenderDerivationsJob(
     CoworkeeDbContext db, IBlobStorage storage, IEnumerable<IRenditionSource> sources, TechnicalMetadataReader metadata,
     Microsoft.Extensions.Configuration.IConfiguration configuration, TimeProvider clock, ILogger<RenderDerivationsJob> logger)
     : IBackgroundJob<Guid>
 {
-    private static readonly Dictionary<string, int> Sizes = new() { [DerivationKinds.Thumbnail] = 320, [DerivationKinds.Preview] = 1600 };
+    private static readonly Dictionary<string, (int Size, int Quality)> SystemSizes = new() { [DerivationKinds.Thumbnail] = (320, 80), [DerivationKinds.Preview] = (1600, 80) };
 
     private static readonly HashSet<string> TextTypes = ["text/plain", "text/csv", "text/markdown"];
 
@@ -196,46 +266,82 @@ internal sealed class RenderDerivationsJob(
     public async Task ExecuteAsync(Guid versionId, CancellationToken cancellationToken)
     {
         var version = await db.Set<AssetVersion>().IgnoreQueryFilters().SingleOrDefaultAsync(v => v.Id == versionId, cancellationToken);
-        var pending = await db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.VersionId == versionId && d.State == DerivationStates.Pending).ToListAsync(cancellationToken);
+        var derivations = await db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.VersionId == versionId).ToListAsync(cancellationToken);
+        var pending = derivations.Where(d => d.State == DerivationStates.Pending && d.Kind != DerivationKinds.Still).ToList();
         if (version is null || pending.Count == 0)
         {
             return;
         }
 
+        var media = pending.FirstOrDefault(d => d.Kind == DerivationKinds.Media);
+        var stills = pending.Where(d => d.Kind != DerivationKinds.Media).ToList();
+        var isImage = Images.ContainsKey(version.MimeType);
+        var kept = isImage ? null : derivations.FirstOrDefault(d => d is { Kind: DerivationKinds.Still, State: DerivationStates.Ready, BlobKey: not null });
         var work = Directory.CreateDirectory(Path.Combine(WorkRoot(configuration), Guid.NewGuid().ToString("N"))).FullName;
         try
         {
-            // a missing original is a storage or configuration problem: throw so the job is retried instead of failing the rendition
-            var input = Path.Combine(work, InputName(version));
-            await using (var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken)
-                ?? throw new FileNotFoundException($"The original of version {versionId} is not in storage."))
-            await using (var file = File.Create(input))
+            string? input = null;
+            async Task<string> OriginalAsync()
             {
-                await original.CopyToAsync(file, cancellationToken);
+                if (input is null)
+                {
+                    // a missing original is a storage or configuration problem: throw so the job is retried instead of failing the rendition
+                    input = Path.Combine(work, InputName(version));
+                    await using var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken)
+                        ?? throw new FileNotFoundException($"The original of version {versionId} is not in storage.");
+                    await using var file = File.Create(input);
+                    await original.CopyToAsync(file, cancellationToken);
+                }
+
+                return input;
             }
 
             if (version.TechnicalMetadata.Count == 0)
             {
-                version.TechnicalMetadata = await metadata.ReadAsync(input, version.MimeType, work, cancellationToken);
+                version.TechnicalMetadata = await metadata.ReadAsync(await OriginalAsync(), version.MimeType, work, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
             }
 
             var source = sources.FirstOrDefault(s => s.Supports(version.MimeType));
-            string? still;
-            try
+            string? still = null;
+            if (stills.Count > 0)
             {
-                still = Images.ContainsKey(version.MimeType) ? input : source is null ? null : await source.StillAsync(input, work, cancellationToken);
-            }
-            catch (ToolFailedException exception)
-            {
-                await FailAsync(pending.Where(d => d.Kind != DerivationKinds.Media), exception.Message, cancellationToken);
-                still = null;
+                if (isImage)
+                {
+                    still = await OriginalAsync();
+                }
+                else if (kept is not null && await storage.OpenReadAsync(kept.BlobKey!, cancellationToken) is { } keptContent)
+                {
+                    still = Path.Combine(work, "still.png");
+                    await using (keptContent)
+                    await using (var file = File.Create(still))
+                    {
+                        await keptContent.CopyToAsync(file, cancellationToken);
+                    }
+                }
+                else if (source is not null)
+                {
+                    try
+                    {
+                        still = await source.StillAsync(await OriginalAsync(), work, cancellationToken);
+                    }
+                    catch (ToolFailedException exception)
+                    {
+                        await FailAsync(stills, exception.Message, cancellationToken);
+                        stills = [];
+                    }
+
+                    if (still is not null)
+                    {
+                        await KeepStillAsync(version, derivations, still, cancellationToken);
+                    }
+                }
             }
 
-            await RenderStillsAsync(version, pending.Where(d => d.Kind != DerivationKinds.Media && d.State == DerivationStates.Pending).ToList(), still, source?.TrimStill == true, cancellationToken);
-            if (pending.FirstOrDefault(d => d.Kind == DerivationKinds.Media) is { } media)
+            await RenderStillsAsync(version, stills, still, source?.TrimStill == true, cancellationToken);
+            if (media is not null)
             {
-                await RenderMediaAsync(version, media, source, input, work, cancellationToken);
+                await RenderMediaAsync(version, media, source, await OriginalAsync(), work, cancellationToken);
             }
         }
         finally
@@ -249,6 +355,19 @@ internal sealed class RenderDerivationsJob(
                 // a tool may still hold a file for a moment; the rendition sweep removes the folder later
             }
         }
+    }
+
+    private async Task KeepStillAsync(AssetVersion version, List<Derivation> derivations, string still, CancellationToken cancellationToken)
+    {
+        if (derivations.FirstOrDefault(d => d.Kind == DerivationKinds.Still) is not { } row)
+        {
+            row = new Derivation { VersionId = version.Id, AssetId = version.AssetId, Kind = DerivationKinds.Still, PlannedAt = clock.GetUtcNow(), TenantId = version.TenantId };
+            db.Add(row);
+            derivations.Add(row);
+        }
+
+        await using var file = File.OpenRead(still);
+        await StoreAsync(version, row, file, file.Length, "image/png", null, null, cancellationToken);
     }
 
     private async Task RenderStillsAsync(AssetVersion version, List<Derivation> derivations, string? still, bool trim, CancellationToken cancellationToken)
@@ -265,10 +384,13 @@ internal sealed class RenderDerivationsJob(
             return;
         }
 
+        var keys = derivations.Select(d => d.Kind).ToList();
+        var types = await db.Set<DerivationType>().IgnoreQueryFilters().AsNoTracking()
+            .Where(t => t.TenantId == version.TenantId && keys.Contains(t.Key)).ToDictionaryAsync(t => t.Key, cancellationToken);
+        var watermarks = new Watermarks(db, storage, version);
         MagickImage image;
         try
         {
-            // the format comes from the checked file type for originals, renderer outputs are PNG
             // originals are read with the coder of their checked type; everything the sources produce is PNG
             image = new MagickImage(still, new MagickReadSettings
             {
@@ -284,6 +406,7 @@ internal sealed class RenderDerivationsJob(
         }
 
         using (image)
+        using (watermarks)
         {
             if (trim)
             {
@@ -303,16 +426,37 @@ internal sealed class RenderDerivationsJob(
 
             foreach (var derivation in derivations)
             {
+                (int Width, int Height, string Format, int Quality, Guid? WatermarkId)? spec = SystemSizes.TryGetValue(derivation.Kind, out var system)
+                    ? (system.Size, system.Size, DerivationFormats.WebP, system.Quality, null)
+                    : types.TryGetValue(derivation.Kind, out var type) ? (type.Width, type.Height, type.Format, type.Quality, type.WatermarkId) : null;
+                if (spec is not { } s)
+                {
+                    await FailAsync([derivation], "The rendition type no longer exists.", cancellationToken);
+                    continue;
+                }
+
                 byte[] bytes;
                 uint width, height;
                 try
                 {
                     using var rendition = image.Clone();
-                    var size = (uint)Sizes[derivation.Kind];
-                    rendition.Resize(new MagickGeometry(size, size) { Greater = true });
+                    rendition.Resize(new MagickGeometry((uint)s.Width, (uint)s.Height) { Greater = true });
                     rendition.Strip();
-                    rendition.Quality = 80;
-                    bytes = rendition.ToByteArray(MagickFormat.WebP);
+                    if (s.WatermarkId is { } watermarkId && await watermarks.ApplyAsync(watermarkId, rendition, cancellationToken) is { } watermarkError)
+                    {
+                        // a rendition that should carry a watermark is never stored without it
+                        await FailAsync([derivation], watermarkError, cancellationToken);
+                        continue;
+                    }
+
+                    if (s.Format == DerivationFormats.Jpeg)
+                    {
+                        rendition.BackgroundColor = MagickColors.White;
+                        rendition.Alpha(AlphaOption.Remove);
+                    }
+
+                    rendition.Quality = (uint)s.Quality;
+                    bytes = rendition.ToByteArray(s.Format switch { DerivationFormats.Jpeg => MagickFormat.Jpeg, DerivationFormats.Png => MagickFormat.Png, _ => MagickFormat.WebP });
                     (width, height) = (rendition.Width, rendition.Height);
                 }
                 catch (MagickException exception)
@@ -321,7 +465,7 @@ internal sealed class RenderDerivationsJob(
                     continue;
                 }
 
-                await StoreAsync(version, derivation, new MemoryStream(bytes), bytes.Length, "image/webp", (int)width, (int)height, cancellationToken);
+                await StoreAsync(version, derivation, new MemoryStream(bytes), bytes.Length, DerivationFormats.MimeType(s.Format), (int)width, (int)height, cancellationToken);
             }
         }
     }
@@ -396,4 +540,85 @@ internal sealed class RenderDerivationsJob(
 
         await db.SaveChangesAsync(cancellationToken);
     }
+}
+
+/// <summary>Watermarks of one render run, each loaded once; a watermark with a trigger only applies when the asset's property holds the value.</summary>
+internal sealed class Watermarks(CoworkeeDbContext db, IBlobStorage storage, AssetVersion version) : IDisposable
+{
+    private readonly Dictionary<Guid, (WatermarkDefinition Definition, MagickImage Image)?> loaded = [];
+    private Dictionary<string, List<MetadataValue>>? metadata;
+
+    public static bool Triggered(WatermarkDefinition watermark, IReadOnlyDictionary<string, List<MetadataValue>> metadata) =>
+        watermark.TriggerProperty is not { } property
+        || (metadata.TryGetValue(property, out var values) && values.Any(v => string.Equals(v.List ?? Text(v.V), watermark.TriggerValue ?? "true", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Lays the watermark over the image when it applies; returns why it could not, so the rendition fails instead of going out unprotected.</summary>
+    public async Task<string?> ApplyAsync(Guid id, IMagickImage<byte> target, CancellationToken cancellationToken)
+    {
+        if (!loaded.TryGetValue(id, out var watermark))
+        {
+            watermark = await LoadAsync(id, cancellationToken);
+            loaded[id] = watermark;
+        }
+
+        if (watermark is not { } w)
+        {
+            return "The watermark has no readable image.";
+        }
+
+        if (w.Definition.TriggerProperty is not null)
+        {
+            metadata ??= await db.Set<Asset>().IgnoreQueryFilters().AsNoTracking().Where(a => a.Id == version.AssetId).Select(a => a.Metadata).SingleOrDefaultAsync(cancellationToken) ?? [];
+            if (!Triggered(w.Definition, metadata))
+            {
+                return null;
+            }
+        }
+
+        using var mark = w.Image.Clone();
+        var edge = Math.Max(1u, target.Width * (uint)w.Definition.ScalePercent / 100);
+        mark.Resize(new MagickGeometry(edge, edge));
+        mark.Alpha(AlphaOption.Set);
+        mark.Evaluate(Channels.Alpha, EvaluateOperator.Multiply, w.Definition.Opacity / 100.0);
+        target.Composite(mark, Enum.TryParse<Gravity>(w.Definition.Position, ignoreCase: true, out var gravity) ? gravity : Gravity.Southeast, CompositeOperator.Over);
+        return null;
+    }
+
+    public void Dispose()
+    {
+        foreach (var watermark in loaded.Values)
+        {
+            watermark?.Image.Dispose();
+        }
+    }
+
+    private async Task<(WatermarkDefinition, MagickImage)?> LoadAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (await db.Set<WatermarkDefinition>().IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(w => w.Id == id && w.TenantId == version.TenantId, cancellationToken) is not { BlobKey: { } key } definition
+            || await storage.OpenReadAsync(key, cancellationToken) is not { } content)
+        {
+            return null;
+        }
+
+        await using (content)
+        {
+            using var buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken);
+            try
+            {
+                return (definition, new MagickImage(buffer.ToArray(), new MagickReadSettings { Format = MagickFormat.Png }));
+            }
+            catch (MagickException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private static string? Text(System.Text.Json.JsonElement? value) => value switch
+    {
+        { ValueKind: System.Text.Json.JsonValueKind.String } text => text.GetString(),
+        { } other => other.GetRawText(),
+        null => null,
+    };
 }

@@ -63,6 +63,11 @@ public static class AssetUrls
 {
     public static string Derivation(Guid assetId, string kind, string? tag = null) => $"api/v1/assets/{assetId}/derivations/{kind}" + (tag is null ? string.Empty : $"?v={tag}");
 
+    public static string DownloadDerivation(Guid assetId, string kind) => $"api/v1/assets/{assetId}/derivations/{kind}?download=true";
+
+    /// <summary>The original shown in the browser; only for <see cref="InlineTypes"/>.</summary>
+    public static string View(Guid assetId) => $"api/v1/assets/{assetId}/view";
+
     public static string Download(Guid assetId, int? version = null) => $"api/v1/assets/{assetId}/download" + (version is { } v ? $"?version={v}" : string.Empty);
 }
 
@@ -152,5 +157,6 @@ internal sealed class SharemeNavigation : INavigationContributor
         new("Recycle bin", "/recycle-bin", MudBlazor.Icons.Material.Outlined.Delete),
         new("Metadata", "/admin/metadata", MudBlazor.Icons.Material.Outlined.Label, Shareme.Contracts.Metadata.MetadataPermissions.Manage),
         new("Node types", "/admin/node-types", MudBlazor.Icons.Material.Outlined.Category, NodePermissions.Admin),
+        new("Renditions", "/admin/renditions", MudBlazor.Icons.Material.Outlined.PhotoSizeSelectLarge, NodePermissions.Admin),
     ];
 }

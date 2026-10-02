@@ -24,6 +24,7 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
         var services = context.Services;
         services.AddMessagingFromAssembly(typeof(ShareMeAssetsModule).Assembly);
         services.AddSingleton<IModelContributor, AssetModelContributor>();
+        services.AddSingleton<IModelContributor, RenditionModelContributor>();
         services.AddSingleton<IPermissionDefinitionContributor, AssetPermissionDefinitions>();
         services.AddScoped<INodePurgeListener, AssetPurgeListener>();
         services.AddScoped<BlobLinkResolver>();
@@ -47,7 +48,19 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             var result = await d.SendAsync(new DownloadAsset(id, version), ct);
             return result.IsSuccess ? File(response, result.Value) : result.Error!.ToProblem();
         });
-        assets.MapGet("/{id:guid}/derivations/{kind}", async (Guid id, string kind, int? version, string? v, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        assets.MapGet("/{id:guid}/view", async (Guid id, int? version, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        {
+            var result = await d.SendAsync(new DownloadAsset(id, version, Inline: true), ct);
+            if (!result.IsSuccess)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            // shown in the app's origin: nothing in it may run or load anything
+            response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'";
+            return File(response, result.Value, inline: true);
+        });
+        assets.MapGet("/{id:guid}/derivations/{kind}", async (Guid id, string kind, int? version, string? v, bool? download, HttpResponse response, IDispatcher d, CancellationToken ct) =>
         {
             var result = await d.SendAsync(new GetDerivation(id, kind, version), ct);
             if (!result.IsSuccess)
@@ -56,7 +69,7 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             }
 
             // a tagged url names one rendition forever, so browsers may keep it
-            var file = File(response, result.Value, inline: true);
+            var file = File(response, result.Value, inline: download != true, cache: true);
             if (v is { Length: > 0 })
             {
                 response.Headers.CacheControl = "private, max-age=31536000, immutable";
@@ -64,17 +77,34 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
 
             return file;
         });
+        assets.MapPost("/{id:guid}/derivations/{kind}", (Guid id, string kind, IDispatcher d, CancellationToken ct) => d.SendAsync(new RequestDerivation(id, kind), ct).ToHttpResult());
+        assets.MapPut("/{id:guid}/derivations/{kind}", (Guid id, string kind, HttpRequest request, IDispatcher d, CancellationToken ct) =>
+            d.SendAsync(new UploadDerivation(id, kind, request.Body), ct).ToHttpResult())
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(RenditionLimits.MaxUpload));
         assets.MapPost("/{id:guid}/download-link", (Guid id, int? version, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateDownloadLink(id, version), ct).ToHttpResult());
+
+        var types = app.MapGroup("/api/v1/derivation-types").WithTags("Renditions").RequireAuthorization();
+        types.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetDerivationTypes(), ct).ToHttpResult());
+        types.MapPost("/", (DerivationTypeRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveDerivationType(null, body), ct).ToHttpResult());
+        types.MapPut("/{id:guid}", (Guid id, DerivationTypeRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveDerivationType(id, body), ct).ToHttpResult());
+        types.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteDerivationType(id), ct).ToHttpResult());
+
+        var watermarks = app.MapGroup("/api/v1/watermarks").WithTags("Renditions").RequireAuthorization();
+        watermarks.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetWatermarks(), ct).ToHttpResult());
+        watermarks.MapPost("/", (WatermarkRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveWatermark(null, body), ct).ToHttpResult());
+        watermarks.MapPut("/{id:guid}", (Guid id, WatermarkRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveWatermark(id, body), ct).ToHttpResult());
+        watermarks.MapPut("/{id:guid}/image", (Guid id, HttpRequest request, IDispatcher d, CancellationToken ct) => d.SendAsync(new SetWatermarkImage(id, request.Body), ct).ToHttpResult());
+        watermarks.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteWatermark(id), ct).ToHttpResult());
 
         app.MapGet("/api/v1/blobs/{token}", async (string token, HttpResponse response, BlobLinkResolver resolver, CancellationToken ct) =>
             await resolver.ResolveAsync(token, ct) is { } download ? File(response, download) : Results.NotFound()).WithTags("Assets").AllowAnonymous();
     }
 
-    /// <summary>Originals are attachments that are never cached; renditions are our own WebP files and may be shown inline and cached briefly. Never sniffed, ranges supported.</summary>
-    private static IResult File(HttpResponse response, BlobDownload download, bool inline = false)
+    /// <summary>Originals are never cached; renditions are our own files and may be cached briefly. Never sniffed, ranges supported.</summary>
+    private static IResult File(HttpResponse response, BlobDownload download, bool inline = false, bool cache = false)
     {
         response.Headers.XContentTypeOptions = "nosniff";
-        response.Headers.CacheControl = inline ? "private, max-age=300" : "private, no-store";
+        response.Headers.CacheControl = cache ? "private, max-age=300" : "private, no-store";
         return Results.File(
             download.Content, download.MimeType, inline ? null : download.FileName, download.LastModified,
             download.Sha256 is { } sha ? new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{sha}\"") : null,

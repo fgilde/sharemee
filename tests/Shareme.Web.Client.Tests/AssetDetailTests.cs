@@ -18,6 +18,7 @@ namespace Shareme.Web.Client.Tests;
 public sealed class AssetDetailTests : BunitContext
 {
     private readonly ISharemeApi _api = Substitute.For<ISharemeApi>();
+    private readonly IRenditionsApi _renditions = Substitute.For<IRenditionsApi>();
     private readonly Guid _asset = Guid.CreateVersion7();
     private readonly Guid _folder = Guid.CreateVersion7();
 
@@ -25,7 +26,14 @@ public sealed class AssetDetailTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_api);
+        _renditions.GetTypesAsync(default).ReturnsForAnyArgs([
+            new DerivationTypeDto(Guid.CreateVersion7(), "social", "Social", 200, 200, DerivationFormats.Png, 85, false, true, false, null, []),
+            new DerivationTypeDto(Guid.CreateVersion7(), "print", "Print", 4000, 4000, DerivationFormats.Jpeg, 90, false, false, true, null, [AssetTypeKeys.Image]),
+            new DerivationTypeDto(Guid.CreateVersion7(), "slides", "Slides", 800, 800, DerivationFormats.WebP, 85, true, true, false, null, [AssetTypeKeys.Document]),
+        ]);
+        Services.AddSingleton(_renditions);
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetNodeMetadataAsync(default, default).ReturnsForAnyArgs(new NodeMetadataDto(_asset, "asset", new Dictionary<string, EffectivePropertyDto>()));
         metadata.GetDefinitionsAsync(default, default).ReturnsForAnyArgs([]);
@@ -42,7 +50,7 @@ public sealed class AssetDetailTests : BunitContext
         AddAuthorization().SetAuthorized("Ada");
         var version = new AssetVersionDto(Guid.CreateVersion7(), 2, "logo.png", 2048, new string('a', 64), "image/png", "png", DateTimeOffset.UtcNow, null);
         _api.GetAssetAsync(_asset, Arg.Any<CancellationToken>()).Returns(new AssetDto(_asset, _folder, "logo.png", AssetTypeKeys.Image, AssetStatuses.Ready, version,
-            [version, version with { Number = 1 }], [new DerivationDto(DerivationKinds.Preview, DerivationStates.Pending, null, null)]));
+            [version, version with { Number = 1 }], [new DerivationDto(DerivationKinds.Preview, DerivationStates.Pending, null, null)], CanDownload: true));
         _api.GetNodeAsync(_asset, Arg.Any<CancellationToken>()).Returns(new NodeDetailDto(
             new NodeDto(_asset, _folder, NodeTypeKeys.Asset, "asset", "logo.png", new Dictionary<string, string>(), 0, false, DateTimeOffset.UtcNow, null),
             [new(_folder, "Brand"), new(_asset, "logo.png")], false));
@@ -59,6 +67,48 @@ public sealed class AssetDetailTests : BunitContext
         page.Find("[data-testid='preview']").TextContent.ShouldContain("being prepared");
         page.Markup.ShouldContain("2 KB");
         page.Find("[data-testid='breadcrumb']").TextContent.ShouldContain("Brand");
+    }
+
+    [Fact]
+    public void Readers_without_the_download_right_get_neither_the_original_nor_its_download()
+    {
+        var pdf = new AssetVersionDto(Guid.CreateVersion7(), 1, "brief.pdf", 2048, new string('a', 64), "application/pdf", "pdf", DateTimeOffset.UtcNow, null);
+        _api.GetAssetAsync(_asset, Arg.Any<CancellationToken>()).Returns(new AssetDto(_asset, _folder, "brief.pdf", AssetTypeKeys.Document, AssetStatuses.Ready, pdf, [pdf], []));
+
+        var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));
+
+        page.WaitForAssertion(() => page.Find("[data-testid='asset-status']"));
+        page.FindAll("[data-testid='download']").ShouldBeEmpty();
+        page.FindAll("[data-testid='show-original']").ShouldBeEmpty();
+        page.Markup.ShouldNotContain("/view");
+    }
+
+    [Fact]
+    public void A_pdf_is_shown_as_itself_when_the_original_may_be_fetched()
+    {
+        var pdf = new AssetVersionDto(Guid.CreateVersion7(), 1, "brief.pdf", 2048, new string('a', 64), "application/pdf", "pdf", DateTimeOffset.UtcNow, null);
+        _api.GetAssetAsync(_asset, Arg.Any<CancellationToken>()).Returns(new AssetDto(_asset, _folder, "brief.pdf", AssetTypeKeys.Document, AssetStatuses.Ready, pdf, [pdf], [], CanDownload: true));
+
+        var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));
+
+        // the pdf viewer fetches the url itself, so the markup only shows which viewer is used
+        page.WaitForAssertion(() => page.Find("[data-testid='preview']").InnerHtml.ShouldContain("mud-ex-file-display-pdf"));
+        page.Find("[data-testid='show-original']");
+    }
+
+    [Fact]
+    public async Task Renditions_of_the_asset_type_can_be_created_or_uploaded()
+    {
+        var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));
+        page.WaitForAssertion(() => page.FindAll(".mud-tab").Count.ShouldBeGreaterThan(2));
+        await page.FindAll(".mud-tab").First(t => t.TextContent.Contains("Renditions")).ClickAsync(new());
+
+        page.WaitForAssertion(() => page.Find("[data-rendition='social']"));
+        page.FindAll("[data-rendition='slides']").ShouldBeEmpty();
+        page.Find("[data-rendition='print']").InnerHtml.ShouldContain("Upload rendition");
+        await page.Find("[data-rendition='social'] [data-testid='request-rendition']").ClickAsync(new());
+
+        await _renditions.Received().RequestAsync(_asset, "social", Arg.Any<CancellationToken>());
     }
 
     [Fact]

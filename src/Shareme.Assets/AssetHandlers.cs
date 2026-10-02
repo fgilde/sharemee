@@ -23,7 +23,8 @@ public sealed record GetAsset(Guid Id) : IQuery<Result<AssetDto>>, IResourceRequ
 
 public sealed record BlobDownload(Stream Content, string FileName, string MimeType, string? Sha256 = null, DateTimeOffset? LastModified = null);
 
-public sealed record DownloadAsset(Guid Id, int? Version) : IQuery<Result<BlobDownload>>, IResourceRequest
+/// <summary>An original; <paramref name="Inline"/> asks for it to be shown in the browser, which only <see cref="InlineTypes"/> allow.</summary>
+public sealed record DownloadAsset(Guid Id, int? Version, bool Inline = false) : IQuery<Result<BlobDownload>>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;
 
@@ -32,7 +33,7 @@ public sealed record DownloadAsset(Guid Id, int? Version) : IQuery<Result<BlobDo
     public string RequiredPermission => AssetPermissions.Download;
 }
 
-/// <summary>Thumbnails and previews are for everyone who may read the asset; originals need the download right.</summary>
+/// <summary>System renditions and watermarked custom ones are for everyone who may read the asset; other custom ones need the download right like originals.</summary>
 public sealed record GetDerivation(Guid Id, string Kind, int? Version) : IQuery<Result<BlobDownload>>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;
@@ -51,7 +52,7 @@ public sealed record CreateDownloadLink(Guid Id, int? Version) : ICommand<Result
     public string RequiredPermission => AssetPermissions.Download;
 }
 
-internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, BlobLinks links, TimeProvider clock)
+internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, BlobLinks links, NodeAccess access, TimeProvider clock)
     : IHandler<GetAsset, Result<AssetDto>>, IHandler<DownloadAsset, Result<BlobDownload>>, IHandler<GetDerivation, Result<BlobDownload>>, IHandler<CreateDownloadLink, Result<DownloadLinkDto>>
 {
     public static readonly TimeSpan LinkLifetime = TimeSpan.FromMinutes(15);
@@ -69,27 +70,47 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             .Select(v => new AssetVersionDto(v.Id, v.Number, v.FileName, v.Size, v.Sha256, v.MimeType, v.Extension, v.CreatedAt, v.CreatedBy, v.TechnicalMetadata))
             .ToListAsync(cancellationToken);
         var derivations = await db.Set<Derivation>().AsNoTracking().Where(d => d.VersionId == asset.CurrentVersionId).OrderBy(d => d.Kind)
-            .Select(d => new DerivationDto(d.Kind, d.State, d.Width, d.Height)).ToListAsync(cancellationToken);
-        return new AssetDto(asset.Id, asset.ParentId, asset.Name, asset.AssetTypeKey, asset.Status, versions.FirstOrDefault(v => v.Id == asset.CurrentVersionId), versions, derivations, asset.RenditionTag);
+            .Where(d => d.Kind != DerivationKinds.Still).ToListAsync(cancellationToken);
+        return new AssetDto(
+            asset.Id, asset.ParentId, asset.Name, asset.AssetTypeKey, asset.Status, versions.FirstOrDefault(v => v.Id == asset.CurrentVersionId), versions,
+            derivations.Select(RenditionHandlers.Map).ToList(), asset.RenditionTag, await access.CanAsync(AssetPermissions.Download, asset.Id, cancellationToken));
     }
 
     public async Task<Result<BlobDownload>> HandleAsync(GetDerivation query, CancellationToken cancellationToken)
     {
         if (await VersionAsync(query.Id, query.Version, cancellationToken) is not { } version
+            || query.Kind == DerivationKinds.Still
             || await db.Set<Derivation>().AsNoTracking().SingleOrDefaultAsync(d => d.VersionId == version.Id && d.Kind == query.Kind && d.State == DerivationStates.Ready, cancellationToken) is not { BlobKey: { } key } derivation
             || await storage.OpenReadAsync(key, cancellationToken) is not { } content)
         {
             return NotFound;
         }
 
-        var name = Path.GetFileNameWithoutExtension(version.FileName) + "-" + derivation.Kind + (derivation.MimeType switch { "video/mp4" => ".mp4", "audio/mpeg" => ".mp3", _ => ".webp" });
+        if (!DerivationKinds.System.Contains(derivation.Kind)
+            && (derivation.IsManual || !await db.Set<DerivationType>().AnyAsync(t => t.Key == derivation.Kind && t.WatermarkId != null, cancellationToken))
+            && !await access.CanAsync(AssetPermissions.Download, query.Id, cancellationToken))
+        {
+            await content.DisposeAsync();
+            return Error.Forbidden("auth.forbidden", "This rendition needs the download right.");
+        }
+
+        var name = Path.GetFileNameWithoutExtension(version.FileName) + "-" + derivation.Kind + DerivationFormats.Extension(derivation.MimeType);
         return new BlobDownload(content, name, derivation.MimeType ?? "image/webp", version.Sha256 + "-" + derivation.Kind, version.CreatedAt);
     }
 
     public async Task<Result<BlobDownload>> HandleAsync(DownloadAsset query, CancellationToken cancellationToken)
     {
-        if (await VersionAsync(query.Id, query.Version, cancellationToken) is not { } version
-            || await storage.OpenReadAsync(version.BlobKey, cancellationToken) is not { } content)
+        if (await VersionAsync(query.Id, query.Version, cancellationToken) is not { } version)
+        {
+            return NotFound;
+        }
+
+        if (query.Inline && !InlineTypes.All.Contains(version.MimeType))
+        {
+            return Error.Validation("Inline", "Files of this type can only be downloaded.");
+        }
+
+        if (await storage.OpenReadAsync(version.BlobKey, cancellationToken) is not { } content)
         {
             return NotFound;
         }
