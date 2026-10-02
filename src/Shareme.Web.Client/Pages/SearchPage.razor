@@ -285,7 +285,10 @@
         _ => field,
     };
 
-    private static string Link(NodeDto node) => node.Semantic switch { "asset" => $"/assets/{node.Id}", "workspace" => $"/workspaces/{node.Id}", _ => $"/browse/{node.Id}" };
+    private static string Link(NodeDto node) => node.Semantic switch
+    {
+        "asset" => $"/assets/{node.Id}", "workspace" => $"/workspaces/{node.Id}", "task" => $"/workspaces/{node.ParentId}", _ => $"/browse/{node.Id}",
+    };
 
     private async Task RunAsync(Func<Task> action)
     {

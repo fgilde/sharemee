@@ -85,6 +85,25 @@ public sealed class WorkspaceTests : BunitContext
         page.FindAll("[data-testid='finalize']").ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task The_board_shows_columns_offers_only_allowed_drops_and_adds_tasks()
+    {
+        var todo = new StateDto(Guid.CreateVersion7(), "To do", 0, true, false, false, []);
+        var done = new StateDto(Guid.CreateVersion7(), "Done", 1, false, true, true, []);
+        _api.GetStatesAsync(_id, Arg.Any<CancellationToken>()).Returns([todo, done]);
+        var task = new TaskDto(Guid.CreateVersion7(), _id, "Brief", null, null, todo.Id, [], 0, 1, DateTimeOffset.UtcNow, null, []);
+        _api.GetTasksAsync(_id, Arg.Any<CancellationToken>()).Returns([task]);
+
+        var board = Render<TaskBoard>(p => p.Add(b => b.WorkspaceId, _id).Add(b => b.IsOwner, false));
+
+        board.WaitForAssertion(() => board.Find("[data-state='To do']").TextContent.ShouldContain("Brief"));
+        board.Instance.CanMove(task, done.Id).ShouldBeFalse("only owners put tasks into done");
+        board.Instance.CanMove(task, todo.Id).ShouldBeTrue();
+        board.Find("input[data-testid='new-task'], [data-testid='new-task'] input").Input("Visuals");
+        await board.Find("[data-testid='add-task']").ClickAsync(new());
+        await _api.Received(1).CreateTaskAsync(_id, Arg.Is<TaskRequest>(r => r.Title == "Visuals"), Arg.Any<CancellationToken>());
+    }
+
     private WorkspaceDto Workspace(string name, string? role) =>
         new(_id, name, WorkspaceKinds.Upload, false, null, null, false, null, null, DateTimeOffset.UtcNow, 0, role, role == WorkspaceRoles.Owner, role == WorkspaceRoles.Owner);
 }

@@ -2649,6 +2649,15 @@ namespace Shareme.Infrastructure.Migrations
                             Key = "workspace",
                             Name = "Workspace",
                             Semantic = "Workspace"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000004"),
+                            Icon = "task_alt",
+                            IsSystem = true,
+                            Key = "task",
+                            Name = "Task",
+                            Semantic = "Task"
                         });
                 });
 
@@ -3018,6 +3027,46 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("SavedSearches", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Workspaces.WorkflowState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<string>("AllowedTargets")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDone")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("OwnersOnly")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("SortIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("WorkflowStates", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Workspaces.WorkspaceRoleBinding", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3081,6 +3130,32 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasBaseType("Shareme.Graph.Node");
 
                     b.HasDiscriminator().HasValue("folder");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.WorkTask", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.PrimitiveCollection<string>("AssigneeIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("StateId")
+                        .HasColumnType("uuid");
+
+                    b.HasIndex("StateId");
+
+                    b.HasDiscriminator().HasValue("task");
                 });
 
             modelBuilder.Entity("Shareme.Graph.Workspace", b =>
@@ -3379,6 +3454,15 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasOne("Shareme.Metadata.PropertyDefinition", null)
                         .WithMany("ListValues")
                         .HasForeignKey("DefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Workspaces.WorkflowState", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

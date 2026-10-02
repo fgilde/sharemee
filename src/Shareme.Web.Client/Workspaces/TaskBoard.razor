@@ -1,0 +1,211 @@
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Workspaces
+@inject IWorkspacesApi Api
+@inject ISnackbar Snackbar
+
+<RealtimeSubscription @key="WorkspaceId" Topic="@($"children:{WorkspaceId}")" OnEvent="_ => ReloadSoonAsync()" />
+<MudStack Row="true" AlignItems="AlignItems.End" Class="mb-4">
+    <MudTextField @bind-Value="_title" Label="New task" Immediate="true" OnKeyUp="@(e => e.Key == "Enter" ? AddAsync() : Task.CompletedTask)" Style="max-width:360px" data-testid="new-task" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_title)" OnClick="AddAsync" data-testid="add-task">Add</MudButton>
+</MudStack>
+
+<MudDropContainer T="TaskDto" @ref="_container" Items="_tasks" ItemsSelector="@((task, zone) => task.StateId?.ToString() == zone)" ItemDropped="DroppedAsync"
+                  CanDrop="@((task, zone) => CanMove(task, Guid.Parse(zone)))" Class="d-flex flex-row gap-3" Style="overflow-x:auto" data-testid="board">
+    <ChildContent>
+        @foreach (var state in _states)
+        {
+            <MudPaper Outlined="true" Class="pa-2 d-flex flex-column" Style="min-width:260px;width:260px" data-state="@state.Name">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudText Typo="Typo.subtitle1">@state.Name</MudText>
+                    @if (state.OwnersOnly)
+                    {
+                        <MudTooltip Text="Only owners move tasks here"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" /></MudTooltip>
+                    }
+                    <MudSpacer />
+                    <MudText Typo="Typo.caption">@_tasks.Count(t => t.StateId == state.Id)</MudText>
+                </MudStack>
+                <MudDropZone T="TaskDto" Identifier="@state.Id.ToString()" AllowReorder="true" Class="flex-grow-1" Style="min-height:80px" />
+            </MudPaper>
+        }
+    </ChildContent>
+    <ItemRenderer>
+        <MudCard Outlined="true" Class="mb-2" Style="cursor:grab" @onclick="() => Edit(context)" data-task="@context.Title">
+            <MudCardContent Class="pa-2">
+                <MudText Typo="Typo.body2">@context.Title</MudText>
+                <MudStack Row="true" Spacing="1" Class="mt-1">
+                    @if (context.DueDate is { } due)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="@(due < DateOnly.FromDateTime(DateTime.Today) && context.CompletedAt is null ? Color.Error : Color.Default)">@due.ToString("d")</MudChip>
+                    }
+                    @foreach (var assignee in context.AssigneeIds)
+                    {
+                        <MudTooltip Text="@MemberName(assignee)"><MudAvatar Size="Size.Small">@Initials(assignee)</MudAvatar></MudTooltip>
+                    }
+                    @if (context.LinkedAssetIds.Count > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Outlined.Attachment">@context.LinkedAssetIds.Count</MudChip>
+                    }
+                </MudStack>
+            </MudCardContent>
+        </MudCard>
+    </ItemRenderer>
+</MudDropContainer>
+
+@if (_editing is { } task)
+{
+    <MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="task-editor">
+        <MudText Typo="Typo.h6">Edit task</MudText>
+        <MudTextField @bind-Value="_editTitle" Label="Title" />
+        <MudTextField @bind-Value="_editDescription" Label="Description" Lines="4" />
+        <MudDatePicker @bind-Date="_editDue" Label="Due" Clearable="true" />
+        <MudSelect T="Guid" @bind-SelectedValues="_editAssignees" MultiSelection="true" Label="Assignees" ToStringFunc="@(id => MemberName(id))">
+            @foreach (var member in Members)
+            {
+                <MudSelectItem T="Guid" Value="@member.UserId">@(string.IsNullOrWhiteSpace(member.Name) ? member.Email : member.Name)</MudSelectItem>
+            }
+        </MudSelect>
+        <MudStack Row="true" Class="mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SaveAsync(task)" data-testid="save-task">Save</MudButton>
+            <MudButton OnClick="() => _editing = null">Cancel</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    private MudDropContainer<TaskDto>? _container;
+    private IReadOnlyList<StateDto> _states = [];
+    private List<TaskDto> _tasks = [];
+    private string? _title;
+    private TaskDto? _editing;
+    private string? _editTitle, _editDescription;
+    private DateTime? _editDue;
+    private IReadOnlyCollection<Guid> _editAssignees = [];
+
+    [Parameter, EditorRequired] public Guid WorkspaceId { get; set; }
+
+    [Parameter] public IReadOnlyList<WorkspaceMemberDto> Members { get; set; } = [];
+
+    /// <summary>Owners may use owner-only columns.</summary>
+    [Parameter] public bool IsOwner { get; set; }
+
+    private Guid _loaded;
+    private bool _reloadPending;
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (_loaded == WorkspaceId)
+        {
+            return Task.CompletedTask;
+        }
+
+        _loaded = WorkspaceId;
+        return LoadAsync();
+    }
+
+    /// <summary>A move renumbers a column and sends one event per card; they are answered with one reload.</summary>
+    private async Task ReloadSoonAsync()
+    {
+        if (_reloadPending)
+        {
+            return;
+        }
+
+        _reloadPending = true;
+        await Task.Delay(300);
+        _reloadPending = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _states = await Api.GetStatesAsync(WorkspaceId);
+            _tasks = (await Api.GetTasksAsync(WorkspaceId)).OrderBy(t => t.SortIndex).ToList();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+
+        await InvokeAsync(StateHasChanged);
+        _container?.Refresh();
+    }
+
+    /// <summary>The same checks as the server, so forbidden drops are not offered.</summary>
+    internal bool CanMove(TaskDto task, Guid target)
+    {
+        if (task.StateId == target)
+        {
+            return true;
+        }
+
+        var from = _states.FirstOrDefault(s => s.Id == task.StateId);
+        var to = _states.FirstOrDefault(s => s.Id == target);
+        return to is not null && (from is null || from.AllowedTargets.Count == 0 || from.AllowedTargets.Contains(target)) && (!to.OwnersOnly || IsOwner);
+    }
+
+    private async Task DroppedAsync(MudItemDropInfo<TaskDto> drop)
+    {
+        if (drop.Item is not { } task)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.MoveTaskAsync(task.Id, new MoveTaskRequest(Guid.Parse(drop.DropzoneIdentifier), drop.IndexInZone, task.Version));
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task AddAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_title))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.CreateTaskAsync(WorkspaceId, new TaskRequest(_title.Trim()));
+            _title = null;
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+
+        await LoadAsync();
+    }
+
+    private void Edit(TaskDto task)
+    {
+        _editing = task;
+        (_editTitle, _editDescription, _editDue, _editAssignees) = (task.Title, task.Description, task.DueDate?.ToDateTime(TimeOnly.MinValue), task.AssigneeIds.ToList());
+    }
+
+    private async Task SaveAsync(TaskDto task)
+    {
+        try
+        {
+            await Api.UpdateTaskAsync(task.Id, new TaskRequest(_editTitle ?? task.Title, _editDescription, _editDue is { } due ? DateOnly.FromDateTime(due) : null, null, _editAssignees.ToList()));
+            _editing = null;
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+
+        await LoadAsync();
+    }
+
+    private string MemberName(Guid id) => Members.FirstOrDefault(m => m.UserId == id) is { } member ? (string.IsNullOrWhiteSpace(member.Name) ? member.Email : member.Name!) : "former member";
+
+    private string Initials(Guid id) => string.Concat(MemberName(id).Split(' ', '@', '.').Where(p => p.Length > 0).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+}

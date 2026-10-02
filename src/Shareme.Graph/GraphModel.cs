@@ -16,6 +16,9 @@ public enum NodeSemantic
 
     /// <summary>A root of its own: members get access through grants on it, never through the folder tree.</summary>
     Workspace,
+
+    /// <summary>A card on a workspace's board; lives directly under its workspace.</summary>
+    Task,
 }
 
 public enum EdgeSemantic
@@ -32,6 +35,7 @@ public sealed class NodeType : Entity
     public static readonly Guid FolderTypeId = new("0190f000-0000-7000-8000-000000000001");
     public static readonly Guid AssetTypeId = new("0190f000-0000-7000-8000-000000000002");
     public static readonly Guid WorkspaceTypeId = new("0190f000-0000-7000-8000-000000000003");
+    public static readonly Guid TaskTypeId = new("0190f000-0000-7000-8000-000000000004");
 
     public required string Key { get; set; }
 
@@ -161,6 +165,22 @@ public sealed class Workspace : Node
     public DateTimeOffset? FinalizedAt { get; set; }
 }
 
+/// <summary>A task of a workspace: title is the node name, the state is one of the workspace's states, the order within a state is the sort index.</summary>
+public sealed class WorkTask : Node
+{
+    public override NodeSemantic Semantic => NodeSemantic.Task;
+
+    public string? Description { get; set; }
+
+    public DateOnly? DueDate { get; set; }
+
+    public Guid? StateId { get; set; }
+
+    public List<Guid> AssigneeIds { get; set; } = [];
+
+    public DateTimeOffset? CompletedAt { get; set; }
+}
+
 public sealed class EdgeType : Entity
 {
     public static readonly Guid LinkId = new("0190f000-0000-7000-8000-000000000101");
@@ -255,7 +275,8 @@ internal sealed class GraphModelContributor : IModelContributor
             type.HasData(
                 new { Id = NodeType.FolderTypeId, Key = NodeTypeKeys.Folder, Semantic = NodeSemantic.Folder, Name = "Folder", Icon = (string?)"folder", IsSystem = true, TenantId = (Guid?)null },
                 new { Id = NodeType.AssetTypeId, Key = NodeTypeKeys.Asset, Semantic = NodeSemantic.Asset, Name = "Asset", Icon = (string?)"insert_drive_file", IsSystem = true, TenantId = (Guid?)null },
-                new { Id = NodeType.WorkspaceTypeId, Key = NodeTypeKeys.Workspace, Semantic = NodeSemantic.Workspace, Name = "Workspace", Icon = (string?)"workspaces", IsSystem = true, TenantId = (Guid?)null });
+                new { Id = NodeType.WorkspaceTypeId, Key = NodeTypeKeys.Workspace, Semantic = NodeSemantic.Workspace, Name = "Workspace", Icon = (string?)"workspaces", IsSystem = true, TenantId = (Guid?)null },
+                new { Id = NodeType.TaskTypeId, Key = NodeTypeKeys.Task, Semantic = NodeSemantic.Task, Name = "Task", Icon = (string?)"task_alt", IsSystem = true, TenantId = (Guid?)null });
         });
 
         modelBuilder.Entity<Node>(node =>
@@ -265,7 +286,8 @@ internal sealed class GraphModelContributor : IModelContributor
                 .HasValue<Folder>("folder")
                 .HasValue<Asset>("asset")
                 .HasValue<CustomNode>("custom")
-                .HasValue<Workspace>("workspace");
+                .HasValue<Workspace>("workspace")
+                .HasValue<WorkTask>("task");
             node.Property<string>("Kind").HasMaxLength(20);
             node.Ignore(n => n.RealtimeTopics);
             node.Ignore(n => n.PathIds);
@@ -303,6 +325,13 @@ internal sealed class GraphModelContributor : IModelContributor
         {
             workspace.Property(w => w.WorkspaceKind).HasMaxLength(20);
             workspace.HasIndex(w => new { w.TenantId, w.IsTemplate });
+        });
+
+        modelBuilder.Entity<WorkTask>(task =>
+        {
+            task.Property(t => t.Description).HasMaxLength(8000);
+            task.Property(t => t.AssigneeIds).HasColumnType("jsonb");
+            task.HasIndex(t => t.StateId);
         });
 
         modelBuilder.Entity<EdgeType>(type =>

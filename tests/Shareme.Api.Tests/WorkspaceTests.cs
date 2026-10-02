@@ -128,6 +128,73 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         (await creator.DeleteAsync($"/api/v1/workspaces/{job.Id}/links/{asset.AssetId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
     }
 
+    [Fact]
+    public async Task Tasks_move_across_the_board_along_its_transitions()
+    {
+        var (owner, _) = await UserAsync(WorkspacePermissions.Create);
+        var (member, memberId) = await UserAsync();
+        var (stranger, strangerId) = await UserAsync();
+        var workspace = (await (await owner.PostAsJsonAsync("/api/v1/workspaces", new CreateWorkspaceRequest("Launch"), Ct)).Content.ReadFromJsonAsync<WorkspaceDto>(Ct))!;
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(memberId), Ct)).EnsureSuccessStatusCode();
+        var states = (await member.GetFromJsonAsync<StateDto[]>($"/api/v1/workspaces/{workspace.Id}/states", Ct))!;
+        states.Select(s => s.Name).ShouldBe(["To do", "In progress", "Done"]);
+        var (todo, doing, done) = (states[0], states[1], states[2]);
+
+        // only owners close tasks, and to-do tasks go through in progress
+        (await member.PutAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/states/{done.Id}", new StateRequest("Done", IsDone: true, OwnersOnly: true), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await owner.PutAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/states/{done.Id}", new StateRequest("Done", IsDone: true, OwnersOnly: true), Ct)).EnsureSuccessStatusCode();
+        (await owner.PutAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/states/{todo.Id}", new StateRequest("To do", IsDefault: true, AllowedTargets: [doing.Id]), Ct)).EnsureSuccessStatusCode();
+
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/tasks", new TaskRequest("Nope", AssigneeIds: [strangerId]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await stranger.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/tasks", new TaskRequest("Nope"), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        var first = await TaskAsync(owner, workspace.Id, new TaskRequest("Brief", "Write it", new DateOnly(2026, 11, 1), AssigneeIds: [memberId]));
+        var second = await TaskAsync(member, workspace.Id, new TaskRequest("Visuals"));
+        var third = await TaskAsync(member, workspace.Id, new TaskRequest("Copy"));
+        first.StateId.ShouldBe(todo.Id);
+        first.AssigneeIds.ShouldBe([memberId]);
+
+        // reordering within the column
+        (await MoveAsync(member, third, todo.Id, 0)).EnsureSuccessStatusCode();
+        (await member.GetFromJsonAsync<TaskDto[]>($"/api/v1/workspaces/{workspace.Id}/tasks", Ct))!.Where(t => t.StateId == todo.Id).OrderBy(t => t.SortIndex).Select(t => t.Title)
+            .ShouldBe(["Copy", "Brief", "Visuals"]);
+
+        (await MoveAsync(member, first, done.Id, 0)).StatusCode.ShouldBe(HttpStatusCode.Conflict, "to do only leads to in progress");
+        var moved = await (await MoveAsync(member, first, doing.Id, 0)).Content.ReadFromJsonAsync<TaskDto>(Ct);
+        (await MoveAsync(member, first, doing.Id, 0, first.Version)).StatusCode.ShouldBe(HttpStatusCode.Conflict, "the version the client saw is outdated");
+        (await MoveAsync(member, moved!, done.Id, 0)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        var closed = (await (await MoveAsync(owner, moved!, done.Id, 0)).Content.ReadFromJsonAsync<TaskDto>(Ct))!;
+
+        // the answer carries the version for the next move
+        (await MoveAsync(owner, closed, done.Id, 0, closed.Version)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        closed.CompletedAt.ShouldNotBeNull();
+
+        // tasks are no items, and removing a column keeps its tasks
+        (await owner.GetFromJsonAsync<WorkspaceItemDto[]>($"/api/v1/workspaces/{workspace.Id}/items", Ct))!.ShouldBeEmpty();
+        (await owner.DeleteAsync($"/api/v1/workspaces/{workspace.Id}/states/{doing.Id}", Ct)).EnsureSuccessStatusCode();
+        (await owner.GetFromJsonAsync<TaskDto[]>($"/api/v1/workspaces/{workspace.Id}/tasks", Ct))!.Count(t => t.StateId == todo.Id).ShouldBe(2);
+        (await owner.GetFromJsonAsync<StateDto[]>($"/api/v1/workspaces/{workspace.Id}/states", Ct))!.Single(s => s.Id == todo.Id).AllowedTargets.ShouldBe([todo.Id], "its only way out is gone, so it has none");
+
+        // someone assigned before who has left does not block saving
+        (await owner.DeleteAsync($"/api/v1/workspaces/{workspace.Id}/members/{memberId}", Ct)).EnsureSuccessStatusCode();
+        (await owner.PutAsJsonAsync($"/api/v1/tasks/{first.Id}", new TaskRequest("Brief v2", AssigneeIds: [memberId]), Ct)).EnsureSuccessStatusCode();
+        (await owner.PutAsJsonAsync($"/api/v1/tasks/{second.Id}", new TaskRequest("Visuals v2", AssigneeIds: [memberId]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest, "new assignees must be members");
+        (await stranger.PutAsJsonAsync($"/api/v1/tasks/{second.Id}", new TaskRequest("Hijack"), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    private static async Task<TaskDto> TaskAsync(HttpClient client, Guid workspace, TaskRequest request)
+    {
+        var response = await client.PostAsJsonAsync($"/api/v1/workspaces/{workspace}/tasks", request, Ct);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TaskDto>(Ct))!;
+    }
+
+    /// <summary>Moves with the version the board shows now, or with the given (old) one.</summary>
+    private static async Task<HttpResponseMessage> MoveAsync(HttpClient client, TaskDto task, Guid state, int index, uint? version = null)
+    {
+        version ??= (await client.GetFromJsonAsync<TaskDto[]>($"/api/v1/workspaces/{task.WorkspaceId}/tasks", Ct))!.Single(t => t.Id == task.Id).Version;
+        return await client.PostAsJsonAsync($"/api/v1/tasks/{task.Id}/move", new MoveTaskRequest(state, index, version.Value), Ct);
+    }
+
     private async Task<(HttpClient Client, Guid UserId)> UserAsync(params string[] permissions)
     {
         var user = (await (await Admin.PostAsJsonAsync("/api/v1/identity/users", new CreateUserRequest($"{Guid.NewGuid():N}@acme.test", "Passw0rd!x", null, null), Ct)).Content.ReadFromJsonAsync<UserDto>(Ct))!;
