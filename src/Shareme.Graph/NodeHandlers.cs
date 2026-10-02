@@ -188,7 +188,8 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
 
     public async Task<Result<PagedResult<NodeDto>>> HandleAsync(GetChildren query, CancellationToken cancellationToken)
     {
-        var children = db.Set<Node>().AsNoTracking().Where(n => n.ParentId == query.Id);
+        // tasks live on their board
+        var children = db.Set<Node>().AsNoTracking().Where(n => n.ParentId == query.Id && !(n is WorkTask));
         if (query.Kind == NodeTypeKeys.Folder)
         {
             children = children.Where(n => n is Folder);

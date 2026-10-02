@@ -2,6 +2,14 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P4b (states, tasks)
+
+- [ ] Task edits are last write wins (no version on update); the open editor keeps the old task after live reloads.
+- [ ] Tasks are indexed for search; suggestions open them in /browse (result rows go to the board).
+- [ ] Assignees through group grants cannot be assigned.
+- [ ] No unlink endpoint for task assets; no global workspace board over workspace states; no state management UI yet (API only).
+- [ ] WorkspaceDetail reloads workspace, items and members on every child event (TaskBoard coalesces its own reloads).
+
 ## From P4a (workspaces)
 
 - [ ] Global Nodes.Read and global Workspaces.Finalize reach every workspace without membership (administrators); scope them to workspace grants if that is unwanted.

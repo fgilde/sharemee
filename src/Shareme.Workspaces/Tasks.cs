@@ -41,6 +41,12 @@ public sealed record TaskMoved(Guid TaskId, Guid WorkspaceId, Guid? FromStateId,
 
 public sealed record TaskAssigned(Guid TaskId, Guid WorkspaceId, IReadOnlyList<Guid> UserIds) : IDomainEvent;
 
+public static class TaskChangeKinds
+{
+    /// <summary>A task moved on the board (column or place); tree moves are NodeChangeKinds.Moved.</summary>
+    public const string StateChanged = "state changed";
+}
+
 internal static class WorkflowStates
 {
     public static readonly (string Name, bool IsDefault, bool IsDone)[] Defaults = [("To do", true, false), ("In progress", false, false), ("Done", false, true)];
@@ -116,9 +122,9 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
             return Error.Validation("Name", "A name of up to 100 characters is required.");
         }
 
-        if (!await db.Set<Workspace>().AnyAsync(w => w.Id == command.Id, cancellationToken))
+        if (await TemplateProblemAsync(command.Id, cancellationToken) is { } problem)
         {
-            return WorkspaceNotFound;
+            return problem;
         }
 
         var states = await db.Set<WorkflowState>().Where(s => s.WorkspaceId == command.Id).ToListAsync(cancellationToken);
@@ -150,10 +156,22 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
             states.Add(state);
         }
 
+        if (state.IsDone != request.IsDone)
+        {
+            // tasks already in the column follow its done flag
+            foreach (var task in await db.Set<WorkTask>().Where(t => t.ParentId == command.Id && t.StateId == state.Id).ToListAsync(cancellationToken))
+            {
+                task.CompletedAt = request.IsDone ? clock.GetUtcNow() : null;
+            }
+        }
+
         state.Name = request.Name.Trim();
         state.IsDone = request.IsDone;
         state.OwnersOnly = request.OwnersOnly;
-        state.AllowedTargets = targets.Where(t => t != state.Id).ToList();
+
+        // an empty list means "any state"; a list naming only the state itself means "none"
+        var others = targets.Where(t => t != state.Id).ToList();
+        state.AllowedTargets = targets.Count > 0 && others.Count == 0 ? [state.Id] : others;
 
         // exactly one column takes new tasks
         if (request.IsDefault || !states.Any(s => s.IsDefault && s != state))
@@ -170,6 +188,11 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
 
     public async Task<Result> HandleAsync(DeleteState command, CancellationToken cancellationToken)
     {
+        if (await TemplateProblemAsync(command.Id, cancellationToken) is { } problem)
+        {
+            return problem;
+        }
+
         var states = await db.Set<WorkflowState>().Where(s => s.WorkspaceId == command.Id).ToListAsync(cancellationToken);
         if (states.FirstOrDefault(s => s.Id == command.StateId) is not { } state)
         {
@@ -183,18 +206,23 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
 
         // its tasks go to the default column (or the first other one)
         var fallback = states.Where(s => s != state).OrderByDescending(s => s.IsDefault).ThenBy(s => s.SortIndex).First();
-        var tasks = await db.Set<WorkTask>().Where(t => t.ParentId == command.Id && t.StateId == state.Id).ToListAsync(cancellationToken);
+        // tasks in the recycle bin too, so they come back into a column that exists
+        var tasks = await db.Set<WorkTask>().IgnoreQueryFilters([CoworkeeDbContext.SoftDeleteFilter]).Where(t => t.ParentId == command.Id && t.StateId == state.Id).ToListAsync(cancellationToken);
         var next = await db.Set<WorkTask>().Where(t => t.ParentId == command.Id && t.StateId == fallback.Id).Select(t => (int?)t.SortIndex).MaxAsync(cancellationToken) + 1 ?? 0;
         foreach (var task in tasks)
         {
             task.StateId = fallback.Id;
             task.SortIndex = next++;
-            task.MarkChanged("moved");
+            task.CompletedAt = fallback.IsDone ? task.CompletedAt ?? clock.GetUtcNow() : null;
+            task.Publish(new TaskMoved(task.Id, command.Id, state.Id, fallback.Id));
+            task.MarkChanged(TaskChangeKinds.StateChanged);
         }
 
-        foreach (var other in states.Where(s => s != state))
+        foreach (var other in states.Where(s => s != state && s.AllowedTargets.Contains(state.Id)))
         {
-            other.AllowedTargets = other.AllowedTargets.Where(t => t != state.Id).ToList();
+            // a column whose only way out was the deleted one keeps having no way out
+            var remaining = other.AllowedTargets.Where(t => t != state.Id).ToList();
+            other.AllowedTargets = remaining.Count == 0 ? [other.Id] : remaining;
         }
 
         fallback.IsDefault |= state.IsDefault;
@@ -204,6 +232,11 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
 
     public async Task<Result> HandleAsync(OrderStates command, CancellationToken cancellationToken)
     {
+        if (await TemplateProblemAsync(command.Id, cancellationToken) is { } problem)
+        {
+            return problem;
+        }
+
         var states = await db.Set<WorkflowState>().Where(s => s.WorkspaceId == command.Id).ToListAsync(cancellationToken);
         if (command.StateIds.Count != states.Count || states.Any(s => !command.StateIds.Contains(s.Id)))
         {
@@ -223,7 +256,11 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
         var tasks = await db.Set<WorkTask>().AsNoTracking().Where(t => t.ParentId == query.Id).OrderBy(t => t.SortIndex).ToListAsync(cancellationToken);
         var visible = await Shareme.Assets.AssetSelection.WithPermissionAsync(db, access, tasks, NodePermissions.Read, cancellationToken);
         var links = await LinksAsync(visible.Select(t => t.Id).ToList(), cancellationToken);
-        IReadOnlyList<TaskDto> dtos = visible.Select(t => Map(t, links)).ToList();
+        var states = await db.Set<WorkflowState>().AsNoTracking().Where(s => s.WorkspaceId == query.Id).ToListAsync(cancellationToken);
+        var fallback = states.FirstOrDefault(s => s.IsDefault)?.Id ?? states.MinBy(s => s.SortIndex)?.Id;
+
+        // a task whose column is gone (a race with deleting it) shows in the default column instead of nowhere
+        IReadOnlyList<TaskDto> dtos = visible.Select(t => Map(t, links) with { StateId = states.Any(s => s.Id == t.StateId) ? t.StateId : fallback }).ToList();
         return Result<IReadOnlyList<TaskDto>>.Success(dtos);
     }
 
@@ -232,6 +269,17 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
         if (await db.Set<Workspace>().SingleOrDefaultAsync(w => w.Id == command.Id && !w.IsTemplate, cancellationToken) is not { } workspace)
         {
             return WorkspaceNotFound;
+        }
+
+        if (workspace.WorkspaceKind != WorkspaceKinds.Collaboration)
+        {
+            return Error.Validation("Id", "Tasks belong to collaboration workspaces.");
+        }
+
+        // members start in the default column; owners may start anywhere
+        if (command.Request.StateId is not null && !await access.CanAsync(NodePermissions.ManagePermissions, workspace.Id, cancellationToken))
+        {
+            command = command with { Request = command.Request with { StateId = null } };
         }
 
         if (await ValidateAsync(workspace.Id, command.Request, cancellationToken) is { } problem)
@@ -267,6 +315,9 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
         }
 
         db.Add(task);
+
+        // saved here, so the answer carries the version the next move needs
+        await db.SaveChangesAsync(cancellationToken);
         return Map(task, []);
     }
 
@@ -277,13 +328,13 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
             return TaskNotFound;
         }
 
-        // the state changes through a move, which checks the transitions
-        if (await ValidateAsync(workspaceId, command.Request with { StateId = null }, cancellationToken) is { } problem)
+        // the state changes through a move, which checks the transitions; people assigned before may have left meanwhile
+        var before = task.AssigneeIds.ToList();
+        if (await ValidateAsync(workspaceId, command.Request with { StateId = null }, cancellationToken, keep: before) is { } problem)
         {
             return problem;
         }
 
-        var before = task.AssigneeIds.ToList();
         task.Name = command.Request.Title.Trim();
         Apply(task, command.Request);
         if (task.AssigneeIds.Except(before).ToList() is { Count: > 0 } added)
@@ -292,6 +343,7 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
         }
 
         task.MarkChanged("updated");
+        await db.SaveChangesAsync(cancellationToken);
         return Map(task, await LinksAsync([task.Id], cancellationToken));
     }
 
@@ -324,9 +376,15 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
             return Error.Forbidden("auth.forbidden", $"Only owners move tasks to '{target.Name}'.");
         }
 
-        // the column is renumbered with the task at its new place
+        // the column is renumbered with the task at its new place; only rows whose position changes are written
         var column = await db.Set<WorkTask>().Where(t => t.ParentId == workspaceId && t.StateId == target.Id && t.Id != task.Id).OrderBy(t => t.SortIndex).ToListAsync(cancellationToken);
-        column.Insert(Math.Clamp(command.Request.Index, 0, column.Count), task);
+        var position = Math.Clamp(command.Request.Index, 0, column.Count);
+        if (from?.Id == target.Id && column.Count(t => t.SortIndex < task.SortIndex) == position)
+        {
+            return Map(task, await LinksAsync([task.Id], cancellationToken));
+        }
+
+        column.Insert(position, task);
         for (var index = 0; index < column.Count; index++)
         {
             column[index].SortIndex = index;
@@ -339,13 +397,14 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
             task.Publish(new TaskMoved(task.Id, workspaceId, from?.Id, target.Id));
         }
 
-        task.MarkChanged("moved");
+        task.MarkChanged(TaskChangeKinds.StateChanged);
+        await db.SaveChangesAsync(cancellationToken);
         return Map(task, await LinksAsync([task.Id], cancellationToken));
     }
 
     public async Task<Result<TaskDto>> HandleAsync(LinkTaskAssets command, CancellationToken cancellationToken)
     {
-        if (await db.Set<WorkTask>().AsNoTracking().SingleOrDefaultAsync(t => t.Id == command.Id, cancellationToken) is not { } task)
+        if (await db.Set<WorkTask>().SingleOrDefaultAsync(t => t.Id == command.Id, cancellationToken) is not { } task)
         {
             return TaskNotFound;
         }
@@ -364,11 +423,12 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
 
         var already = await db.Set<Edge>().Where(e => e.EdgeTypeId == EdgeType.LinkId && e.FromNodeId == task.Id && ids.Contains(e.ToNodeId)).Select(e => e.ToNodeId).ToListAsync(cancellationToken);
         db.AddRange(ids.Except(already).Select(id => new Edge { EdgeTypeId = EdgeType.LinkId, FromNodeId = task.Id, ToNodeId = id }));
+        task.MarkChanged("updated");
         return Map(task, new Dictionary<Guid, List<Guid>> { [task.Id] = [.. already, .. ids.Except(already)] });
     }
 
     /// <summary>Title, description length and assignees, who must be members of the workspace.</summary>
-    private async Task<Error?> ValidateAsync(Guid workspaceId, TaskRequest request, CancellationToken cancellationToken)
+    private async Task<Error?> ValidateAsync(Guid workspaceId, TaskRequest request, CancellationToken cancellationToken, IReadOnlyCollection<Guid>? keep = null)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 400)
         {
@@ -392,13 +452,26 @@ internal sealed class TaskHandlers(CoworkeeDbContext db, NodeAccess access, Work
             var roleIds = (await roles.KeysAsync(cancellationToken)).Keys.ToList();
             var members = await db.Set<ResourcePermission>().Where(p => p.ResourceType == NodePermissions.ResourceType && p.ResourceId == workspaceId
                 && p.PrincipalType == PrincipalType.User && roleIds.Contains(p.RoleId)).Select(p => p.PrincipalId).ToListAsync(cancellationToken);
-            if (assignees.Any(a => !members.Contains(a)))
+            if (assignees.Any(a => !members.Contains(a) && keep?.Contains(a) != true))
             {
                 return Error.Validation("AssigneeIds", "Assign members of the workspace only.");
             }
         }
 
         return null;
+    }
+
+    /// <summary>Columns of templates are part of the template: changed by template managers only.</summary>
+    private async Task<Error?> TemplateProblemAsync(Guid workspaceId, CancellationToken cancellationToken)
+    {
+        if (await db.Set<Workspace>().AsNoTracking().Where(w => w.Id == workspaceId).Select(w => (bool?)w.IsTemplate).SingleOrDefaultAsync(cancellationToken) is not { } isTemplate)
+        {
+            return WorkspaceNotFound;
+        }
+
+        return isTemplate && !await access.IsGlobalAsync(WorkspacePermissions.ManageTemplates, cancellationToken)
+            ? Error.Forbidden("auth.forbidden", "You may not change templates.")
+            : null;
     }
 
     private static void Apply(WorkTask task, TaskRequest request)

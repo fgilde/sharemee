@@ -3,7 +3,7 @@
 @inject IWorkspacesApi Api
 @inject ISnackbar Snackbar
 
-<RealtimeSubscription @key="WorkspaceId" Topic="@($"children:{WorkspaceId}")" OnEvent="_ => LoadAsync()" />
+<RealtimeSubscription @key="WorkspaceId" Topic="@($"children:{WorkspaceId}")" OnEvent="_ => ReloadSoonAsync()" />
 <MudStack Row="true" AlignItems="AlignItems.End" Class="mb-4">
     <MudTextField @bind-Value="_title" Label="New task" Immediate="true" OnKeyUp="@(e => e.Key == "Enter" ? AddAsync() : Task.CompletedTask)" Style="max-width:360px" data-testid="new-task" />
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_title)" OnClick="AddAsync" data-testid="add-task">Add</MudButton>
@@ -88,7 +88,33 @@
     /// <summary>Owners may use owner-only columns.</summary>
     [Parameter] public bool IsOwner { get; set; }
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    private Guid _loaded;
+    private bool _reloadPending;
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (_loaded == WorkspaceId)
+        {
+            return Task.CompletedTask;
+        }
+
+        _loaded = WorkspaceId;
+        return LoadAsync();
+    }
+
+    /// <summary>A move renumbers a column and sends one event per card; they are answered with one reload.</summary>
+    private async Task ReloadSoonAsync()
+    {
+        if (_reloadPending)
+        {
+            return;
+        }
+
+        _reloadPending = true;
+        await Task.Delay(300);
+        _reloadPending = false;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {

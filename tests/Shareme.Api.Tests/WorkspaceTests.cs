@@ -163,13 +163,21 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         (await MoveAsync(member, first, doing.Id, 0, first.Version)).StatusCode.ShouldBe(HttpStatusCode.Conflict, "the version the client saw is outdated");
         (await MoveAsync(member, moved!, done.Id, 0)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         var closed = (await (await MoveAsync(owner, moved!, done.Id, 0)).Content.ReadFromJsonAsync<TaskDto>(Ct))!;
+
+        // the answer carries the version for the next move
+        (await MoveAsync(owner, closed, done.Id, 0, closed.Version)).StatusCode.ShouldBe(HttpStatusCode.OK);
         closed.CompletedAt.ShouldNotBeNull();
 
         // tasks are no items, and removing a column keeps its tasks
         (await owner.GetFromJsonAsync<WorkspaceItemDto[]>($"/api/v1/workspaces/{workspace.Id}/items", Ct))!.ShouldBeEmpty();
         (await owner.DeleteAsync($"/api/v1/workspaces/{workspace.Id}/states/{doing.Id}", Ct)).EnsureSuccessStatusCode();
         (await owner.GetFromJsonAsync<TaskDto[]>($"/api/v1/workspaces/{workspace.Id}/tasks", Ct))!.Count(t => t.StateId == todo.Id).ShouldBe(2);
-        (await owner.PutAsJsonAsync($"/api/v1/tasks/{second.Id}", new TaskRequest("Visuals v2", AssigneeIds: [memberId]), Ct)).EnsureSuccessStatusCode();
+        (await owner.GetFromJsonAsync<StateDto[]>($"/api/v1/workspaces/{workspace.Id}/states", Ct))!.Single(s => s.Id == todo.Id).AllowedTargets.ShouldBe([todo.Id], "its only way out is gone, so it has none");
+
+        // someone assigned before who has left does not block saving
+        (await owner.DeleteAsync($"/api/v1/workspaces/{workspace.Id}/members/{memberId}", Ct)).EnsureSuccessStatusCode();
+        (await owner.PutAsJsonAsync($"/api/v1/tasks/{first.Id}", new TaskRequest("Brief v2", AssigneeIds: [memberId]), Ct)).EnsureSuccessStatusCode();
+        (await owner.PutAsJsonAsync($"/api/v1/tasks/{second.Id}", new TaskRequest("Visuals v2", AssigneeIds: [memberId]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest, "new assignees must be members");
         (await stranger.PutAsJsonAsync($"/api/v1/tasks/{second.Id}", new TaskRequest("Hijack"), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
