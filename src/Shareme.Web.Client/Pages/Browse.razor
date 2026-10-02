@@ -70,10 +70,13 @@ else if (_detail is not null)
                 <MudItem xs="6" sm="4" lg="3">
                     <MudCard Outlined="true" data-node="@child.Id">
                         <a href="@Link(child)">
-                            @if (child.Semantic == "asset")
+                            @if (child.Thumbnail is not null)
                             {
-                                <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail)" alt="" loading="lazy" onerror="this.style.visibility='hidden'"
-                                     style="width:100%;height:140px;object-fit:contain" />
+                                <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, child.Thumbnail)" alt="" loading="lazy" style="width:100%;height:140px;object-fit:contain" />
+                            }
+                            else if (child.Semantic == "asset")
+                            {
+                                <div class="d-flex align-center justify-center" style="height:140px"><MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Large" /></div>
                             }
                             else
                             {
@@ -108,10 +111,13 @@ else if (_detail is not null)
                         }
                         else
                         {
-                            @if (child.Semantic == "asset")
+                            @if (child.Thumbnail is not null)
                             {
-                                <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail)" alt="" loading="lazy" onerror="this.style.visibility='hidden'"
-                                     style="width:32px;height:32px;object-fit:cover;vertical-align:middle" class="mr-2" />
+                                <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, child.Thumbnail)" alt="" loading="lazy" style="width:32px;height:32px;object-fit:cover;vertical-align:middle" class="mr-2" />
+                            }
+                            else if (child.Semantic == "asset")
+                            {
+                                <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" Class="mr-2" />
                             }
                             else
                             {
@@ -274,30 +280,35 @@ else
         await LoadChildrenAsync();
     });
 
-    private Task MoveAsync(IReadOnlyList<NodeDto> nodes, Guid target) => RunAsync(async () =>
+    private async Task MoveAsync(IReadOnlyList<NodeDto> nodes, Guid target)
     {
-        foreach (var node in nodes)
-        {
-            await Api.MoveNodeAsync(node.Id, target);
-        }
-
+        await ForEachAsync(nodes.Where(n => n.Id != target).Select(n => n.Id), id => Api.MoveNodeAsync(id, target), "moved");
         _moving = null;
-        _selected.Clear();
-        await LoadChildrenAsync();
-    });
+    }
 
-    private Task DeleteSelectedAsync() => RunAsync(async () =>
+    private Task DeleteSelectedAsync() => ForEachAsync(_selected.ToList(), id => Api.DeleteNodeAsync(id), "moved to the recycle bin");
+
+    /// <summary>Runs one call per item, keeps going on failures and reports both counts.</summary>
+    private async Task ForEachAsync(IEnumerable<Guid> ids, Func<Guid, Task> action, string done)
     {
-        var count = _selected.Count;
-        foreach (var id in _selected.ToList())
+        var (succeeded, failed) = (0, 0);
+        foreach (var id in ids)
         {
-            await Api.DeleteNodeAsync(id);
+            try
+            {
+                await action(id);
+                succeeded++;
+            }
+            catch (ApiException)
+            {
+                failed++;
+            }
         }
 
-        Snackbar.Add($"{count} items moved to the recycle bin.", Severity.Info);
+        Snackbar.Add($"{succeeded} items {done}." + (failed > 0 ? $" {failed} could not be changed." : string.Empty), failed > 0 ? Severity.Warning : Severity.Info);
         _selected.Clear();
         await LoadChildrenAsync();
-    });
+    }
 
     private void Toggle(Guid id, bool on)
     {

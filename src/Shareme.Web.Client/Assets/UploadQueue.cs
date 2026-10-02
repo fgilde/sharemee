@@ -23,7 +23,8 @@ public sealed class UploadQueue(ISharemeApi api)
 
     public void Enqueue(IEnumerable<IBrowserFile> files, Guid? folderId, Guid? assetId = null)
     {
-        _items.AddRange(files.Select(file => new UploadItem(file, folderId, assetId)));
+        // the stream is opened now, while the file input still exists; reading starts when the item's turn comes
+        _items.AddRange(files.Select(file => new UploadItem(file, folderId, assetId) { Content = Open(file) }));
         Changed?.Invoke();
         if (!_running)
         {
@@ -69,7 +70,7 @@ public sealed class UploadQueue(ISharemeApi api)
             Set(item, UploadItemStates.Uploading);
             var session = await api.StartUploadAsync(new StartUploadRequest(item.Name, item.Size, item.AssetId is null ? item.FolderId : null, item.AssetId));
             var buffer = new byte[session.ChunkSize];
-            await using var stream = item.File.OpenReadStream(MaxFileSize);
+            await using var stream = item.Content ?? throw new IOException("The file can no longer be read.");
             for (var index = 0; index < session.ChunkCount; index++)
             {
                 var length = await FillAsync(stream, buffer);
@@ -95,10 +96,27 @@ public sealed class UploadQueue(ISharemeApi api)
             item.Error = exception.Errors is { Count: > 0 } errors ? string.Join(" ", errors.SelectMany(e => e.Value)) : exception.Message;
             Set(item, UploadItemStates.Failed);
         }
-        catch (Exception exception) when (exception is IOException or HttpRequestException)
+        catch (Exception exception)
         {
+            // the queue must go on whatever happens to one file
             item.Error = exception.Message;
             Set(item, UploadItemStates.Failed);
+        }
+        finally
+        {
+            item.Content = null;
+        }
+    }
+
+    private static Stream? Open(IBrowserFile file)
+    {
+        try
+        {
+            return file.OpenReadStream(MaxFileSize);
+        }
+        catch (IOException)
+        {
+            return null;
         }
     }
 
@@ -111,7 +129,7 @@ public sealed class UploadQueue(ISharemeApi api)
                 await send();
                 return;
             }
-            catch (Exception exception) when (attempt < Attempts && exception is HttpRequestException or ApiException { Status: >= 500 or 408 or 429 })
+            catch (Exception exception) when (attempt < Attempts && exception is HttpRequestException or TaskCanceledException or ApiException { Status: >= 500 or 408 or 429 })
             {
                 await Task.Delay(Delay(attempt));
             }
@@ -149,6 +167,8 @@ public static class UploadItemStates
 public sealed class UploadItem(IBrowserFile file, Guid? folderId, Guid? assetId)
 {
     internal IBrowserFile File { get; } = file;
+
+    internal Stream? Content { get; set; }
 
     public string Name => File.Name;
 

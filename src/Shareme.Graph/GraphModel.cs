@@ -116,6 +116,9 @@ public sealed class Asset : Node
     public Guid? CurrentVersionId { get; set; }
 
     public string Status { get; set; } = "importing";
+
+    /// <summary>Changes whenever the current version's thumbnail becomes available; null while there is none. Part of rendition URLs so caches never serve stale pictures.</summary>
+    public string? RenditionTag { get; set; }
 }
 
 public sealed class CustomNode : Node
@@ -247,6 +250,7 @@ internal sealed class GraphModelContributor : IModelContributor
         {
             asset.Property(a => a.AssetTypeKey).HasMaxLength(50);
             asset.Property(a => a.Status).HasMaxLength(20);
+            asset.Property(a => a.RenditionTag).HasMaxLength(64);
             asset.HasIndex(a => a.CurrentVersionId);
         });
 

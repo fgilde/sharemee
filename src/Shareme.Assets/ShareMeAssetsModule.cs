@@ -47,10 +47,22 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             var result = await d.SendAsync(new DownloadAsset(id, version), ct);
             return result.IsSuccess ? File(response, result.Value) : result.Error!.ToProblem();
         });
-        assets.MapGet("/{id:guid}/derivations/{kind}", async (Guid id, string kind, int? version, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        assets.MapGet("/{id:guid}/derivations/{kind}", async (Guid id, string kind, int? version, string? v, HttpResponse response, IDispatcher d, CancellationToken ct) =>
         {
             var result = await d.SendAsync(new GetDerivation(id, kind, version), ct);
-            return result.IsSuccess ? File(response, result.Value, inline: true) : result.Error!.ToProblem();
+            if (!result.IsSuccess)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            // a tagged url names one rendition forever, so browsers may keep it
+            var file = File(response, result.Value, inline: true);
+            if (v is { Length: > 0 })
+            {
+                response.Headers.CacheControl = "private, max-age=31536000, immutable";
+            }
+
+            return file;
         });
         assets.MapPost("/{id:guid}/download-link", (Guid id, int? version, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateDownloadLink(id, version), ct).ToHttpResult());
 

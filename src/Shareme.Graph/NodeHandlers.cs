@@ -22,7 +22,8 @@ public sealed record GetNode(Guid Id) : IQuery<Result<NodeDetailDto>>, IResource
     public string RequiredPermission => NodePermissions.Read;
 }
 
-public sealed record GetChildren(Guid Id, PageRequest Page, string? Sort) : IQuery<Result<PagedResult<NodeDto>>>, IResourceRequest
+/// <summary>Children of a node; <paramref name="Kind"/> "folder" lists only folders.</summary>
+public sealed record GetChildren(Guid Id, PageRequest Page, string? Sort, string? Kind = null) : IQuery<Result<PagedResult<NodeDto>>>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;
 
@@ -105,7 +106,7 @@ internal sealed class NodeMapper(CoworkeeDbContext db)
 
     private static NodeDto Map(Node node, Dictionary<Guid, string> keys) => new(
         node.Id, node.ParentId, keys.GetValueOrDefault(node.NodeTypeId, "unknown"), node.Semantic.ToString().ToLowerInvariant(), node.Name, node.Names,
-        node.SortIndex, node.InterruptInheritance, node.CreatedAt, node.ModifiedAt);
+        node.SortIndex, node.InterruptInheritance, node.CreatedAt, node.ModifiedAt, (node as Asset)?.RenditionTag);
 
     private async Task<Dictionary<Guid, string>> TypeKeysAsync(CancellationToken cancellationToken) =>
         _typeKeys ??= await db.Set<NodeType>().AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Key, cancellationToken);
@@ -186,6 +187,10 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
     public async Task<Result<PagedResult<NodeDto>>> HandleAsync(GetChildren query, CancellationToken cancellationToken)
     {
         var children = db.Set<Node>().AsNoTracking().Where(n => n.ParentId == query.Id);
+        if (query.Kind == NodeTypeKeys.Folder)
+        {
+            children = children.Where(n => n is Folder);
+        }
         if (!await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
         {
             var hidden = new List<Guid>();

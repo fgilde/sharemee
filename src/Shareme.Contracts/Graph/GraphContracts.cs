@@ -44,7 +44,8 @@ public sealed record NodeDto(
     int SortIndex,
     bool InterruptInheritance,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? ModifiedAt);
+    DateTimeOffset? ModifiedAt,
+    string? Thumbnail = null);
 
 public sealed record BreadcrumbDto(Guid Id, string Name);
 

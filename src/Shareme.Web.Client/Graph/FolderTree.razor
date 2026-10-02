@@ -3,19 +3,47 @@
 @inject ISharemeApi Api
 @inject NavigationManager Nav
 
+@foreach (var id in _loaded)
+{
+    <RealtimeSubscription @key="id" Topic="@($"children:{id}")" OnEvent="_ => RefreshAsync(id)" />
+}
 <MudTreeView T="Guid" Items="_roots" ServerData="LoadAsync" Dense="true" Hover="true" SelectionMode="SelectionMode.SingleSelection"
              SelectedValue="SelectedId" SelectedValueChanged="Open" data-testid="folder-tree" />
 
 @code {
     private List<TreeItemData<Guid>> _roots = [];
+    private readonly Dictionary<Guid, TreeItemData<Guid>> _items = [];
+    private readonly List<Guid> _loaded = [];
 
     [Parameter] public Guid SelectedId { get; set; }
 
     protected override async Task OnInitializedAsync() =>
         _roots = (await Api.GetEntryPointsAsync()).Select(Item).ToList();
 
-    private async Task<IReadOnlyCollection<TreeItemData<Guid>>> LoadAsync(Guid parentId) =>
-        (await Api.GetChildrenAsync(parentId, new PageRequest(1, 500))).Items.Where(n => n.Semantic == "folder").Select(Item).ToList();
+    private async Task<IReadOnlyCollection<TreeItemData<Guid>>> LoadAsync(Guid parentId)
+    {
+        var children = await FetchAsync(parentId);
+        if (!_loaded.Contains(parentId))
+        {
+            // folders seen once stay current: creating, renaming, moving or deleting below them refreshes their branch
+            _loaded.Add(parentId);
+            await InvokeAsync(StateHasChanged);
+        }
+
+        return children;
+    }
+
+    private async Task RefreshAsync(Guid parentId)
+    {
+        if (_items.TryGetValue(parentId, out var item))
+        {
+            item.Children = await FetchAsync(parentId);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<List<TreeItemData<Guid>>> FetchAsync(Guid parentId) =>
+        (await Api.GetFoldersAsync(parentId, new PageRequest(1, 500))).Items.Select(Item).ToList();
 
     private void Open(Guid id)
     {
@@ -25,5 +53,11 @@
         }
     }
 
-    private static TreeItemData<Guid> Item(NodeDto node) => new() { Value = node.Id, Text = node.Name, Icon = Icons.Material.Outlined.Folder, Expandable = true };
+    private TreeItemData<Guid> Item(NodeDto node)
+    {
+        var item = _items.TryGetValue(node.Id, out var known) ? known : new TreeItemData<Guid> { Value = node.Id, Icon = Icons.Material.Outlined.Folder, Expandable = true };
+        item.Text = node.Name;
+        _items[node.Id] = item;
+        return item;
+    }
 }

@@ -61,6 +61,6 @@ public static class DerivationStates
 public sealed record DerivationDto(string Kind, string State, int? Width, int? Height);
 
 public sealed record AssetDto(
-    Guid Id, Guid? FolderId, string Name, string AssetType, string Status, AssetVersionDto? CurrentVersion, IReadOnlyList<AssetVersionDto> Versions, IReadOnlyList<DerivationDto> Derivations);
+    Guid Id, Guid? FolderId, string Name, string AssetType, string Status, AssetVersionDto? CurrentVersion, IReadOnlyList<AssetVersionDto> Versions, IReadOnlyList<DerivationDto> Derivations, string? RenditionTag = null);
 
 public sealed record DownloadLinkDto(string Url, DateTimeOffset ExpiresAt);

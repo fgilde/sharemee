@@ -11,6 +11,14 @@ namespace Shareme.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<string>(
+                name: "RenditionTag",
+                schema: "sm",
+                table: "Nodes",
+                type: "character varying(64)",
+                maxLength: 64,
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "Derivations",
                 schema: "sm",
@@ -27,6 +35,7 @@ namespace Shareme.Infrastructure.Migrations
                     Width = table.Column<int>(type: "integer", nullable: true),
                     Height = table.Column<int>(type: "integer", nullable: true),
                     Error = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    PlannedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     TenantId = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
@@ -54,6 +63,12 @@ namespace Shareme.Infrastructure.Migrations
                 column: "BlobKey");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Derivations_State_PlannedAt",
+                schema: "sm",
+                table: "Derivations",
+                columns: new[] { "State", "PlannedAt" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Derivations_VersionId_Kind",
                 schema: "sm",
                 table: "Derivations",
@@ -67,6 +82,11 @@ namespace Shareme.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "Derivations",
                 schema: "sm");
+
+            migrationBuilder.DropColumn(
+                name: "RenditionTag",
+                schema: "sm",
+                table: "Nodes");
         }
     }
 }

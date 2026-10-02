@@ -43,7 +43,7 @@ else
             <MudPaper Outlined="true" Class="pa-2" Style="min-height:320px" data-testid="preview">
                 @if (Preview is { State: DerivationStates.Ready })
                 {
-                    <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Preview)" ContentType="image/webp" FileName="@_asset.Name" ShowFileName="false" />
+                    <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Preview, _asset.RenditionTag)" ContentType="image/webp" FileName="@_asset.Name" ShowFileName="false" />
                 }
                 else
                 {

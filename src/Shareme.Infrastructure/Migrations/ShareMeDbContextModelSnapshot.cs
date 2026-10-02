@@ -1299,6 +1299,9 @@ namespace Shareme.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<DateTimeOffset>("PlannedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<long>("Size")
                         .HasColumnType("bigint");
 
@@ -1321,6 +1324,8 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasIndex("AssetId");
 
                     b.HasIndex("BlobKey");
+
+                    b.HasIndex("State", "PlannedAt");
 
                     b.HasIndex("VersionId", "Kind")
                         .IsUnique();
@@ -2554,6 +2559,10 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.Property<Guid?>("CurrentVersionId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("RenditionTag")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Status")
                         .IsRequired()

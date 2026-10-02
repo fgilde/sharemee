@@ -3,7 +3,7 @@
 @inject UploadQueue Queue
 
 <div class="relative">
-    <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="OnFilesChanged" MaximumFileCount="500" MaxFileSize="@(20L * 1024 * 1024 * 1024)" DragAndDrop="true" data-testid="upload-input">
+    <MudFileUpload @ref="_upload" T="IReadOnlyList<IBrowserFile>" FilesChanged="OnFilesChanged" MaximumFileCount="500" MaxFileSize="@(20L * 1024 * 1024 * 1024)" DragAndDrop="true" data-testid="upload-input">
         <CustomContent>
             <MudPaper Outlined="true" Class="pa-4 d-flex align-center justify-center mud-width-full" Style="border-style:dashed;cursor:pointer" @onclick="context.OpenFilePickerAsync">
                 <MudIcon Icon="@Icons.Material.Outlined.CloudUpload" Class="mr-2" />
@@ -42,11 +42,17 @@
 
     private void Refresh() => InvokeAsync(StateHasChanged);
 
-    private void OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
+    private MudFileUpload<IReadOnlyList<IBrowserFile>>? _upload;
+
+    private async Task OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
     {
         if (files is { Count: > 0 })
         {
             Queue.Enqueue(files, FolderId, AssetId);
+            if (_upload is not null)
+            {
+                await _upload.ClearAsync();
+            }
         }
     }
 

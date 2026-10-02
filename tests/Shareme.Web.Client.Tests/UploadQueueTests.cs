@@ -56,6 +56,22 @@ public sealed class UploadQueueTests
         queue.Items[1].Error.ShouldBe("The content is broken.");
     }
 
+    [Fact]
+    public async Task An_unexpected_error_fails_only_that_file()
+    {
+        _api.StartUploadAsync(Arg.Any<StartUploadRequest>(), Arg.Any<CancellationToken>()).Returns(Session(UploadStates.Open, chunkSize: 8, chunkCount: 1));
+        _api.PutChunkAsync(_session, 0, Arg.Any<byte[]>(), 1, Arg.Any<CancellationToken>()).Returns(Task.FromException(new InvalidOperationException("boom")));
+        _api.CompleteUploadAsync(_session, Arg.Any<CancellationToken>()).Returns(Session(UploadStates.Completed));
+        var queue = new UploadQueue(_api) { Delay = _ => TimeSpan.Zero };
+
+        queue.Enqueue([new FakeFile("one.txt", [1]), new FakeFile("two.txt", [1, 2])], _folder);
+        await queue.WhenIdleAsync();
+
+        queue.Items[0].State.ShouldBe(UploadItemStates.Failed);
+        queue.Items[0].Error.ShouldBe("boom");
+        queue.Items[1].State.ShouldBe(UploadItemStates.Done);
+    }
+
     private UploadSessionDto Session(string state, int chunkSize = 4, int chunkCount = 3, string? error = null) =>
         new(_session, chunkSize, chunkCount, [], DateTimeOffset.UtcNow.AddHours(1), state, _asset,
             state == UploadStates.Completed ? new UploadResultDto(_asset, Guid.CreateVersion7(), 1, []) : null, error);

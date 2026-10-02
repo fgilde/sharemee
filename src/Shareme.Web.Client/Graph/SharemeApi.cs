@@ -16,6 +16,8 @@ public interface ISharemeApi
 
     Task<PagedResult<NodeDto>> GetChildrenAsync(Guid id, PageRequest page, string? sort = null, CancellationToken cancellationToken = default);
 
+    Task<PagedResult<NodeDto>> GetFoldersAsync(Guid id, PageRequest page, CancellationToken cancellationToken = default);
+
     Task<NodeDto> CreateNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default);
 
     Task UpdateNodeAsync(Guid id, UpdateNodeRequest request, CancellationToken cancellationToken = default);
@@ -59,7 +61,7 @@ public interface ISharemeApi
 
 public static class AssetUrls
 {
-    public static string Derivation(Guid assetId, string kind) => $"api/v1/assets/{assetId}/derivations/{kind}";
+    public static string Derivation(Guid assetId, string kind, string? tag = null) => $"api/v1/assets/{assetId}/derivations/{kind}" + (tag is null ? string.Empty : $"?v={tag}");
 
     public static string Download(Guid assetId, int? version = null) => $"api/v1/assets/{assetId}/download" + (version is { } v ? $"?version={v}" : string.Empty);
 }
@@ -79,6 +81,9 @@ internal sealed class SharemeApi(HttpClient http) : ApiClientBase(http), ISharem
         GetAsync<PagedResult<NodeDto>>(
             $"{Nodes}/{id}/children?page={page.Page}&pageSize={page.PageSize}&search={Uri.EscapeDataString(page.Search ?? string.Empty)}&sort={sort ?? NodeSorts.Name}",
             cancellationToken);
+
+    public Task<PagedResult<NodeDto>> GetFoldersAsync(Guid id, PageRequest page, CancellationToken cancellationToken = default) =>
+        GetAsync<PagedResult<NodeDto>>($"{Nodes}/{id}/children?page={page.Page}&pageSize={page.PageSize}&kind={NodeTypeKeys.Folder}", cancellationToken);
 
     public Task<NodeDto> CreateNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<NodeDto>(HttpMethod.Post, Nodes, request, cancellationToken);

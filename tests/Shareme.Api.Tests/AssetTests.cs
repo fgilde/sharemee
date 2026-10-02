@@ -182,6 +182,28 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         thumbnail.Content.Headers.ContentType!.MediaType.ShouldBe("image/webp");
         using var webp = new ImageMagick.MagickImage(await thumbnail.Content.ReadAsByteArrayAsync(Ct));
         webp.Width.ShouldBe(320u);
+
+        // lists carry a tag that names the thumbnail; it changes with new content and with a fresh render
+        var listed = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{folder}/children", Ct))!.Items;
+        var tag = listed.Single(n => n.Id == image.AssetId).Thumbnail.ShouldNotBeNull();
+        listed.Single(n => n.Id == pdf.AssetId).Thumbnail.ShouldBeNull();
+        (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/rerender", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await DerivationsAsync(image.AssetId)).ShouldAllBe(d => d.State == DerivationStates.Ready);
+        (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{image.AssetId}", Ct))!.RenditionTag.ShouldNotBeNull().ShouldNotBe(tag);
+    }
+
+    [Fact]
+    public async Task Folder_listings_can_skip_assets()
+    {
+        var folder = await FolderAsync("Mixed");
+        await UploadAsync(Admin, "file.png", Png(100), folder);
+        var root = (await Admin.GetFromJsonAsync<NodeDto>("/api/v1/nodes/root", Ct))!.Id;
+        var sub = (await (await Admin.PostAsJsonAsync("/api/v1/nodes", new CreateNodeRequest(folder, "Sub"), Ct)).Content.ReadFromJsonAsync<NodeDto>(Ct))!;
+
+        var folders = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{folder}/children?kind=folder", Ct))!.Items;
+
+        folders.Select(f => f.Id).ShouldBe([sub.Id]);
+        root.ShouldNotBe(Guid.Empty);
     }
 
     private async Task<IReadOnlyList<DerivationDto>> DerivationsAsync(Guid assetId)

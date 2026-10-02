@@ -70,7 +70,7 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             .ToListAsync(cancellationToken);
         var derivations = await db.Set<Derivation>().AsNoTracking().Where(d => d.VersionId == asset.CurrentVersionId).OrderBy(d => d.Kind)
             .Select(d => new DerivationDto(d.Kind, d.State, d.Width, d.Height)).ToListAsync(cancellationToken);
-        return new AssetDto(asset.Id, asset.ParentId, asset.Name, asset.AssetTypeKey, asset.Status, versions.FirstOrDefault(v => v.Id == asset.CurrentVersionId), versions, derivations);
+        return new AssetDto(asset.Id, asset.ParentId, asset.Name, asset.AssetTypeKey, asset.Status, versions.FirstOrDefault(v => v.Id == asset.CurrentVersionId), versions, derivations, asset.RenditionTag);
     }
 
     public async Task<Result<BlobDownload>> HandleAsync(GetDerivation query, CancellationToken cancellationToken)

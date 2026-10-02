@@ -129,6 +129,8 @@ public sealed class Derivation : Entity, IMultiTenant, IHasRealtimeTopics
 
     public string? Error { get; set; }
 
+    public DateTimeOffset PlannedAt { get; set; }
+
     public Guid TenantId { get; set; }
 
     public IEnumerable<string> RealtimeTopics => [GraphTopics.Children(AssetId)];
@@ -201,6 +203,7 @@ internal sealed class AssetModelContributor : IModelContributor
             derivation.HasIndex(d => new { d.VersionId, d.Kind }).IsUnique();
             derivation.HasIndex(d => d.AssetId);
             derivation.HasIndex(d => d.BlobKey);
+            derivation.HasIndex(d => new { d.State, d.PlannedAt });
             derivation.HasOne<AssetVersion>().WithMany().HasForeignKey(d => d.VersionId).OnDelete(DeleteBehavior.Cascade);
         });
 
