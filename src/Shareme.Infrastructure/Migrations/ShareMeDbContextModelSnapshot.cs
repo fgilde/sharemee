@@ -1670,7 +1670,39 @@ namespace Shareme.Infrastructure.Migrations
                         },
                         new
                         {
+                            Extension = "vbe",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
                             Extension = "js",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "jse",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "wsf",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "wsh",
                             AssetTypeKey = "other",
                             ForbiddenForUpload = true,
                             MagicNumbers = "[]",
@@ -1707,6 +1739,54 @@ namespace Shareme.Infrastructure.Migrations
                             ForbiddenForUpload = true,
                             MagicNumbers = "[]",
                             MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "lnk",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "url",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "msc",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "pif",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "reg",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "inf",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
                         });
                 });
 
@@ -1726,6 +1806,22 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("OrphanBlobs", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Assets.UploadChunk", b =>
+                {
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("SessionId", "Index");
+
+                    b.ToTable("UploadChunks", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Assets.UploadSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1737,6 +1833,14 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.Property<int>("ChunkSize")
                         .HasColumnType("integer");
+
+                    b.PrimitiveCollection<string>("DuplicateOf")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
@@ -1753,6 +1857,11 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<long>("Size")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<Guid?>("TargetFolderId")
                         .HasColumnType("uuid");
 
@@ -1762,9 +1871,17 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("VersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("VersionNumber")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UserId", "State");
 
                     b.ToTable("UploadSessions", "sm");
                 });
@@ -2385,6 +2502,8 @@ namespace Shareme.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.HasIndex("CurrentVersionId");
+
                     b.HasDiscriminator().HasValue("asset");
                 });
 
@@ -2580,6 +2699,15 @@ namespace Shareme.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("AssetTypeKey")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Assets.UploadChunk", b =>
+                {
+                    b.HasOne("Shareme.Assets.UploadSession", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

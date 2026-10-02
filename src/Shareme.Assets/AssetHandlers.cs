@@ -5,6 +5,7 @@ using Coworkee.Core.Results;
 using Coworkee.Infrastructure.Persistence;
 using Coworkee.Storage;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Shareme.Contracts.Assets;
 using Shareme.Contracts.Graph;
 using Shareme.Graph;
@@ -20,7 +21,7 @@ public sealed record GetAsset(Guid Id) : IQuery<Result<AssetDto>>, IResourceRequ
     public string RequiredPermission => NodePermissions.Read;
 }
 
-public sealed record BlobDownload(Stream Content, string FileName, string MimeType);
+public sealed record BlobDownload(Stream Content, string FileName, string MimeType, string? Sha256 = null, DateTimeOffset? LastModified = null);
 
 public sealed record DownloadAsset(Guid Id, int? Version) : IQuery<Result<BlobDownload>>, IResourceRequest
 {
@@ -68,7 +69,7 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             return NotFound;
         }
 
-        return new BlobDownload(content, version.FileName, version.MimeType);
+        return new BlobDownload(content, version.FileName, version.MimeType, version.Sha256, version.CreatedAt);
     }
 
     public async Task<Result<DownloadLinkDto>> HandleAsync(CreateDownloadLink command, CancellationToken cancellationToken)
@@ -105,8 +106,10 @@ internal sealed class BlobLinkResolver(CoworkeeDbContext db, IBlobStorage storag
         }
 
         var version = await db.Set<AssetVersion>().IgnoreQueryFilters().AsNoTracking().Where(v => v.BlobKey == key)
-            .Select(v => new { v.FileName, v.MimeType }).FirstOrDefaultAsync(cancellationToken);
-        return version is not null && await storage.OpenReadAsync(key, cancellationToken) is { } content ? new BlobDownload(content, version.FileName, version.MimeType) : null;
+            .Select(v => new { v.FileName, v.MimeType, v.Sha256, v.CreatedAt }).FirstOrDefaultAsync(cancellationToken);
+        return version is not null && await storage.OpenReadAsync(key, cancellationToken) is { } content
+            ? new BlobDownload(content, version.FileName, version.MimeType, version.Sha256, version.CreatedAt)
+            : null;
     }
 }
 
@@ -115,7 +118,7 @@ internal sealed class AssetPurgeListener(CoworkeeDbContext db) : INodePurgeListe
 {
     public async Task OnPurgingAsync(IQueryable<Guid> nodeIds, CancellationToken cancellationToken)
     {
-        var keys = await db.Set<AssetVersion>().IgnoreQueryFilters().Where(v => nodeIds.Contains(v.AssetId)).Select(v => v.BlobKey).ToListAsync(cancellationToken);
+        var keys = await db.Set<AssetVersion>().Where(v => nodeIds.Contains(v.AssetId)).Select(v => v.BlobKey).ToListAsync(cancellationToken);
         if (keys.Count == 0)
         {
             return;
@@ -127,29 +130,60 @@ internal sealed class AssetPurgeListener(CoworkeeDbContext db) : INodePurgeListe
 }
 
 /// <summary>Deletes files of purged assets and abandoned uploads.</summary>
-public sealed class StorageCleanupJob(CoworkeeDbContext db, IBlobStorage storage, TimeProvider clock) : IRecurringJob
+public sealed class StorageCleanupJob(CoworkeeDbContext db, IBlobStorage storage, TimeProvider clock, ILogger<StorageCleanupJob> logger) : IRecurringJob
 {
     public const string Id = "shareme-storage-cleanup";
 
+    private const int BatchSize = 500;
+
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        foreach (var orphan in await db.Set<OrphanBlob>().OrderBy(o => o.Id).Take(1000).ToListAsync(cancellationToken))
+        var skipped = new HashSet<Guid>();
+        while (await db.Set<OrphanBlob>().Where(o => !skipped.Contains(o.Id)).OrderBy(o => o.Id).Take(BatchSize).ToListAsync(cancellationToken) is { Count: > 0 } orphans)
         {
-            await storage.DeleteAsync(orphan.Key, cancellationToken);
-            db.Remove(orphan);
+            foreach (var orphan in orphans)
+            {
+                try
+                {
+                    await storage.DeleteAsync(orphan.Key, cancellationToken);
+                    db.Remove(orphan);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // stays for the next run
+                    skipped.Add(orphan.Id);
+                    logger.LogWarning(exception, "Blob {Key} could not be deleted.", orphan.Key);
+                }
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
         }
 
         var now = clock.GetUtcNow();
-        foreach (var session in await db.Set<UploadSession>().IgnoreQueryFilters().Where(s => s.ExpiresAt <= now).Take(200).ToListAsync(cancellationToken))
+        while (await db.Set<UploadSession>().IgnoreQueryFilters().Where(s => s.ExpiresAt <= now && !skipped.Contains(s.Id)).OrderBy(s => s.Id).Take(BatchSize).ToListAsync(cancellationToken) is { Count: > 0 } sessions)
         {
-            for (var index = 0; index < session.ChunkCount; index++)
+            foreach (var session in sessions)
             {
-                await storage.DeleteAsync(session.ChunkKey(index), cancellationToken);
+                try
+                {
+                    await storage.DeletePrefixAsync(session.ChunkPrefix, cancellationToken);
+                    if (session is { State: UploadStates.Completing, AssetId: { } assetId })
+                    {
+                        // the job never finished; a placeholder without content is marked failed
+                        await db.Set<Asset>().IgnoreQueryFilters().Where(a => a.Id == assetId && a.CurrentVersionId == null)
+                            .ExecuteUpdateAsync(a => a.SetProperty(x => x.Status, AssetStatuses.Failed), cancellationToken);
+                    }
+
+                    db.Remove(session);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    skipped.Add(session.Id);
+                    logger.LogWarning(exception, "Upload {SessionId} could not be cleaned up.", session.Id);
+                }
             }
 
-            db.Remove(session);
+            await db.SaveChangesAsync(cancellationToken);
         }
-
-        await db.SaveChangesAsync(cancellationToken);
     }
 }

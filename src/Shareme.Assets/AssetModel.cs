@@ -76,9 +76,31 @@ public sealed class UploadSession : Entity, IMultiTenant
 
     public Guid TenantId { get; set; }
 
+    public string State { get; set; } = UploadStates.Open;
+
+    public string? Error { get; set; }
+
+    public Guid? VersionId { get; set; }
+
+    public int? VersionNumber { get; set; }
+
+    public List<Guid> DuplicateOf { get; set; } = [];
+
+    public string ChunkPrefix => $"{TenantId:N}/uploads/{Id:N}";
+
     public int ChunkCount => (int)((Size + ChunkSize - 1) / ChunkSize);
 
-    public string ChunkKey(int index) => $"{TenantId:N}/uploads/{Id:N}/{index}";
+    public string ChunkKey(int index) => $"{ChunkPrefix}/{index}";
+}
+
+/// <summary>A received chunk; the primary key makes repeated or parallel PUTs of one index harmless.</summary>
+public sealed class UploadChunk
+{
+    public Guid SessionId { get; set; }
+
+    public int Index { get; set; }
+
+    public long Size { get; set; }
 }
 
 /// <summary>A stored file whose rows are gone; the cleanup job deletes it.</summary>
@@ -142,7 +164,18 @@ internal sealed class AssetModelContributor : IModelContributor
             session.Ignore(s => s.ChunkCount);
             session.Property(s => s.FileName).HasMaxLength(255);
             session.Property(s => s.Sha256).HasMaxLength(64);
+            session.Property(s => s.State).HasMaxLength(20);
+            session.Property(s => s.Error).HasMaxLength(1000);
+            session.Property(s => s.DuplicateOf).HasColumnType("jsonb");
             session.HasIndex(s => s.ExpiresAt);
+            session.HasIndex(s => new { s.UserId, s.State });
+        });
+
+        modelBuilder.Entity<UploadChunk>(chunk =>
+        {
+            chunk.ToTable("UploadChunks", Schema);
+            chunk.HasKey(c => new { c.SessionId, c.Index });
+            chunk.HasOne<UploadSession>().WithMany().HasForeignKey(c => c.SessionId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<OrphanBlob>(blob =>
@@ -198,7 +231,7 @@ internal static class FileTypeSeeds
         Type("rar", "application/vnd.rar", AssetTypeKeys.Archive, "526172211A07"),
         Type("gz", "application/gzip", AssetTypeKeys.Archive, "1F8B"),
         Type("tar", "application/x-tar", AssetTypeKeys.Archive),
-        .. new[] { "exe", "dll", "bat", "cmd", "com", "msi", "scr", "ps1", "vbs", "js", "jar", "sh", "cpl", "hta" }
+        .. new[] { "exe", "dll", "bat", "cmd", "com", "msi", "scr", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "jar", "sh", "cpl", "hta", "lnk", "url", "msc", "pif", "reg", "inf" }
             .Select(extension => new FileType { Extension = extension, MimeType = "application/octet-stream", AssetTypeKey = AssetTypeKeys.Other, ForbiddenForUpload = true }),
     ];
 

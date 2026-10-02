@@ -110,7 +110,12 @@ namespace Shareme.Infrastructure.Migrations
                     Sha256 = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     ChunkSize = table.Column<int>(type: "integer", nullable: false),
                     ExpiresAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    TenantId = table.Column<Guid>(type: "uuid", nullable: false)
+                    TenantId = table.Column<Guid>(type: "uuid", nullable: false),
+                    State = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    Error = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    VersionId = table.Column<Guid>(type: "uuid", nullable: true),
+                    VersionNumber = table.Column<int>(type: "integer", nullable: true),
+                    DuplicateOf = table.Column<string>(type: "jsonb", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -138,6 +143,27 @@ namespace Shareme.Infrastructure.Migrations
                         principalTable: "AssetTypes",
                         principalColumn: "Key",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "UploadChunks",
+                schema: "sm",
+                columns: table => new
+                {
+                    SessionId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Index = table.Column<int>(type: "integer", nullable: false),
+                    Size = table.Column<long>(type: "bigint", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UploadChunks", x => new { x.SessionId, x.Index });
+                    table.ForeignKey(
+                        name: "FK_UploadChunks_UploadSessions_SessionId",
+                        column: x => x.SessionId,
+                        principalSchema: "sm",
+                        principalTable: "UploadSessions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.InsertData(
@@ -177,26 +203,32 @@ namespace Shareme.Infrastructure.Migrations
                     { "gz", "archive", false, "[\"1F8B\"]", "application/gzip" },
                     { "heic", "image", false, "[]", "image/heic" },
                     { "hta", "other", true, "[]", "application/octet-stream" },
+                    { "inf", "other", true, "[]", "application/octet-stream" },
                     { "jar", "other", true, "[]", "application/octet-stream" },
                     { "jpeg", "image", false, "[\"FFD8FF\"]", "image/jpeg" },
                     { "jpg", "image", false, "[\"FFD8FF\"]", "image/jpeg" },
                     { "js", "other", true, "[]", "application/octet-stream" },
+                    { "jse", "other", true, "[]", "application/octet-stream" },
                     { "json", "document", false, "[]", "application/json" },
+                    { "lnk", "other", true, "[]", "application/octet-stream" },
                     { "m4a", "audio", false, "[]", "audio/mp4" },
                     { "md", "document", false, "[]", "text/markdown" },
                     { "mkv", "video", false, "[\"1A45DFA3\"]", "video/x-matroska" },
                     { "mov", "video", false, "[]", "video/quicktime" },
                     { "mp3", "audio", false, "[]", "audio/mpeg" },
                     { "mp4", "video", false, "[]", "video/mp4" },
+                    { "msc", "other", true, "[]", "application/octet-stream" },
                     { "msi", "other", true, "[]", "application/octet-stream" },
                     { "ogg", "audio", false, "[\"4F676753\"]", "audio/ogg" },
                     { "pdf", "document", false, "[\"25504446\"]", "application/pdf" },
+                    { "pif", "other", true, "[]", "application/octet-stream" },
                     { "png", "image", false, "[\"89504E470D0A1A0A\"]", "image/png" },
                     { "ppt", "document", false, "[\"D0CF11E0A1B11AE1\"]", "application/vnd.ms-powerpoint" },
                     { "pptx", "document", false, "[\"504B0304\"]", "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
                     { "ps1", "other", true, "[]", "application/octet-stream" },
                     { "psd", "image", false, "[\"38425053\"]", "image/vnd.adobe.photoshop" },
                     { "rar", "archive", false, "[\"526172211A07\"]", "application/vnd.rar" },
+                    { "reg", "other", true, "[]", "application/octet-stream" },
                     { "scr", "other", true, "[]", "application/octet-stream" },
                     { "sh", "other", true, "[]", "application/octet-stream" },
                     { "svg", "image", false, "[]", "image/svg+xml" },
@@ -204,14 +236,24 @@ namespace Shareme.Infrastructure.Migrations
                     { "tif", "image", false, "[\"49492A00\",\"4D4D002A\"]", "image/tiff" },
                     { "tiff", "image", false, "[\"49492A00\",\"4D4D002A\"]", "image/tiff" },
                     { "txt", "document", false, "[]", "text/plain" },
+                    { "url", "other", true, "[]", "application/octet-stream" },
+                    { "vbe", "other", true, "[]", "application/octet-stream" },
                     { "vbs", "other", true, "[]", "application/octet-stream" },
                     { "wav", "audio", false, "[\"52494646\"]", "audio/wav" },
                     { "webm", "video", false, "[\"1A45DFA3\"]", "video/webm" },
                     { "webp", "image", false, "[\"52494646\"]", "image/webp" },
+                    { "wsf", "other", true, "[]", "application/octet-stream" },
+                    { "wsh", "other", true, "[]", "application/octet-stream" },
                     { "xls", "document", false, "[\"D0CF11E0A1B11AE1\"]", "application/vnd.ms-excel" },
                     { "xlsx", "document", false, "[\"504B0304\"]", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
                     { "zip", "archive", false, "[\"504B0304\"]", "application/zip" }
                 });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Nodes_CurrentVersionId",
+                schema: "sm",
+                table: "Nodes",
+                column: "CurrentVersionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AssetVersions_AssetId_Number",
@@ -243,6 +285,12 @@ namespace Shareme.Infrastructure.Migrations
                 schema: "sm",
                 table: "UploadSessions",
                 column: "ExpiresAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UploadSessions_UserId_State",
+                schema: "sm",
+                table: "UploadSessions",
+                columns: new[] { "UserId", "State" });
         }
 
         /// <inheritdoc />
@@ -261,12 +309,21 @@ namespace Shareme.Infrastructure.Migrations
                 schema: "sm");
 
             migrationBuilder.DropTable(
-                name: "UploadSessions",
+                name: "UploadChunks",
                 schema: "sm");
 
             migrationBuilder.DropTable(
                 name: "AssetTypes",
                 schema: "sm");
+
+            migrationBuilder.DropTable(
+                name: "UploadSessions",
+                schema: "sm");
+
+            migrationBuilder.DropIndex(
+                name: "IX_Nodes_CurrentVersionId",
+                schema: "sm",
+                table: "Nodes");
 
             migrationBuilder.DropColumn(
                 name: "AssetTypeKey",

@@ -247,6 +247,7 @@ internal sealed class GraphModelContributor : IModelContributor
         {
             asset.Property(a => a.AssetTypeKey).HasMaxLength(50);
             asset.Property(a => a.Status).HasMaxLength(20);
+            asset.HasIndex(a => a.CurrentVersionId);
         });
 
         modelBuilder.Entity<EdgeType>(type =>

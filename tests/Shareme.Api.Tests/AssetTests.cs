@@ -104,9 +104,12 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
 
         (await Admin.PostAsJsonAsync("/api/v1/uploads", new StartUploadRequest("setup.exe", 10, folder), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
+        (await Admin.PostAsJsonAsync("/api/v1/uploads", new StartUploadRequest("setup.exe. ", 10, folder), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/uploads", new StartUploadRequest("invoice.exe.pdf", 10, folder), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
         var fake = await StartAsync(Admin, new StartUploadRequest("fake.png", 11, folder));
         await ChunkAsync(Admin, fake.Id, 0, Encoding.UTF8.GetBytes("hello world"));
-        (await Admin.PostAsync($"/api/v1/uploads/{fake.Id}/complete", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await CompleteAsync(Admin, fake.Id)).State.ShouldBe(UploadStates.Failed);
 
         var partial = await StartAsync(Admin, new StartUploadRequest("big.png", 9 * 1024 * 1024, folder));
         await ChunkAsync(Admin, partial.Id, 0, Png(8 * 1024 * 1024));
@@ -114,7 +117,10 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
 
         var hashed = await StartAsync(Admin, new StartUploadRequest("hash.png", 100, folder, Sha256: new string('0', 64)));
         await ChunkAsync(Admin, hashed.Id, 0, Png(100));
-        (await Admin.PostAsync($"/api/v1/uploads/{hashed.Id}/complete", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var failed = await CompleteAsync(Admin, hashed.Id);
+        failed.State.ShouldBe(UploadStates.Failed);
+        failed.Error.ShouldNotBeNull().ShouldContain("SHA-256");
+        (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{failed.AssetId}", Ct))!.Status.ShouldBe(AssetStatuses.Failed);
     }
 
     [Fact]
@@ -132,6 +138,29 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         var session = await StartAsync(Admin, new StartUploadRequest("mine.png", 10, folder));
         using var foreign = new ByteArrayContent(Png(10));
         (await downloader.PutAsync($"/api/v1/uploads/{session.Id}/chunks/0", foreign, Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Completing_twice_is_refused_and_downloads_support_ranges()
+    {
+        var folder = await FolderAsync("Ranges");
+        var content = Png(1000);
+        var session = await StartAsync(Admin, new StartUploadRequest("range.png", content.Length, folder));
+        await ChunkAsync(Admin, session.Id, 0, content);
+
+        var first = Admin.PostAsync($"/api/v1/uploads/{session.Id}/complete", null, Ct);
+        var second = Admin.PostAsync($"/api/v1/uploads/{session.Id}/complete", null, Ct);
+        var statuses = (await Task.WhenAll(first, second)).Select(r => r.StatusCode).ToList();
+        statuses.ShouldContain(HttpStatusCode.OK);
+        statuses.ShouldContain(HttpStatusCode.Conflict);
+        var done = await WaitAsync(Admin, session.Id);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/assets/{done.AssetId}/download");
+        request.Headers.Range = new RangeHeaderValue(10, 19);
+        using var partial = await Admin.SendAsync(request, Ct);
+        partial.StatusCode.ShouldBe(HttpStatusCode.PartialContent);
+        (await partial.Content.ReadAsByteArrayAsync(Ct)).ShouldBe(content[10..20]);
+        partial.Headers.ETag.ShouldNotBeNull();
     }
 
     [Fact]
@@ -202,9 +231,31 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
             await ChunkAsync(client, session.Id, index, content.Skip(index * session.ChunkSize).Take(session.ChunkSize).ToArray());
         }
 
-        var response = await client.PostAsync($"/api/v1/uploads/{session.Id}/complete", null, Ct);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<UploadResultDto>(Ct))!;
+        var done = await CompleteAsync(client, session.Id);
+        done.State.ShouldBe(UploadStates.Completed, done.Error);
+        return done.Result!;
+    }
+
+    private static async Task<UploadSessionDto> CompleteAsync(HttpClient client, Guid session)
+    {
+        (await client.PostAsync($"/api/v1/uploads/{session}/complete", null, Ct)).EnsureSuccessStatusCode();
+        return await WaitAsync(client, session);
+    }
+
+    private static async Task<UploadSessionDto> WaitAsync(HttpClient client, Guid session)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var state = (await client.GetFromJsonAsync<UploadSessionDto>($"/api/v1/uploads/{session}", Ct))!;
+            if (state.State is UploadStates.Completed or UploadStates.Failed)
+            {
+                return state;
+            }
+
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the upload was not processed in time");
+            await Task.Delay(250, Ct);
+        }
     }
 
     private async Task<Guid> FolderAsync(string name)
