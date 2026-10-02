@@ -20,6 +20,7 @@ public sealed class RulesAdminTests : BunitContext
         Services.AddMudServices();
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_api);
+        Services.AddSingleton(Substitute.For<IAiApi>());
         AddAuthorization().SetAuthorized("Ada");
         _api.GetAsync(default).ReturnsForAnyArgs([_rule]);
         _api.GetJobsAsync(default).ReturnsForAnyArgs([new RuleJobDto(Guid.CreateVersion7(), RuleJobStates.Completed, 3, 2, 1, 1, 1, null, [], DateTimeOffset.UtcNow)]);

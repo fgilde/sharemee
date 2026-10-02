@@ -95,6 +95,10 @@ public sealed class ApiFactory(PostgresFixture postgres) : PostgresWebApplicatio
         builder.UseSetting("ConnectionStrings:elasticsearch", ApiFixture.Elastic.Url);
         builder.UseSetting("Shareme:Search:Alias", "shareme-tests-" + Guid.NewGuid().ToString("N")[..8]);
         builder.UseSetting("Coworkee:Storage:FileSystem:Root", Path.Combine(Path.GetTempPath(), "shareme-api-tests-blobs"));
-        builder.ConfigureTestServices(services => services.AddTestAuthentication());
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddTestAuthentication();
+            services.AddHttpClient("Shareme.Ai").ConfigurePrimaryHttpMessageHandler(() => FakeAi.Instance);
+        });
     }
 }

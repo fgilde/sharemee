@@ -15,6 +15,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shareme.Assets;
+using Shareme.Contracts.Assets;
 using Shareme.Contracts.Automation;
 using Shareme.Contracts.Graph;
 using Shareme.Contracts.Metadata;
@@ -41,6 +42,11 @@ public sealed class DataJob : Entity, IMultiTenant
     public Guid? FolderId { get; set; }
 
     public string? BlobKey { get; set; }
+
+    public Guid? ExtractionId { get; set; }
+
+    /// <summary>How often an extraction was continued for nodes whose rendition was not ready yet.</summary>
+    public int Attempt { get; set; }
 
     public int Total { get; set; }
 
@@ -350,7 +356,8 @@ internal sealed class DataHandlers(
 
 /// <summary>Runs mass edits and imports as the user who started them; one node's failure does not stop the others.</summary>
 internal sealed class DataJobRunner(
-    CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IBlobStorage storage, IServiceScopeFactory scopes, TimeProvider clock, ILogger<DataJobRunner> logger)
+    CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IBlobStorage storage, IServiceScopeFactory scopes, AiExtractor extractor, IBackgroundJobs jobs, TimeProvider clock,
+    ILogger<DataJobRunner> logger)
     : IBackgroundJob<Guid>
 {
     /// <summary>A running job without a sign of life for this long belongs to a worker that died, and is taken over.</summary>
@@ -379,6 +386,10 @@ internal sealed class DataJobRunner(
             if (job.Kind == DataJobKinds.MassEdit)
             {
                 await MassEditAsync(job, definitions, cancellationToken);
+            }
+            else if (job.Kind == DataJobKinds.Extraction)
+            {
+                await ExtractAsync(job, definitions, cancellationToken);
             }
             else
             {
@@ -554,6 +565,111 @@ internal sealed class DataJobRunner(
         }
     }
 
+    private async Task ExtractAsync(DataJob job, Dictionary<string, PropertyDefinition> definitions, CancellationToken cancellationToken)
+    {
+        var definition = await db.Set<ExtractionDefinition>().AsNoTracking().SingleOrDefaultAsync(d => d.Id == job.ExtractionId, cancellationToken)
+            ?? throw new InvalidOperationException("The extraction is gone.");
+        var target = definitions.GetValueOrDefault(definition.TargetKey) ?? throw new InvalidOperationException("The target property is gone.");
+        var language = definition.Language ?? (await catalog.LanguagesAsync(cancellationToken)).FirstOrDefault(l => l.IsDefault)?.Code ?? MetadataCatalog.FallbackLanguage.Code;
+        job.Total = job.NodeIds.Count;
+        var waiting = new List<Guid>();
+        foreach (var nodeId in job.NodeIds)
+        {
+            await GuardAsync(job, nodeId, null, async () =>
+            {
+                if (!await access.CanAsync(NodePermissions.Read, nodeId, cancellationToken)
+                    || await db.Set<Asset>().AsNoTracking().SingleOrDefaultAsync(a => a.Id == nodeId, cancellationToken) is not { } asset)
+                {
+                    Skip(job, nodeId, null, "No asset you can see.");
+                    return;
+                }
+
+                if (definition.AssetTypeKeys.Count > 0 && !definition.AssetTypeKeys.Contains(asset.AssetTypeKey))
+                {
+                    Skip(job, nodeId, null, $"The extraction does not cover {asset.AssetTypeKey} files.");
+                    return;
+                }
+
+                var (rendition, pending) = await RenditionAsync(asset, definition.InputKind, cancellationToken);
+                if (rendition is null)
+                {
+                    if (pending && job.Attempt < MaxAttempts)
+                    {
+                        waiting.Add(nodeId);
+                    }
+
+                    Skip(job, nodeId, null, pending && job.Attempt < MaxAttempts
+                        ? $"The {definition.InputKind} rendition is not ready yet; a later run continues."
+                        : $"There is no {definition.InputKind} rendition to analyse.");
+                    return;
+                }
+
+                await using var content = await storage.OpenReadAsync(rendition.BlobKey!, cancellationToken);
+                if (content is null || await RenditionLimits.ReadAsync(content, 10L * 1024 * 1024, cancellationToken) is not { } image)
+                {
+                    Skip(job, nodeId, null, $"The {definition.InputKind} rendition is missing or bigger than 10 MB.");
+                    return;
+                }
+
+                var outcome = await extractor.ExtractAsync(definition, target, language, image, rendition.MimeType ?? "image/webp", cancellationToken);
+                if (outcome.Error is { } error)
+                {
+                    Fail(job, nodeId, null, null, error);
+                    return;
+                }
+
+                var found = string.Join(", ", outcome.Findings.Select(f => $"{f.Value} ({f.Confidence:0.##})"));
+                if (outcome.Values.Count == 0)
+                {
+                    Skip(job, nodeId, null, found.Length == 0 ? "Nothing found." : $"Nothing above the threshold or in the list: {found}.");
+                    return;
+                }
+
+                if (definition.AutoApply)
+                {
+                    var node = await db.Set<Node>().AsNoTracking().SingleAsync(n => n.Id == nodeId, cancellationToken);
+                    var next = Merge(target, node.Metadata.GetValueOrDefault(target.Key) ?? [], outcome.Values);
+                    await WriteAsync(job, node, null, SameIgnoringOrder(node.Metadata.GetValueOrDefault(target.Key) ?? [], next) ? [] : new() { [target.Key] = next }, MetadataSources.Ai, _ => null, cancellationToken);
+                    return;
+                }
+
+                // one open suggestion per node and extraction: a new run replaces the older one
+                await db.Set<ExtractionSuggestion>().Where(s => s.NodeId == nodeId && s.DefinitionId == definition.Id && s.State == SuggestionStates.Pending).ExecuteDeleteAsync(cancellationToken);
+                db.Add(new ExtractionSuggestion { DefinitionId = definition.Id, NodeId = nodeId, TargetKey = target.Key, Findings = outcome.Findings, Values = outcome.Values, CreatedAt = clock.GetUtcNow() });
+                job.Executed++;
+                Note(job, new DataJobEntryDto(nodeId, null, null, DataJobResults.Executed, $"Suggested for review: {found}."));
+            });
+        }
+
+        // fresh uploads are rendered by other jobs; a later run picks them up instead of holding a worker while it waits
+        if (waiting.Count > 0)
+        {
+            var next = new DataJob
+            {
+                Kind = DataJobKinds.Extraction, ExtractionId = job.ExtractionId, NodeIds = waiting, StartedBy = job.StartedBy, Attempt = job.Attempt + 1, CreatedAt = clock.GetUtcNow(),
+            };
+            db.Add(next);
+            await db.SaveChangesAsync(cancellationToken);
+            jobs.Schedule<DataJobRunner, Guid>(next.Id, RetryDelay);
+        }
+    }
+
+    private const int MaxAttempts = 30;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(10);
+
+    /// <summary>The ready rendition of the current version, or whether it may still come (a fresh upload that is still rendering).</summary>
+    private async Task<(Derivation? Rendition, bool Pending)> RenditionAsync(Asset asset, string kind, CancellationToken cancellationToken)
+    {
+        var derivation = await db.Set<Derivation>().AsNoTracking().SingleOrDefaultAsync(d => d.VersionId == asset.CurrentVersionId && d.Kind == kind, cancellationToken);
+        if (derivation is { State: DerivationStates.Ready, BlobKey: not null })
+        {
+            return (derivation, false);
+        }
+
+        var created = await db.Set<AssetVersion>().Where(v => v.Id == asset.CurrentVersionId).Select(v => (DateTimeOffset?)v.CreatedAt).SingleOrDefaultAsync(cancellationToken);
+        return (null, derivation is not { State: DerivationStates.Failed } && created is not null && clock.GetUtcNow() - created < TimeSpan.FromMinutes(10));
+    }
+
     /// <summary>The values of a slot are replaced where the first of them stood, so the order of the others stays.</summary>
     private static List<MetadataValue> Replace(List<MetadataValue> current, Func<MetadataValue, bool> inSlot, IEnumerable<MetadataValue> values)
     {
@@ -576,7 +692,7 @@ internal sealed class DataJobRunner(
     }
 
     /// <summary>Multi valued properties gain what they lack; single valued ones get the given languages and contexts replaced.</summary>
-    private static List<MetadataValue> Merge(PropertyDefinition definition, List<MetadataValue> current, IReadOnlyList<MetadataValue> values)
+    internal static List<MetadataValue> Merge(PropertyDefinition definition, List<MetadataValue> current, IReadOnlyList<MetadataValue> values)
     {
         if (MetadataText.IsMulti(definition))
         {

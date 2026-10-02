@@ -38,6 +38,7 @@ public static class MetadataSources
     public const string Rule = "rule";
     public const string Import = "import";
     public const string MassEdit = "massEdit";
+    public const string Ai = "ai";
 }
 
 /// <summary>Own values of a node changed; <see cref="Keys"/> are the properties whose values differ now.</summary>

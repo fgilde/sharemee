@@ -37,6 +37,8 @@ public sealed class ShareMeAutomationModule : CoworkeeModule, IWebModule
         context.Services.AddScoped<RuleEngine>();
         context.Services.AddScoped<RuleJobRunner>();
         context.Services.AddScoped<DataJobRunner>();
+        context.Services.AddScoped<AiExtractor>();
+        context.Services.AddHttpClient(AiEndpoints.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(90));
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -53,6 +55,7 @@ public sealed class ShareMeAutomationModule : CoworkeeModule, IWebModule
         jobs.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRuleJobs(), ct).ToHttpResult());
         jobs.MapGet("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRuleJob(id), ct).ToHttpResult());
         DataOperationsEndpoints.Map(app);
+        AiEndpoints.Map(app);
     }
 }
 
@@ -146,6 +149,34 @@ internal sealed class AutomationModelContributor : IModelContributor
             Json(job.Property(j => j.Entries));
             job.HasIndex(j => new { j.StartedBy, j.CreatedAt });
         });
+
+        modelBuilder.Entity<ExtractionDefinition>(definition =>
+        {
+            definition.ToTable("ExtractionDefinitions", "sm");
+            definition.Property(d => d.Name).HasMaxLength(200);
+            definition.Property(d => d.Provider).HasMaxLength(40);
+            definition.Property(d => d.Endpoint).HasMaxLength(500);
+            definition.Property(d => d.Model).HasMaxLength(200);
+            definition.Property(d => d.Mode).HasMaxLength(20);
+            definition.Property(d => d.Prompt).HasMaxLength(4000);
+            definition.Property(d => d.InputKind).HasMaxLength(100);
+            definition.Property(d => d.TargetKey).HasMaxLength(100);
+            definition.Property(d => d.Language).HasMaxLength(20);
+            definition.Property(d => d.MinConfidence).HasPrecision(5, 4);
+            definition.Property(d => d.AssetTypeKeys).HasColumnType("jsonb");
+            Json(definition.Property(d => d.Mappings));
+        });
+
+        modelBuilder.Entity<ExtractionSuggestion>(suggestion =>
+        {
+            suggestion.ToTable("ExtractionSuggestions", "sm");
+            suggestion.Property(s => s.TargetKey).HasMaxLength(100);
+            suggestion.Property(s => s.State).HasMaxLength(20);
+            Json(suggestion.Property(s => s.Findings));
+            Json(suggestion.Property(s => s.Values));
+            suggestion.HasIndex(s => new { s.State, s.CreatedAt });
+            suggestion.HasIndex(s => new { s.NodeId, s.DefinitionId });
+        });
     }
 
     private static void Json<T>(Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<List<T>> property) =>
@@ -163,13 +194,16 @@ internal sealed class AutomationPermissionDefinitions : IPermissionDefinitionCon
         context.Group(AutomationPermissions.GroupName, "Automation")
             .Add(AutomationPermissions.ManageRules, "Manage rules and run them on existing content")
             .Add(DataPermissions.MassEdit, "Change and import metadata of many nodes at once")
-            .Add(DataPermissions.MassEditLarge, $"Change up to {DataLimits.MaxNodes} nodes at once");
+            .Add(DataPermissions.MassEditLarge, $"Change up to {DataLimits.MaxNodes} nodes at once")
+            .Add(AiPermissions.Manage, "Configure AI extractions and their provider keys")
+            .Add(AiPermissions.Run, "Run AI extractions and review their suggestions");
 }
 
 /// <summary>What happened to a node and why rules look at it now.</summary>
 internal sealed record RuleContext(Node Node, string TypeKey, IReadOnlySet<string> ChangedKeys, bool IsNewVersion, bool IsNewNode);
 
-internal sealed record RuleOutcome(bool FiltersMatched, bool TriggersMatched, Dictionary<string, string> Values, List<string> Problems);
+/// <summary><see cref="Extractions"/> are AI extractions the matching actions ask for.</summary>
+internal sealed record RuleOutcome(bool FiltersMatched, bool TriggersMatched, Dictionary<string, string> Values, List<string> Problems, List<Guid> Extractions);
 
 /// <summary>Evaluates conditions, renders templates and writes through the regular metadata command, so the same checks and permissions apply.</summary>
 internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IServiceScopeFactory scopes, TimeProvider clock)
@@ -259,6 +293,7 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         }
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var extractions = new List<Guid>();
         if (filtersMatched)
         {
             foreach (var action in rule.Actions.Where(a => a.OnMatch == triggersMatched))
@@ -266,6 +301,12 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
                 var current = context.Node.Metadata.TryGetValue(action.PropertyKey, out var existing) ? existing : [];
                 if (action.OnlyIfEmpty && current.Count > 0)
                 {
+                    continue;
+                }
+
+                if (action.ExtractionId is { } extraction)
+                {
+                    extractions.Add(extraction);
                     continue;
                 }
 
@@ -279,7 +320,7 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
             }
         }
 
-        return new RuleOutcome(filtersMatched, triggersMatched, values, problems);
+        return new RuleOutcome(filtersMatched, triggersMatched, values, problems, extractions);
     }
 
     /// <summary>Writes the outcome as the current user (whose change triggered the rule, or who started the job); null on success, else why not.</summary>
@@ -461,11 +502,11 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
 }
 
 /// <summary>Runs the tenant's active rules live: after metadata changes (not the rules' own), new versions and new nodes.</summary>
-internal sealed class RuleTriggers(CoworkeeDbContext db, RuleEngine engine, ILogger<RuleTriggers> logger)
+internal sealed class RuleTriggers(CoworkeeDbContext db, RuleEngine engine, IServiceScopeFactory scopes, ICurrentUser currentUser, TimeProvider clock, ILogger<RuleTriggers> logger)
     : IDomainEventHandler<NodeMetadataChanged>, IDomainEventHandler<AssetVersionCreated>, IDomainEventHandler<NodeChanged>
 {
     public Task HandleAsync(NodeMetadataChanged domainEvent, CancellationToken cancellationToken) =>
-        domainEvent.Source == MetadataSources.Rule ? Task.CompletedTask : RunAsync(domainEvent.NodeId, domainEvent.Keys.ToHashSet(), false, false, cancellationToken);
+        domainEvent.Source is MetadataSources.Rule or MetadataSources.Ai ? Task.CompletedTask : RunAsync(domainEvent.NodeId, domainEvent.Keys.ToHashSet(), false, false, cancellationToken);
 
     public async Task HandleAsync(AssetVersionCreated domainEvent, CancellationToken cancellationToken)
     {
@@ -502,6 +543,18 @@ internal sealed class RuleTriggers(CoworkeeDbContext db, RuleEngine engine, ILog
             if (outcome.FiltersMatched && await engine.WriteAsync(context.Rule.Node, outcome.Values, cancellationToken) is { } problem)
             {
                 logger.LogWarning("Rule {Rule} could not write node {NodeId}: {Problem}", rule.Name, nodeId, problem);
+            }
+
+            foreach (var extraction in outcome.FiltersMatched ? outcome.Extractions : [])
+            {
+                try
+                {
+                    await AiRuns.EnqueueAsync(scopes, extraction, [nodeId], currentUser.UserId ?? Guid.Empty, clock, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    logger.LogWarning(exception, "Rule {Rule} could not queue an AI extraction for node {NodeId}.", rule.Name, nodeId);
+                }
             }
 
             // later rules see what earlier ones wrote
@@ -588,14 +641,29 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Meta
             }
         }
 
-        if (request.Actions.Any(a => string.IsNullOrWhiteSpace(a.PropertyKey) || a.Template is null || a.Template.Length > 2000))
+        if (request.Actions.Any(a => a.ExtractionId is null && (string.IsNullOrWhiteSpace(a.PropertyKey) || a.Template is null || a.Template.Length > 2000)))
         {
             return Error.Validation("Actions", "Every action names a property and a template of up to 2000 characters.");
         }
 
         var definitions = (await catalog.DefinitionsAsync(cancellationToken)).ToDictionary(d => d.Key);
+        var actions = new List<RuleAction>();
         foreach (var action in request.Actions)
         {
+            // an AI action writes the extraction's own property
+            if (action.ExtractionId is { } extractionId)
+            {
+                if (await db.Set<ExtractionDefinition>().AsNoTracking().SingleOrDefaultAsync(d => d.Id == extractionId, cancellationToken) is not { } extraction)
+                {
+                    return Error.Validation("Actions", "The AI extraction does not exist.");
+                }
+
+                actions.Add(action with { PropertyKey = extraction.TargetKey, Template = string.Empty });
+                continue;
+            }
+
+            actions.Add(action);
+
             // ponytail: rules write one value without language or context; add both to RuleAction when such targets are needed
             if (!definitions.TryGetValue(action.PropertyKey, out var target) || target.Localizable || target.HasContext || !target.Editable || target.IsSystem)
             {
@@ -628,7 +696,7 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Meta
         rule.IsActive = request.IsActive;
         rule.NodeTypeKeys = request.NodeTypeKeys?.Distinct().ToList() ?? [];
         rule.Conditions = request.Conditions.ToList();
-        rule.Actions = request.Actions.ToList();
+        rule.Actions = actions;
         rule.SortIndex = request.SortIndex;
         return Map(rule);
     }
@@ -661,6 +729,11 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Meta
         if (!rule.AppliesTo(context.Rule.TypeKey))
         {
             outcome.Problems.Insert(0, $"The rule does not apply to nodes of type '{context.Rule.TypeKey}'.");
+        }
+
+        foreach (var action in rule.Actions.Where(a => a.ExtractionId is { } id && outcome.Extractions.Contains(id)))
+        {
+            outcome.Values[action.PropertyKey] = "(AI extraction)";
         }
 
         return new RuleTestDto(outcome.FiltersMatched, outcome.TriggersMatched, outcome.Values, outcome.Problems);
@@ -723,7 +796,7 @@ internal sealed class RuleHandlers(CoworkeeDbContext db, RuleEngine engine, Meta
 }
 
 /// <summary>Applies rules to existing nodes afterwards, as the user who started the run; one node's failure does not stop the others.</summary>
-internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, NodeAccess access, TimeProvider clock, ILogger<RuleJobRunner> logger) : IBackgroundJob<Guid>
+internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, NodeAccess access, IServiceScopeFactory scopes, ICurrentUser currentUser, TimeProvider clock, ILogger<RuleJobRunner> logger) : IBackgroundJob<Guid>
 {
     public const int MaxNodes = 10_000;
     private const int MaxEntries = 500;
@@ -810,7 +883,18 @@ internal sealed class RuleJobRunner(CoworkeeDbContext db, RuleEngine engine, Nod
             var outcome = await engine.EvaluateAsync(rule, context.Rule, cancellationToken);
             matched |= outcome.FiltersMatched && outcome.TriggersMatched;
             problems.AddRange(outcome.Problems.Select(p => $"{rule.Name}: {p}"));
-            if (!outcome.FiltersMatched || outcome.Values.Count == 0)
+            if (!outcome.FiltersMatched)
+            {
+                continue;
+            }
+
+            foreach (var extraction in outcome.Extractions)
+            {
+                await AiRuns.EnqueueAsync(scopes, extraction, [nodeId], currentUser.UserId ?? Guid.Empty, clock, cancellationToken);
+                wrote.Add($"{rule.Name} (AI extraction queued)");
+            }
+
+            if (outcome.Values.Count == 0)
             {
                 continue;
             }

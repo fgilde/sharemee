@@ -1,0 +1,198 @@
+@page "/admin/ai"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Automation
+@using Shareme.Contracts.Metadata
+@using Shareme.Web.Client.Metadata
+@inject IAiApi Api
+@inject IMetadataApi Metadata
+@inject ISnackbar Snackbar
+
+<PageTitle>AI tagging</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">AI tagging</MudText>
+
+<MudText Typo="Typo.h6">Suggestions to review</MudText>
+<MudSimpleTable Dense="true" Hover="true" data-testid="suggestions">
+    <thead><tr><th>File</th><th>Extraction</th><th>Property</th><th>Found</th><th>Writes</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var suggestion in _suggestions)
+        {
+            <tr data-suggestion="@suggestion.NodeName">
+                <td><MudLink Href="@($"/assets/{suggestion.NodeId}")">@suggestion.NodeName</MudLink></td>
+                <td>@suggestion.DefinitionName</td>
+                <td>@suggestion.TargetKey</td>
+                <td>@string.Join(", ", suggestion.Findings.Select(f => $"{f.Value} ({f.Confidence:0.##})"))</td>
+                <td>@string.Join(", ", suggestion.Values.Select(v => v.List ?? v.V?.ToString()))</td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" Color="Color.Primary" OnClick="() => DecideAsync(suggestion.Id, true)" data-testid="apply">Apply</MudButton>
+                    <MudButton Size="Size.Small" OnClick="() => DecideAsync(suggestion.Id, false)">Reject</MudButton>
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudText Typo="Typo.h6" Class="mt-6">Extractions</MudText>
+<MudSimpleTable Dense="true" Hover="true" data-testid="extractions">
+    <thead><tr><th>Name</th><th>Provider</th><th>Mode</th><th>Writes</th><th>Threshold</th><th>Review</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var definition in _definitions)
+        {
+            <tr data-extraction="@definition.Name">
+                <td>@definition.Name</td>
+                <td>@definition.Provider @definition.Model @(definition.HasApiKey ? null : "(no key)")</td>
+                <td>@definition.Mode from @definition.InputKind</td>
+                <td>@definition.TargetKey</td>
+                <td>@definition.MinConfidence</td>
+                <td>@(definition.AutoApply ? "no, applied right away" : "yes")</td>
+                <td style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(definition)" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(definition.Id))" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="extraction-editor">
+    <MudText Typo="Typo.h6">@(_id is null ? "New extraction" : "Edit extraction")</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Name" Label="Name" data-testid="extraction-name" /></MudItem>
+        <MudItem xs="6" sm="4">
+            <MudSelect T="string" @bind-Value="_form.Provider" Label="Provider">
+                <MudSelectItem Value="@AiProviders.OpenAi">OpenAI compatible</MudSelectItem>
+                <MudSelectItem Value="@AiProviders.Anthropic">Anthropic</MudSelectItem>
+                <MudSelectItem Value="@AiProviders.AzureVision">Azure AI Vision</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="4">
+            <MudSelect T="string" @bind-Value="_form.Mode" Label="Mode">
+                <MudSelectItem Value="@AiModes.Tags">Tags</MudSelectItem>
+                <MudSelectItem Value="@AiModes.Description">Description</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Endpoint" Label="Endpoint (https, empty for the provider's default)" /></MudItem>
+        <MudItem xs="6" sm="3"><MudTextField @bind-Value="_form.Model" Label="Model" /></MudItem>
+        <MudItem xs="6" sm="3"><MudTextField @bind-Value="_form.ApiKey" Label="@(_hasKey ? "API key (stored, empty keeps it)" : "API key")" InputType="InputType.Password" /></MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="string" @bind-Value="_form.TargetKey" Label="Writes property" data-testid="extraction-target">
+                @foreach (var property in _properties)
+                {
+                    <MudSelectItem Value="@property.Key">@property.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.InputKind" Label="Rendition" /></MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_form.MinConfidence" Label="Threshold" Min="0" Max="1" Step="0.05m" /></MudItem>
+        <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.Language" Label="Language" /></MudItem>
+        <MudItem xs="6" sm="2"><MudCheckBox @bind-Value="_form.AutoApply" Label="Apply without review" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.AssetTypes" Label="Asset types (comma separated, empty for all)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Mappings" Label="Mappings (tag=list value, one per line)" Lines="3" /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="_form.Prompt" Label="Extra instructions for the model" Lines="2" /></MudItem>
+    </MudGrid>
+    <MudStack Row="true" Class="mt-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-extraction">Save</MudButton>
+        @if (_id is not null)
+        {
+            <MudButton OnClick="Reset">Cancel</MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<ExtractionDefinitionDto> _definitions = [];
+    private IReadOnlyList<ExtractionSuggestionDto> _suggestions = [];
+    private IReadOnlyList<PropertyDefinitionDto> _properties = [];
+    private Guid? _id;
+    private bool _hasKey;
+    private Form _form = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        try
+        {
+            _properties = (await Metadata.GetDefinitionsAsync()).Where(d => d.Editable && !d.IsSystem && !d.HasContext).ToList();
+        }
+        catch (ApiException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _definitions = await Api.GetDefinitionsAsync();
+            _suggestions = await Api.GetSuggestionsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not use AI tagging." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private void Edit(ExtractionDefinitionDto d)
+    {
+        _id = d.Id;
+        _hasKey = d.HasApiKey;
+        _form = new Form
+        {
+            Name = d.Name, Provider = d.Provider, Mode = d.Mode, Endpoint = d.Endpoint, Model = d.Model, TargetKey = d.TargetKey, InputKind = d.InputKind, MinConfidence = d.MinConfidence,
+            Language = d.Language, AutoApply = d.AutoApply, AssetTypes = string.Join(", ", d.AssetTypeKeys), Prompt = d.Prompt,
+            Mappings = string.Join("\n", d.Mappings.Select(m => $"{m.FromValue}={m.ToValue}")),
+        };
+    }
+
+    private void Reset()
+    {
+        _id = null;
+        _hasKey = false;
+        _form = new();
+    }
+
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var mappings = (_form.Mappings ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('=', 2, StringSplitOptions.TrimEntries)).Where(p => p.Length == 2).Select(p => new AiMapping(p[0], p[1])).ToList();
+        await Api.SaveAsync(_id, new ExtractionDefinitionRequest(
+            _form.Name ?? string.Empty, _form.Provider, _form.TargetKey ?? string.Empty, _form.Mode, _form.Endpoint, _form.Model,
+            string.IsNullOrEmpty(_form.ApiKey) ? null : _form.ApiKey, _form.Prompt, _form.InputKind,
+            (_form.AssetTypes ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), mappings, _form.MinConfidence,
+            string.IsNullOrWhiteSpace(_form.Language) ? null : _form.Language.Trim(), _form.AutoApply));
+        Reset();
+    });
+
+    private Task DecideAsync(Guid id, bool apply) => RunAsync(() => Api.DecideAsync(id, apply));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private sealed class Form
+    {
+        public string? Name { get; set; }
+        public string Provider { get; set; } = AiProviders.Anthropic;
+        public string Mode { get; set; } = AiModes.Tags;
+        public string? Endpoint { get; set; }
+        public string? Model { get; set; }
+        public string? ApiKey { get; set; }
+        public string? TargetKey { get; set; }
+        public string InputKind { get; set; } = "preview";
+        public decimal MinConfidence { get; set; } = 0.5m;
+        public string? Language { get; set; }
+        public bool AutoApply { get; set; }
+        public string? AssetTypes { get; set; }
+        public string? Mappings { get; set; }
+        public string? Prompt { get; set; }
+    }
+}

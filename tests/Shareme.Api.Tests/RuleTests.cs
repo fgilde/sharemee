@@ -104,7 +104,9 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         await RuleAsync(new RuleRequest("Label", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status")], [new RuleAction("label", "{fnc.find(status)}!")]));
         await RuleAsync(new RuleRequest("Pages", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.EqualTo, "status", "bad")], [new RuleAction("pages", "abc")], SortIndex: 1));
 
-        await RuleAsync(new RuleRequest("Live only", [new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.ValueChanged, "status")], [new RuleAction("verdict", "changed"), new RuleAction("verdict", "not changed", OnMatch: false)]));
+        // live events of the patches above may still arrive and write "changed"; only a job could write "not changed"
+        await RuleAsync(new RuleRequest("Live only", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status"), new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.ValueChanged, "status")],
+            [new RuleAction("verdict", "changed"), new RuleAction("verdict", "not changed", OnMatch: false)]));
         var started = await (await Admin.PostAsJsonAsync("/api/v1/rule-jobs", new RuleJobRequest(FolderId: root), Ct)).Content.ReadFromJsonAsync<RuleJobDto>(Ct);
         var deadline = DateTime.UtcNow.AddSeconds(30);
         RuleJobDto job;
@@ -119,7 +121,7 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("pages");
         Get(await MetadataAsync(ok), "label").ShouldBe("fine!");
         Get(await MetadataAsync(empty), "label").ShouldBeNull();
-        Get(await MetadataAsync(empty), "verdict").ShouldBeNull();
+        Get(await MetadataAsync(ok), "verdict").ShouldNotBe("not changed");
         Get(await MetadataAsync(bad), "label").ShouldBe("bad!");
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("Written by Label");
         (await Admin.GetFromJsonAsync<RuleJobDto[]>("/api/v1/rule-jobs", Ct))!.Select(j => j.Id).ShouldContain(job.Id);

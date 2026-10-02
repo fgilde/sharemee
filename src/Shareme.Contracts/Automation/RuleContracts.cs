@@ -43,8 +43,8 @@ public static class RuleOperators
 /// <summary>A filter or trigger; <see cref="Value"/> is the compared value, the edge type key for hasRelation.</summary>
 public sealed record RuleCondition(string Kind, string Operator, string? PropertyKey = null, string? Value = null);
 
-/// <summary>Writes the rendered template into a property, when the triggers matched (<see cref="OnMatch"/>) or when they did not.</summary>
-public sealed record RuleAction(string PropertyKey, string Template, bool OnMatch = true, bool OnlyIfEmpty = false);
+/// <summary>Writes the rendered template into a property, when the triggers matched (<see cref="OnMatch"/>) or when they did not; with <see cref="ExtractionId"/> it runs that AI extraction instead.</summary>
+public sealed record RuleAction(string PropertyKey, string Template, bool OnMatch = true, bool OnlyIfEmpty = false, Guid? ExtractionId = null);
 
 public sealed record RuleDto(Guid Id, string Name, bool IsActive, IReadOnlyList<string> NodeTypeKeys, IReadOnlyList<RuleCondition> Conditions, IReadOnlyList<RuleAction> Actions, int SortIndex);
 
