@@ -29,11 +29,13 @@ internal sealed class JobsOverviewHandler(CoworkeeDbContext db, ICurrentUser cur
 
     public async Task<Result<JobsOverviewDto>> HandleAsync(GetJobsOverview query, CancellationToken cancellationToken)
     {
+        // admins see every run of the tenant, others their own
         var me = currentUser.UserId ?? Guid.Empty;
+        var admin = await access.IsGlobalAsync(NodePermissions.Admin, cancellationToken);
         var runs = new List<JobSummaryDto>();
-        runs.AddRange((await db.Set<DataJob>().AsNoTracking().Where(j => j.StartedBy == me).OrderByDescending(j => j.CreatedAt).Take(PerKind * 3).ToListAsync(cancellationToken))
+        runs.AddRange((await db.Set<DataJob>().AsNoTracking().Where(j => admin || j.StartedBy == me).OrderByDescending(j => j.CreatedAt).Take(PerKind * 3).ToListAsync(cancellationToken))
             .Select(j => new JobSummaryDto(j.Id, j.Kind, j.State, j.Total, j.Executed, j.Failed, j.Error, j.CreatedAt, $"/data-jobs/{j.Id}")));
-        runs.AddRange((await db.Set<RuleJob>().AsNoTracking().Where(j => j.StartedBy == me).OrderByDescending(j => j.CreatedAt).Take(PerKind).ToListAsync(cancellationToken))
+        runs.AddRange((await db.Set<RuleJob>().AsNoTracking().Where(j => admin || j.StartedBy == me).OrderByDescending(j => j.CreatedAt).Take(PerKind).ToListAsync(cancellationToken))
             .Select(j => new JobSummaryDto(j.Id, JobKinds.Rules, j.State, j.Total, j.Executed, j.Failed, j.Error, j.CreatedAt, "/admin/rules")));
 
         // extractions keep no starter; they show for archives the user can read
@@ -46,7 +48,6 @@ internal sealed class JobsOverviewHandler(CoworkeeDbContext db, ICurrentUser cur
             }
         }
 
-        var admin = await access.IsGlobalAsync(NodePermissions.Admin, cancellationToken);
         if (admin)
         {
             runs.AddRange((await db.Set<ReindexRun>().AsNoTracking().OrderByDescending(r => r.StartedAt).Take(PerKind).ToListAsync(cancellationToken))

@@ -266,7 +266,7 @@ internal sealed class GraphModelContributor : IModelContributor
             restriction.Property(r => r.Kind).HasMaxLength(40);
             restriction.Property(r => r.PropertyKey).HasMaxLength(100);
             restriction.Property(r => r.Value).HasMaxLength(200);
-            restriction.HasIndex(r => r.RoleId);
+            restriction.HasIndex(r => new { r.TenantId, r.RoleId, r.Kind, r.PropertyKey, r.Value }).IsUnique().AreNullsDistinct(false);
         });
 
         var names = new ValueComparer<Dictionary<string, string>>(

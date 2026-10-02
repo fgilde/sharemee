@@ -312,7 +312,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         var list = await (await access.VisibleAsync(workspaces, cancellationToken)).OrderBy(w => w.Name).ToListAsync(cancellationToken);
         var myRoles = await MyRolesAsync(list.Select(w => w.Id).ToList(), cancellationToken);
         var ids = list.Select(w => w.Id).ToList();
-        var counts = await db.Set<Node>().AsNoTracking().Where(n => n.ParentId != null && ids.Contains(n.ParentId.Value) && !(n is WorkTask)).GroupBy(n => n.ParentId!.Value)
+        var counts = await (await access.VisibleAsync(db.Set<Node>().AsNoTracking(), cancellationToken)).Where(n => n.ParentId != null && ids.Contains(n.ParentId.Value) && !(n is WorkTask)).GroupBy(n => n.ParentId!.Value)
             .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, cancellationToken);
         IReadOnlyList<WorkspaceDto> dtos = list.Select(w => Map(w, counts.GetValueOrDefault(w.Id), myRoles.GetValueOrDefault(w.Id))).ToList();
         return Result<IReadOnlyList<WorkspaceDto>>.Success(dtos);

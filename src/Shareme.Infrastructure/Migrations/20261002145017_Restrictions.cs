@@ -33,10 +33,12 @@ namespace Shareme.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Restrictions_RoleId",
+                name: "IX_Restrictions_TenantId_RoleId_Kind_PropertyKey_Value",
                 schema: "sm",
                 table: "Restrictions",
-                column: "RoleId");
+                columns: new[] { "TenantId", "RoleId", "Kind", "PropertyKey", "Value" },
+                unique: true)
+                .Annotation("Npgsql:NullsDistinct", false);
         }
 
         /// <inheritdoc />

@@ -3047,7 +3047,10 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoleId");
+                    b.HasIndex("TenantId", "RoleId", "Kind", "PropertyKey", "Value")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "RoleId", "Kind", "PropertyKey", "Value"), false);
 
                     b.ToTable("Restrictions", "sm");
                 });

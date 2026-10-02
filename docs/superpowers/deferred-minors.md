@@ -2,6 +2,16 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P5d (restrictions, runs overview)
+
+- [ ] Restrictions follow tenant wide roles (direct and through groups), not roles granted on single folders or workspaces.
+- [ ] Property keys, list values and rendition kinds of restrictions are not checked against the catalog (Graph sits below Metadata and Assets).
+- [ ] Property sets and groups still list hidden keys; metadata admins with a hidden property cannot manage that definition.
+- [ ] Rule and AI writes as the triggering user fail on read only properties with a generic report line.
+- [ ] Renditions are cached `immutable` in browsers, so a new block does not reach copies fetched before.
+- [ ] No GIN index on `Metadata` for the jsonb containment filters; add one when tenants hide many values.
+- [ ] Check that `Jobs.View` (Hangfire dashboard across tenants) stays a host permission.
+
 ## From P5c (AI tagging)
 
 - [ ] Rule actions keep a copy of the extraction's target key, so `OnlyIfEmpty` looks at the old property after the target changes.

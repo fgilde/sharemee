@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261002143515_Restrictions")]
+    [Migration("20261002145017_Restrictions")]
     partial class Restrictions
     {
         /// <inheritdoc />
@@ -3050,7 +3050,10 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoleId");
+                    b.HasIndex("TenantId", "RoleId", "Kind", "PropertyKey", "Value")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "RoleId", "Kind", "PropertyKey", "Value"), false);
 
                     b.ToTable("Restrictions", "sm");
                 });

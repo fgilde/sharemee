@@ -29,7 +29,7 @@ public sealed class ShareMeGraphModule : CoworkeeModule, IWebModule
         services.AddScoped<RestrictionStore>();
         services.AddScoped<IResourceRestriction, NodeRestriction>();
         services.AddScoped(provider => new Restrictions(
-            provider.GetRequiredService<RestrictionStore>(), provider.GetRequiredService<IPermissionChecker>(), provider.GetRequiredService<Coworkee.Core.Security.ICurrentUser>()));
+            provider.GetRequiredService<CoworkeeDbContext>(), provider.GetRequiredService<RestrictionStore>(), provider.GetRequiredService<IPermissionChecker>(), provider.GetRequiredService<Coworkee.Core.Security.ICurrentUser>()));
         services.AddScoped<NodeMapper>();
         services.AddScoped<IRealtimeTopicAuthorizer, ChildrenTopicAuthorizer>();
     }

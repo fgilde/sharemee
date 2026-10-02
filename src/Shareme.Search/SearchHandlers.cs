@@ -315,6 +315,11 @@ internal sealed class SearchHandlers(
             filters.Add(new SearchFilter(NodeFields.Readers, FilterOperator.IdentifierEquals, keys));
         }
 
+        if ((await access.RestrictionsAsync(cancellationToken)).HiddenMarks().ToList() is { Count: > 0 } marks)
+        {
+            filters.Add(new SearchFilter(NodeFields.Restricted, FilterOperator.IdentifierNotEquals, marks));
+        }
+
         if (folderId is { } folder)
         {
             filters.Add(recursive

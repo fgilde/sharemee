@@ -25,11 +25,15 @@ internal static class NodeFields
     public const string Fulltext = "fulltext";
     public const string IndexedAt = "indexedAt";
 
+    /// <summary>Marks of restricted list values on the node or above it, so searches leave such nodes out (also from totals and facets).</summary>
+    public const string Restricted = "restricted";
+
     public static readonly IReadOnlyList<SearchField> Static =
     [
         new(Id, SearchFieldType.Keyword),
         new(Tenant, SearchFieldType.Keyword),
         new(Readers, SearchFieldType.Keyword),
+        new(Restricted, SearchFieldType.Keyword),
         new(ParentId, SearchFieldType.Keyword),
         new(PathIds, SearchFieldType.Keyword),
         new(SearchFields.Name, SearchFieldType.Text),
@@ -125,6 +129,14 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
         var interrupted = (await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id) && n.InterruptInheritance).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
         var principals = await access.GetPrincipalsAsync(NodePermissions.Read, NodePermissions.ResourceType, pathIds, cancellationToken);
 
+        // restrictions of any role: hidden properties stay out of full text, hidden list values mark the node and everything below
+        var restrictions = await db.Set<Restriction>().AsNoTracking().ToListAsync(cancellationToken);
+        var hiddenProperties = restrictions.Where(r => r.Kind == RestrictionKinds.HiddenProperty).Select(r => r.PropertyKey).OfType<string>().ToHashSet();
+        var hiddenValues = restrictions.Where(r => r.Kind == RestrictionKinds.HiddenListValue && r.PropertyKey is not null && r.Value is not null).Select(r => (Key: r.PropertyKey!, Value: r.Value!)).Distinct().ToList();
+        var chainMetadata = hiddenValues.Count == 0
+            ? []
+            : await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id)).ToDictionaryAsync(n => n.Id, n => n.Metadata, cancellationToken);
+
         var indexedAt = clock.GetUtcNow();
         var documents = new List<SearchDocument>(nodes.Count);
         foreach (var node in nodes)
@@ -177,8 +189,16 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
             {
                 if (definitions.TryGetValue(key, out var definition) && definition.AppliesTo(typeKey))
                 {
-                    AddMetadata(body, fulltext, definition, values);
+                    AddMetadata(body, hiddenProperties.Contains(key) ? [] : fulltext, definition, values);
                 }
+            }
+
+            var marks = hiddenValues.Where(h => node.PathIds.Any(id => chainMetadata.TryGetValue(id, out var metadata)
+                    && metadata.TryGetValue(h.Key, out var values) && values.Any(v => v.List == h.Value)))
+                .Select(h => RestrictionSet.Mark(h.Key, h.Value)).ToList();
+            if (marks.Count > 0)
+            {
+                body[NodeFields.Restricted] = Array(marks);
             }
 
             body[NodeFields.Fulltext] = string.Join(' ', fulltext.Where(t => !string.IsNullOrWhiteSpace(t)));

@@ -284,8 +284,11 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
         var assets = await AssetSelection.WithPermissionAsync(db, access, found.OrderBy(a => ids.IndexOf(a.Id)).ToList(), NodePermissions.Read, cancellationToken);
         var versions = await AssetSelection.CurrentVersionsAsync(db, assets, cancellationToken);
         var now = clock.GetUtcNow();
+
+        // names only use values the caller may see
+        var restrictions = await access.RestrictionsAsync(cancellationToken);
         IReadOnlyList<string> names = assets.Where(a => versions.ContainsKey(a.Id)).Select((asset, index) => FileNames.Apply(request.Format, request.Casing,
-            new FileNames.Context(FileNames.Stem(versions[asset.Id].FileName, versions[asset.Id].Extension), versions[asset.Id].Extension, index + 1, assets.Count, now, asset.AssetTypeKey, DownloadKinds.Original, asset.Metadata)))
+            new FileNames.Context(FileNames.Stem(versions[asset.Id].FileName, versions[asset.Id].Extension), versions[asset.Id].Extension, index + 1, assets.Count, now, asset.AssetTypeKey, DownloadKinds.Original, restrictions.Visible(asset.Metadata))))
             .ToList();
         return Result<IReadOnlyList<string>>.Success(names);
     }
@@ -299,10 +302,13 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
             return Error.Validation("Kind", "Choose originals or an existing rendition.");
         }
 
-        if ((await access.RestrictionsAsync(cancellationToken)).BlockedRenditions.Contains(request.Kind))
+        var restrictions = await access.RestrictionsAsync(cancellationToken);
+        if (restrictions.BlockedRenditions.Contains(request.Kind))
         {
             return Error.Forbidden("downloads.rendition_blocked", "You may not fetch this rendition.");
         }
+
+        Dictionary<string, List<MetadataValue>> visibleMetadata(Asset asset) => restrictions.Visible(asset.Metadata);
 
         var naming = request.NamingId is { } namingId
             ? await db.Set<FileNamingDefinition>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == namingId, cancellationToken)
@@ -354,7 +360,7 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
             }
 
             var fileName = FileNames.Apply(naming?.Format ?? FileNamingTokens.DefaultFormat, naming?.Casing ?? FileNamingCasings.None,
-                new FileNames.Context(FileNames.Stem(version.FileName, version.Extension), extension, items.Count + 1, readable.Count, now, asset.AssetTypeKey, request.Kind, asset.Metadata));
+                new FileNames.Context(FileNames.Stem(version.FileName, version.Extension), extension, items.Count + 1, readable.Count, now, asset.AssetTypeKey, request.Kind, visibleMetadata(asset)));
             var folder = string.Join('/', asset.PathIds.Where(folderNames.ContainsKey).Select(id => folderNames[id]));
             items.Add(new DownloadItem(key, FileNames.Unique(folder.Length > 0 ? folder + "/" + fileName : fileName, FileNames.Clean(extension), taken)));
         }
@@ -421,9 +427,9 @@ internal static class AssetSelection
     public static async Task<IReadOnlyList<T>> WithPermissionAsync<T>(CoworkeeDbContext db, NodeAccess access, IReadOnlyList<T> assets, string permission, CancellationToken cancellationToken)
         where T : Node
     {
-        // nodes with a list value hidden from the caller drop out first
-        var restrictions = await access.RestrictionsAsync(cancellationToken);
-        assets = assets.Where(a => !restrictions.Hides(a)).ToList();
+        // nodes with a list value hidden from the caller (on them or above them) drop out first
+        var visible = await access.VisibleIdsAsync(assets.Select(a => a.Id).ToList(), cancellationToken);
+        assets = assets.Where(a => visible.Contains(a.Id)).ToList();
         if (assets.Count == 0 || await access.IsGlobalAsync(permission, cancellationToken))
         {
             return assets;

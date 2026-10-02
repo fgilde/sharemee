@@ -274,10 +274,16 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         }
 
         var typeKey = await db.Set<NodeType>().Where(t => t.Id == node.NodeTypeId).Select(t => t.Key).SingleAsync(cancellationToken);
+
+        // rules act for the user: what is hidden from them is missing for conditions and templates (the node is not tracked)
+        _hidden = (await access.RestrictionsAsync(cancellationToken)).HiddenProperties;
+        node.Metadata = node.Metadata.Where(p => !_hidden.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value);
         return new Context(new RuleContext(node, typeKey, changed, isNewVersion, isNewNode));
     }
 
     public sealed record Context(RuleContext Rule);
+
+    private IReadOnlySet<string> _hidden = new HashSet<string>();
 
     private static readonly HashSet<string> ChangeOperators = [RuleOperators.ValueChanged, RuleOperators.IsNewVersion, RuleOperators.IsNewNode];
 
@@ -471,6 +477,11 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
     /// <summary>The node's own value, else the nearest ancestor's.</summary>
     private async Task<string> InAscendantsAsync(Node node, string key, CancellationToken cancellationToken)
     {
+        if (_hidden.Contains(key))
+        {
+            return string.Empty;
+        }
+
         if (First(node, key) is { Length: > 0 } own)
         {
             return own;

@@ -11,9 +11,14 @@ using Shareme.Contracts.Metadata;
 
 namespace Shareme.Graph;
 
-/// <summary>Takes something away from users with the role: a property, nodes with a list value, or a rendition kind.</summary>
-public sealed class Restriction : AuditedEntity, IMultiTenant
+/// <summary>Restrictions of the tenant changed; the search index keeps hidden values out of full text and marks hidden nodes.</summary>
+public sealed record RestrictionsChanged : IDomainEvent;
+
+/// <summary>Takes something away from users with the role: a property, nodes with a list value (and everything below them), or a rendition kind.</summary>
+public sealed class Restriction : AuditedAggregateRoot, IMultiTenant
 {
+    public void Changed() => Raise(new RestrictionsChanged());
+
     public Guid RoleId { get; set; }
 
     public required string Kind { get; set; }
@@ -36,7 +41,14 @@ public sealed record RestrictionSet(
     public bool Hides(IReadOnlyDictionary<string, List<MetadataValue>> metadata) =>
         HiddenListValues.Any(h => metadata.TryGetValue(h.Key, out var values) && values.Any(v => v.List == h.Value));
 
-    public bool Hides(Node node) => Hides(node.Metadata);
+    /// <summary>The values without hidden properties, for anything that shows or uses them on behalf of the user.</summary>
+    public Dictionary<string, List<MetadataValue>> Visible(IReadOnlyDictionary<string, List<MetadataValue>> metadata) =>
+        metadata.Where(p => !HiddenProperties.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+
+    /// <summary>The marks of hidden list values, as they are indexed for search.</summary>
+    public IEnumerable<string> HiddenMarks() => HiddenListValues.Select(h => Mark(h.Key, h.Value));
+
+    public static string Mark(string key, string value) => $"{key}={value}";
 
     public bool CannotChange(string key) => HiddenProperties.Contains(key) || ReadOnlyProperties.Contains(key);
 
@@ -67,10 +79,9 @@ internal sealed class RestrictionStore(CoworkeeDbContext db)
             Keys(RestrictionKinds.BlockedRendition, r => r.Value));
     }
 
-    public void Forget() => _all = null;
 }
 
-/// <summary>Nodes with a hidden list value are out of reach for every permission, also for holders of a global grant.</summary>
+/// <summary>Nodes with a hidden list value, and everything below them, are out of reach for every permission, also for holders of a global grant.</summary>
 internal sealed class NodeRestriction(CoworkeeDbContext db, RestrictionStore store) : IResourceRestriction
 {
     public string ResourceType => NodePermissions.ResourceType;
@@ -78,26 +89,27 @@ internal sealed class NodeRestriction(CoworkeeDbContext db, RestrictionStore sto
     public async Task<bool> IsRestrictedAsync(Guid resourceId, IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken)
     {
         var set = await store.ForRolesAsync(roleIds, cancellationToken);
-        if (set.HiddenListValues.Count == 0)
+        if (set.HiddenListValues.Count == 0 || await db.Set<Node>().AsNoTracking().Where(n => n.Id == resourceId).Select(n => n.Path).SingleOrDefaultAsync(cancellationToken) is not { } path)
         {
             return false;
         }
 
-        var metadata = await db.Set<Node>().AsNoTracking().Where(n => n.Id == resourceId).Select(n => n.Metadata).SingleOrDefaultAsync(cancellationToken);
-        return metadata is not null && set.Hides(metadata);
+        var chain = NodePaths.Ids(path);
+        return (await db.Set<Node>().AsNoTracking().Where(n => chain.Contains(n.Id)).Select(n => n.Metadata).ToListAsync(cancellationToken)).Any(set.Hides);
     }
 }
 
 /// <summary>The restrictions of the current user (also when acting for someone in a job).</summary>
 public sealed class Restrictions
 {
+    private readonly CoworkeeDbContext _db;
     private readonly RestrictionStore _store;
     private readonly IPermissionChecker _permissions;
     private readonly ICurrentUser _currentUser;
     private readonly Dictionary<Guid, RestrictionSet> _byUser = [];
 
-    internal Restrictions(RestrictionStore store, IPermissionChecker permissions, ICurrentUser currentUser) =>
-        (_store, _permissions, _currentUser) = (store, permissions, currentUser);
+    internal Restrictions(CoworkeeDbContext db, RestrictionStore store, IPermissionChecker permissions, ICurrentUser currentUser) =>
+        (_db, _store, _permissions, _currentUser) = (db, store, permissions, currentUser);
 
     public async Task<RestrictionSet> CurrentAsync(CancellationToken cancellationToken)
     {
@@ -114,17 +126,24 @@ public sealed class Restrictions
         return set;
     }
 
-    /// <summary>Leaves out nodes with a hidden list value.</summary>
+    /// <summary>Leaves out nodes with a hidden list value on themselves or on a node above them.</summary>
     public async Task<IQueryable<T>> VisibleAsync<T>(IQueryable<T> nodes, CancellationToken cancellationToken)
         where T : Node
     {
         foreach (var document in (await CurrentAsync(cancellationToken)).HiddenDocuments())
         {
-            nodes = nodes.Where(n => !EF.Functions.JsonContains(n.Metadata, document));
+            var hidden = _db.Set<Node>().Where(h => EF.Functions.JsonContains(h.Metadata, document));
+            nodes = nodes.Where(n => !hidden.Any(h => n.Path.StartsWith(h.Path)));
         }
 
         return nodes;
     }
+
+    /// <summary>The ids among the given ones the user may see as far as restrictions go.</summary>
+    public async Task<HashSet<Guid>> VisibleIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken) =>
+        (await CurrentAsync(cancellationToken)).HiddenListValues.Count == 0
+            ? ids.ToHashSet()
+            : (await (await VisibleAsync(_db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)), cancellationToken)).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
 }
 
 [RequiresPermission(NodePermissions.Admin)]
@@ -136,7 +155,7 @@ public sealed record SaveRestriction(RestrictionRequest Request) : ICommand<Resu
 [RequiresPermission(NodePermissions.Admin)]
 public sealed record DeleteRestriction(Guid Id) : ICommand<Result>;
 
-internal sealed class RestrictionHandlers(CoworkeeDbContext db)
+internal sealed class RestrictionHandlers(CoworkeeDbContext db, ICurrentUser currentUser)
     : IHandler<GetRestrictions, Result<IReadOnlyList<RestrictionDto>>>, IHandler<SaveRestriction, Result<RestrictionDto>>, IHandler<DeleteRestriction, Result>
 {
     public async Task<Result<IReadOnlyList<RestrictionDto>>> HandleAsync(GetRestrictions query, CancellationToken cancellationToken)
@@ -157,9 +176,14 @@ internal sealed class RestrictionHandlers(CoworkeeDbContext db)
             return Error.Validation("Kind", "A role and a known kind with its property and value are required.");
         }
 
-        if (!await db.Set<Coworkee.Identity.Domain.Role>().AnyAsync(r => r.Id == request.RoleId, cancellationToken))
+        if (!await db.Set<Coworkee.Identity.Domain.Role>().AnyAsync(r => r.Id == request.RoleId && (r.TenantId == null || r.TenantId == currentUser.TenantId), cancellationToken))
         {
             return Error.Validation("RoleId", "The role does not exist.");
+        }
+
+        if (request.Kind == RestrictionKinds.BlockedRendition && request.Value!.Trim() is "original" or "")
+        {
+            return Error.Validation("Value", "Originals are kept from users by the download permission, not by a restriction.");
         }
 
         var key = needsKey ? request.PropertyKey!.Trim() : null;
@@ -170,6 +194,7 @@ internal sealed class RestrictionHandlers(CoworkeeDbContext db)
         }
 
         var restriction = new Restriction { RoleId = request.RoleId, Kind = request.Kind, PropertyKey = key, Value = value };
+        restriction.Changed();
         db.Add(restriction);
         return Map(restriction);
     }
@@ -181,6 +206,7 @@ internal sealed class RestrictionHandlers(CoworkeeDbContext db)
             return Error.NotFound("restrictions.not_found", "The restriction does not exist.");
         }
 
+        restriction.Changed();
         db.Remove(restriction);
         return Result.Success();
     }

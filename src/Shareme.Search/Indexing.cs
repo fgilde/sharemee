@@ -172,6 +172,37 @@ internal sealed class ReindexJob(CoworkeeDbContext db, NodeIndexer indexer, ICur
     }
 }
 
+/// <summary>New restrictions change what goes into full text and which nodes are marked hidden: the tenant is indexed again (a running rebuild picks them up already for what it has not done yet).</summary>
+internal sealed class IndexOnRestrictionsChanged(CoworkeeDbContext db, IBackgroundJobs jobs, ICurrentUser currentUser, TimeProvider clock) : IDomainEventHandler<RestrictionsChanged>
+{
+    public async Task HandleAsync(RestrictionsChanged domainEvent, CancellationToken cancellationToken)
+    {
+        if (await db.Set<ReindexRun>().AnyAsync(r => r.State == "queued", cancellationToken))
+        {
+            return;
+        }
+
+        var run = new ReindexRun { State = "queued", StartedAt = clock.GetUtcNow(), StartedBy = currentUser.UserId };
+        db.Add(run);
+        await db.SaveChangesAsync(cancellationToken);
+        jobs.Enqueue<ReindexJob, Guid>(run.Id, SearchQueue.Name);
+    }
+}
+
+/// <summary>A restricted list value set or removed on a folder marks or unmarks everything below it.</summary>
+internal sealed class IndexOnRestrictedValueChanged(CoworkeeDbContext db, IBackgroundJobs jobs) : IDomainEventHandler<Shareme.Metadata.NodeMetadataChanged>
+{
+    public async Task HandleAsync(Shareme.Metadata.NodeMetadataChanged domainEvent, CancellationToken cancellationToken)
+    {
+        var keys = domainEvent.Keys.ToList();
+        if (await db.Set<Restriction>().AnyAsync(r => r.Kind == RestrictionKinds.HiddenListValue && r.PropertyKey != null && keys.Contains(r.PropertyKey), cancellationToken)
+            && await db.Set<Node>().AnyAsync(n => n.ParentId == domainEvent.NodeId, cancellationToken))
+        {
+            jobs.Enqueue<IndexSubtreeJob, Guid>(domainEvent.NodeId, SearchQueue.Name);
+        }
+    }
+}
+
 /// <summary>Keeps the index in step with the graph: the node itself, or its whole subtree when paths or access change.</summary>
 internal sealed class IndexOnNodeChanged(IBackgroundJobs jobs) : IDomainEventHandler<NodeChanged>
 {

@@ -94,6 +94,13 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
                 continue;
             }
 
+            // hidden properties do not exist for the user, so sending a value tells nothing about the stored one
+            if (restricted.HiddenProperties.Contains(key))
+            {
+                Fail(key, $"No property '{key}' applies to '{typeKey}'.");
+                continue;
+            }
+
             var current = node.Metadata.GetValueOrDefault(key) ?? [];
             if (!Writable(definition))
             {

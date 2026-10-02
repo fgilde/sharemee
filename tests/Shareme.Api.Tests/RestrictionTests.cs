@@ -7,6 +7,7 @@ using Shareme.Contracts.Assets;
 using Shareme.Contracts.Automation;
 using Shareme.Contracts.Graph;
 using Shareme.Contracts.Metadata;
+using Shareme.Contracts.Search;
 
 namespace Shareme.Api.Tests;
 
@@ -66,6 +67,9 @@ public sealed class RestrictionTests(ApiFixture api) : IAsyncLifetime
         (await _user.GetFromJsonAsync<PropertyDefinitionDto[]>("/api/v1/metadata/definitions", Ct))!.Select(d => d.Key).ShouldNotContain("secret");
 
         (await _user.PatchAsJsonAsync($"/api/v1/nodes/{_public}/metadata", new Dictionary<string, List<MetadataValue>?> { ["secret"] = [Text("mine")] }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        // guessing the stored value right answers the same as guessing wrong
+        (await _user.PatchAsJsonAsync($"/api/v1/nodes/{_public}/metadata", new Dictionary<string, List<MetadataValue>?> { ["secret"] = [Text("s1")] }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await _user.PatchAsJsonAsync($"/api/v1/nodes/{_public}/metadata", new Dictionary<string, List<MetadataValue>?> { ["status"] = [Text("done")] }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
         // replacing everything keeps what the user may not change
@@ -79,6 +83,13 @@ public sealed class RestrictionTests(ApiFixture api) : IAsyncLifetime
         var export = await (await _user.PostAsJsonAsync("/api/v1/exports", new ExportRequest(NodeIds: [_public], Format: ExportFormats.Csv), Ct)).Content.ReadAsStringAsync(Ct);
         export.ShouldNotContain("secret");
         export.ShouldContain("status");
+
+        // file names built from metadata do not carry hidden values either
+        var file = (await WorkspaceTests.UploadAsync(Admin, "named.txt", "named"u8.ToArray(), _public)).AssetId;
+        (await Admin.PatchAsJsonAsync($"/api/v1/nodes/{file}/metadata", new Dictionary<string, List<MetadataValue>?> { ["secret"] = [Text("topsecret")] }, Ct)).EnsureSuccessStatusCode();
+        var names = await (await _user.PostAsJsonAsync("/api/v1/file-namings/preview", new FileNamingPreviewRequest("{meta:secret}-{name}", [file]), Ct)).Content.ReadAsStringAsync(Ct);
+        names.ShouldNotContain("topsecret");
+        (await (await Admin.PostAsJsonAsync("/api/v1/file-namings/preview", new FileNamingPreviewRequest("{meta:secret}-{name}", [file]), Ct)).Content.ReadAsStringAsync(Ct)).ShouldContain("topsecret");
     }
 
     [Fact]
@@ -95,6 +106,19 @@ public sealed class RestrictionTests(ApiFixture api) : IAsyncLifetime
 
         (await Admin.GetFromJsonAsync<JsonElement>($"/api/v1/nodes/{_folder}/children", Ct)).GetProperty("items").GetArrayLength().ShouldBe(2);
         (await Admin.GetAsync($"/api/v1/nodes/{_confidential}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // what lies below a hidden folder is hidden too, also in search (totals included)
+        var inner = await FolderAsync("inner", _confidential);
+        (await _user.GetAsync($"/api/v1/nodes/{inner}", Ct)).IsSuccessStatusCode.ShouldBeFalse();
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        SearchResponse found;
+        while ((found = await SearchAsync(_user)).Total != 1 || (await SearchAsync(Admin)).Total != 3)
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, $"search did not settle: {found.Total}");
+            await Task.Delay(500, Ct);
+        }
+
+        found.Items.Single().Name.ShouldBe("open");
     }
 
     [Fact]
@@ -136,6 +160,9 @@ public sealed class RestrictionTests(ApiFixture api) : IAsyncLifetime
         mine.Runs.ShouldBeEmpty();
         mine.DashboardUrl.ShouldBeNull();
     }
+
+    private async Task<SearchResponse> SearchAsync(HttpClient client) =>
+        (await (await client.PostAsJsonAsync("/api/v1/search", new SearchRequest(FolderId: _folder), Ct)).Content.ReadFromJsonAsync<SearchResponse>(Ct))!;
 
     private async Task<RestrictionDto> RestrictAsync(string kind, string? key = null, string? value = null)
     {

@@ -156,6 +156,11 @@ internal sealed class ShareHandlers(
             return Error.Validation("RenditionKinds", "Share originals or at least one rendition.");
         }
 
+        if (kinds.Intersect((await access.RestrictionsAsync(cancellationToken)).BlockedRenditions).FirstOrDefault() is { } blocked)
+        {
+            return Error.Validation("RenditionKinds", $"You may not fetch '{blocked}' renditions, so you cannot share them.");
+        }
+
         if (Emails(request.RecipientEmails ?? []) is not { Count: > 0 and <= MaxRecipients } emails)
         {
             return Error.Validation("RecipientEmails", $"Name 1 to {MaxRecipients} valid e-mail addresses.");
@@ -243,7 +248,8 @@ internal sealed class ShareHandlers(
             var downloadable = (await AssetSelection.WithPermissionAsync(db, access, assets, AssetPermissions.Download, cancellationToken)).Select(a => a.Id).ToHashSet();
             var watermarked = await RenditionAccess.WatermarkedAsync(db, cancellationToken);
             var assetOfVersion = assets.Where(a => a.CurrentVersionId is not null).ToDictionary(a => a.CurrentVersionId!.Value, a => a.Id);
-            var ready = (await db.Set<Derivation>().AsNoTracking().Where(d => versionIds.Contains(d.VersionId) && d.State == DerivationStates.Ready && share.RenditionKinds.Contains(d.Kind))
+            var kinds = await KindsAsync(share, cancellationToken);
+            var ready = (await db.Set<Derivation>().AsNoTracking().Where(d => versionIds.Contains(d.VersionId) && d.State == DerivationStates.Ready && kinds.Contains(d.Kind))
                     .Select(d => new { d.VersionId, d.Kind, d.IsManual }).ToListAsync(cancellationToken))
                 .Where(d => !RenditionAccess.NeedsDownload(d.Kind, d.IsManual, watermarked) || downloadable.Contains(assetOfVersion[d.VersionId]))
                 .ToLookup(d => d.VersionId, d => d.Kind);
@@ -256,7 +262,7 @@ internal sealed class ShareHandlers(
                 a.Id, a.Name, a.CurrentVersionId is { } v ? mimeTypes.GetValueOrDefault(v) : null,
                 [.. downloadable.Contains(a.Id) ? [DownloadKinds.Original] : Array.Empty<string>(), .. a.CurrentVersionId is { } version ? ready[version] : []])).ToList();
             await db.SaveChangesAsync(cancellationToken);
-            return new PublicShareDto(share.Name, share.ValidUntil, share.AllowOriginals, share.RenditionKinds, items);
+            return new PublicShareDto(share.Name, share.ValidUntil, share.AllowOriginals, kinds, items);
         }
     }
 
@@ -287,7 +293,7 @@ internal sealed class ShareHandlers(
                 return new BlobDownload(original, version.FileName, version.MimeType, version.Sha256, version.CreatedAt);
             }
 
-            if (!share.RenditionKinds.Contains(query.Kind)
+            if (!(await KindsAsync(share, cancellationToken)).Contains(query.Kind)
                 || await db.Set<Derivation>().AsNoTracking().SingleOrDefaultAsync(d => d.VersionId == versionId && d.Kind == query.Kind && d.State == DerivationStates.Ready, cancellationToken)
                     is not { BlobKey: { } key } derivation
                 || (RenditionAccess.NeedsDownload(derivation.Kind, derivation.IsManual, await RenditionAccess.WatermarkedAsync(db, cancellationToken))
@@ -313,7 +319,7 @@ internal sealed class ShareHandlers(
         using (ActAs(share))
         {
             var original = command.Kind == DownloadKinds.Original;
-            if (original ? !share.AllowOriginals : !share.RenditionKinds.Contains(command.Kind))
+            if (original ? !share.AllowOriginals : !(await KindsAsync(share, cancellationToken)).Contains(command.Kind))
             {
                 return Error.Validation("Kind", "This share does not include these files.");
             }
@@ -392,6 +398,10 @@ internal sealed class ShareHandlers(
     }
 
     /// <summary>Public requests run with the rights of the share's owner: what they can no longer read, the share no longer shows.</summary>
+    /// <summary>The share's renditions the owner may still fetch; called while acting as the owner.</summary>
+    private async Task<List<string>> KindsAsync(Share share, CancellationToken cancellationToken) =>
+        share.RenditionKinds.Except((await access.RestrictionsAsync(cancellationToken)).BlockedRenditions).ToList();
+
     private static IDisposable ActAs(Share share) => CurrentUserScope.Begin(new ImpersonatedUser(share.OwnerId, share.TenantId));
 
     /// <summary>The workspace's own assets and the linked ones the owner may read; nothing when the workspace is gone or the owner lost access.</summary>
