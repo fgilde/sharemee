@@ -335,7 +335,7 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
         var oldPrefix = node.Path;
         node.PlaceUnder(target);
         await RebaseDescendantsAsync(db, node, oldPrefix, cancellationToken);
-        node.MarkChanged("moved");
+        node.MarkChanged(NodeChangeKinds.Moved);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result.Success();
@@ -358,7 +358,12 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return NodeErrors.NotFound;
         }
 
-        node.InterruptInheritance = command.Interrupt;
+        if (node.InterruptInheritance != command.Interrupt)
+        {
+            node.InterruptInheritance = command.Interrupt;
+            node.MarkChanged(NodeChangeKinds.Permissions);
+        }
+
         return Result.Success();
     }
 
@@ -383,7 +388,7 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             member.DeletedWithId = node.Id;
         }
 
-        node.MarkChanged("deleted");
+        node.MarkChanged(NodeChangeKinds.Deleted);
         return Result.Success();
     }
 

@@ -16,8 +16,11 @@ public sealed class ApiFixture : PostgresFixture
 
     public ApiFactory Factory { get; private set; } = null!;
 
+    public static ElasticContainer Elastic { get; } = new();
+
     public override async ValueTask InitializeAsync()
     {
+        await Elastic.StartAsync();
         await base.InitializeAsync();
         Factory = new ApiFactory(this);
         await using var scope = Factory.Services.CreateAsyncScope();
@@ -52,7 +55,26 @@ public sealed class ApiFixture : PostgresFixture
     {
         await Factory.DisposeAsync();
         await base.DisposeAsync();
+        await Elastic.DisposeAsync();
     }
+}
+
+/// <summary>A single node Elasticsearch with a small heap and security off.</summary>
+public sealed class ElasticContainer : IAsyncDisposable
+{
+    private readonly DotNet.Testcontainers.Containers.IContainer _container = new DotNet.Testcontainers.Builders.ContainerBuilder("docker.elastic.co/elasticsearch/elasticsearch:9.1.4")
+        .WithEnvironment("discovery.type", "single-node")
+        .WithEnvironment("xpack.security.enabled", "false")
+        .WithEnvironment("ES_JAVA_OPTS", "-Xms512m -Xmx512m")
+        .WithPortBinding(9200, true)
+        .WithWaitStrategy(DotNet.Testcontainers.Builders.Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(9200).ForPath("/_cluster/health")))
+        .Build();
+
+    public string Url => $"http://{_container.Hostname}:{_container.GetMappedPublicPort(9200)}";
+
+    public Task StartAsync() => _container.StartAsync();
+
+    public ValueTask DisposeAsync() => _container.DisposeAsync();
 }
 
 public sealed class ApiFactory(PostgresFixture postgres) : PostgresWebApplicationFactory<Program>(postgres, ShareMeInfrastructureModule.ConnectionStringName)
@@ -67,6 +89,9 @@ public sealed class ApiFactory(PostgresFixture postgres) : PostgresWebApplicatio
         builder.UseSetting("Coworkee:Jobs:Queues:0", "default");
         builder.UseSetting("Coworkee:Jobs:Queues:1", "mail");
         builder.UseSetting("Coworkee:Jobs:Queues:2", "processing");
+        builder.UseSetting("Coworkee:Jobs:Queues:3", "search");
+        builder.UseSetting("ConnectionStrings:elasticsearch", ApiFixture.Elastic.Url);
+        builder.UseSetting("Shareme:Search:Alias", "shareme-tests-" + Guid.NewGuid().ToString("N")[..8]);
         builder.UseSetting("Coworkee:Storage:FileSystem:Root", Path.Combine(Path.GetTempPath(), "shareme-api-tests-blobs"));
         builder.ConfigureTestServices(services => services.AddTestAuthentication());
     }

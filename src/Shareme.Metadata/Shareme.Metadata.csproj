@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Shareme.Search" />
+    <InternalsVisibleTo Include="Shareme.Assets" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Graph\Shareme.Graph.csproj" />
   </ItemGroup>

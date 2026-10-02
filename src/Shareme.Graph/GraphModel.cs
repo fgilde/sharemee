@@ -44,6 +44,17 @@ public sealed class NodeType : Entity
 
 public sealed record NodeChanged(Guid NodeId, string Kind) : IDomainEvent;
 
+/// <summary>Kinds of <see cref="NodeChanged"/> that affect the whole subtree, not only the node.</summary>
+public static class NodeChangeKinds
+{
+    public const string Moved = "moved";
+    public const string Deleted = "deleted";
+    public const string Restored = "restored";
+    public const string Permissions = "permissions changed";
+
+    public static readonly IReadOnlySet<string> Subtree = new HashSet<string> { Moved, Deleted, Restored, Permissions };
+}
+
 [Realtime(NodePermissions.Read, ResourceType = NodePermissions.ResourceType)]
 public abstract class Node : AuditedAggregateRoot, IMultiTenant, ISoftDelete, IHasConcurrencyToken, IHasRealtimeTopics
 {
