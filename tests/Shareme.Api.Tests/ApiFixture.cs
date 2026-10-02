@@ -26,7 +26,7 @@ public sealed class ApiFixture : PostgresFixture
 
     protected override string[] SchemasToExclude => ["hangfire"];
 
-    protected override IReadOnlyList<(string Schema, string Table)> TablesToKeep => [("sm", "NodeTypes"), ("sm", "EdgeTypes")];
+    protected override IReadOnlyList<(string Schema, string Table)> TablesToKeep => [("sm", "NodeTypes"), ("sm", "EdgeTypes"), ("sm", "AssetTypes"), ("sm", "FileTypes")];
 
     public async Task ResetAllAsync()
     {
