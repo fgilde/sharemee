@@ -52,6 +52,12 @@ public static class DerivationKinds
     /// <summary>A playable copy of video (MP4) or audio (MP3).</summary>
     public const string Media = "media";
 
+    /// <summary>Internal: the full size still of non image files (video frame, page), kept so further renditions skip the heavy tool.</summary>
+    public const string Still = "still";
+
+    /// <summary>Kinds owned by the system; custom derivation types use other keys.</summary>
+    public static readonly IReadOnlySet<string> System = new HashSet<string> { Thumbnail, Preview, Media, Still };
+
     public static readonly IReadOnlyList<string> All = [Thumbnail, Preview, Media];
 
     /// <summary>The renditions planned for a file of this type.</summary>
@@ -67,9 +73,60 @@ public static class DerivationStates
     public const string NotSupported = "notsupported";
 }
 
-public sealed record DerivationDto(string Kind, string State, int? Width, int? Height);
+public sealed record DerivationDto(string Kind, string State, int? Width, int? Height, string? MimeType = null, long Size = 0, bool IsManual = false, string? Error = null);
 
+/// <summary>An asset; <see cref="CanDownload"/> tells whether the caller may fetch and view the original.</summary>
 public sealed record AssetDto(
-    Guid Id, Guid? FolderId, string Name, string AssetType, string Status, AssetVersionDto? CurrentVersion, IReadOnlyList<AssetVersionDto> Versions, IReadOnlyList<DerivationDto> Derivations, string? RenditionTag = null);
+    Guid Id, Guid? FolderId, string Name, string AssetType, string Status, AssetVersionDto? CurrentVersion, IReadOnlyList<AssetVersionDto> Versions, IReadOnlyList<DerivationDto> Derivations,
+    string? RenditionTag = null, bool CanDownload = false);
+
+/// <summary>Originals of these types may be shown inline (no script can run in them); everything else is only downloaded.</summary>
+public static class InlineTypes
+{
+    public static readonly IReadOnlySet<string> All = new HashSet<string>
+    {
+        "application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "video/mp4", "video/webm", "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/mp4",
+        "text/plain", "text/csv",
+    };
+}
+
+public static class DerivationFormats
+{
+    public const string WebP = "webp";
+    public const string Jpeg = "jpeg";
+    public const string Png = "png";
+
+    public static readonly IReadOnlyList<string> All = [WebP, Jpeg, Png];
+
+    public static string MimeType(string format) => format switch { Jpeg => "image/jpeg", Png => "image/png", _ => "image/webp" };
+
+    public static string Extension(string? mimeType) => mimeType switch
+    {
+        "image/jpeg" => ".jpg",
+        "image/png" => ".png",
+        "video/mp4" => ".mp4",
+        "audio/mpeg" => ".mp3",
+        _ => ".webp",
+    };
+}
+
+/// <summary>A rendition an organisation defines: rendered for every matching asset (default), on request, or uploaded by hand.</summary>
+public sealed record DerivationTypeDto(
+    Guid Id, string Key, string Name, int Width, int Height, string Format, int Quality, bool IsDefault, bool IsOnDemand, bool AllowManualUpload, Guid? WatermarkId,
+    IReadOnlyList<string> AssetTypeKeys);
+
+public sealed record DerivationTypeRequest(
+    string Key, string Name, int Width, int Height, string Format = DerivationFormats.WebP, int Quality = 85, bool IsDefault = false, bool IsOnDemand = true,
+    bool AllowManualUpload = false, Guid? WatermarkId = null, IReadOnlyList<string>? AssetTypeKeys = null);
+
+public static class WatermarkPositions
+{
+    public static readonly IReadOnlyList<string> All = ["center", "northwest", "north", "northeast", "west", "east", "southwest", "south", "southeast"];
+}
+
+/// <summary>An overlay image for renditions; with a trigger it only applies to assets whose property holds the value (a list value key or "true").</summary>
+public sealed record WatermarkDto(Guid Id, string Name, bool HasImage, string Position, int Opacity, int ScalePercent, string? TriggerProperty, string? TriggerValue);
+
+public sealed record WatermarkRequest(string Name, string Position = "southeast", int Opacity = 50, int ScalePercent = 25, string? TriggerProperty = null, string? TriggerValue = null);
 
 public sealed record DownloadLinkDto(string Url, DateTimeOffset ExpiresAt);

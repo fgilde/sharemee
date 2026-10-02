@@ -173,8 +173,8 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
 
         var rendered = await DerivationsAsync(image.AssetId);
-        rendered.Single(d => d.Kind == DerivationKinds.Thumbnail).ShouldBe(new DerivationDto(DerivationKinds.Thumbnail, DerivationStates.Ready, 320, 160));
-        rendered.Single(d => d.Kind == DerivationKinds.Preview).ShouldBe(new DerivationDto(DerivationKinds.Preview, DerivationStates.Ready, 1600, 800));
+        rendered.Single(d => d.Kind == DerivationKinds.Thumbnail).ShouldBe(new DerivationDto(DerivationKinds.Thumbnail, DerivationStates.Ready, 320, 160, "image/webp"), new SizeIgnored());
+        rendered.Single(d => d.Kind == DerivationKinds.Preview).ShouldBe(new DerivationDto(DerivationKinds.Preview, DerivationStates.Ready, 1600, 800, "image/webp"), new SizeIgnored());
         (await DerivationsAsync(archive.AssetId)).ShouldAllBe(d => d.State == DerivationStates.NotSupported);
 
         using var thumbnail = await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/{DerivationKinds.Thumbnail}", Ct);
@@ -226,6 +226,109 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         using var media = await Admin.GetAsync($"/api/v1/assets/{video.AssetId}/derivations/{DerivationKinds.Media}", Ct);
         media.Content.Headers.ContentType!.MediaType.ShouldBe("video/mp4");
         (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{video.AssetId}", Ct))!.CurrentVersion!.TechnicalMetadata.ShouldNotBeNull().ShouldNotBeEmpty();
+
+        // the poster frame is kept (but not listed), so a rendition asked for later comes from it
+        rendered.ShouldNotContain(d => d.Kind == DerivationKinds.Still);
+        await using (var scope = api.Factory.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<ShareMeDbContext>().Set<Derivation>().IgnoreQueryFilters()
+                .SingleAsync(d => d.AssetId == video.AssetId && d.Kind == DerivationKinds.Still, Ct)).State.ShouldBe(DerivationStates.Ready);
+        }
+
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest("square", "Square", 100, 100), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsync($"/api/v1/assets/{video.AssetId}/derivations/square", null, Ct)).EnsureSuccessStatusCode();
+        (await DerivationsAsync(video.AssetId)).Single(d => d.Kind == "square").ShouldSatisfyAllConditions(d => d.State.ShouldBe(DerivationStates.Ready), d => d.Width.ShouldBe(100));
+    }
+
+    [Fact]
+    public async Task Custom_renditions_are_rendered_by_default_on_request_or_uploaded_by_hand_with_watermarks()
+    {
+        (await Admin.PostAsJsonAsync("/api/v1/metadata/definitions", new PropertyDefinitionRequest("confidential", "Confidential", PropertyValueTypes.Boolean), Ct)).EnsureSuccessStatusCode();
+        var always = await WatermarkAsync(new WatermarkRequest("Logo", "center", 100, 50));
+        var confidential = await WatermarkAsync(new WatermarkRequest("Confidential", "center", 100, 50, "confidential"));
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest("preview", "Taken", 100, 100), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest("web", "Web", 100, 100, "gif"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest(
+            "web", "Web", 400, 400, DerivationFormats.Jpeg, IsDefault: true, WatermarkId: always, AssetTypeKeys: [AssetTypeKeys.Image]), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest("social", "Social", 200, 200, DerivationFormats.Png, WatermarkId: confidential), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsJsonAsync("/api/v1/derivation-types", new DerivationTypeRequest("print", "Print", 4000, 4000, IsOnDemand: false, AllowManualUpload: true), Ct)).EnsureSuccessStatusCode();
+        var folder = await FolderAsync("Campaign");
+        using var picture = new ImageMagick.MagickImage(ImageMagick.MagickColors.Red, 800, 400);
+        var image = await UploadAsync(Admin, "red.png", picture.ToByteArray(ImageMagick.MagickFormat.Png), folder);
+        var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
+
+        var web = (await DerivationsAsync(image.AssetId)).Single(d => d.Kind == "web");
+        web.ShouldBe(new DerivationDto("web", DerivationStates.Ready, 400, 200, "image/jpeg"), new SizeIgnored());
+        (await CenterAsync(reader, image.AssetId, "web")).B.ShouldBeGreaterThan((byte)200, "the watermark covers the middle");
+
+        (await (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/social", null, Ct)).Content.ReadFromJsonAsync<DerivationDto>(Ct))!.State.ShouldBe(DerivationStates.Pending);
+        (await DerivationsAsync(image.AssetId)).Single(d => d.Kind == "social").ShouldBe(new DerivationDto("social", DerivationStates.Ready, 200, 100, "image/png"), new SizeIgnored());
+        (await CenterAsync(reader, image.AssetId, "social")).R.ShouldBeGreaterThan((byte)200, "the asset is not confidential");
+        (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/print", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        using var manual = new ImageMagick.MagickImage(ImageMagick.MagickColors.Green, 50, 50);
+        var manualBytes = manual.ToByteArray(ImageMagick.MagickFormat.Png);
+        (await Admin.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/print", new ByteArrayContent(manualBytes), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/print", new ByteArrayContent([0x50, 0x4B, 0x03, 0x04]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/web", new ByteArrayContent(manualBytes), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await reader.PutAsync($"/api/v1/assets/{image.AssetId}/derivations/print", new ByteArrayContent(manualBytes), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        // marked confidential and rendered again: the triggered watermark appears, the hand made rendition stays
+        (await Admin.PutAsJsonAsync($"/api/v1/nodes/{image.AssetId}/metadata", new Dictionary<string, List<MetadataValue>>
+        {
+            ["confidential"] = [new(V: JsonSerializer.SerializeToElement(true))],
+        }, Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/rerender", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var rerendered = await DerivationsAsync(image.AssetId);
+        rerendered.Single(d => d.Kind == "print").IsManual.ShouldBeTrue();
+        (await CenterAsync(reader, image.AssetId, "social")).B.ShouldBeGreaterThan((byte)200, "the asset is confidential now");
+        using var download = await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/print?download=true", Ct);
+        download.Content.Headers.ContentDisposition!.FileNameStar.ShouldBe("red-print.png");
+        (await download.Content.ReadAsByteArrayAsync(Ct)).ShouldBe(manualBytes);
+    }
+
+    [Fact]
+    public async Task Only_originals_that_cannot_run_anything_are_shown_inline()
+    {
+        var folder = await FolderAsync("Inline");
+        var pdf = await UploadAsync(Admin, "doc.pdf", MinimalPdf(), folder);
+        var archive = await UploadAsync(Admin, "bundle.zip", [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00], folder);
+        var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
+
+        using var view = await Admin.GetAsync($"/api/v1/assets/{pdf.AssetId}/view", Ct);
+        view.StatusCode.ShouldBe(HttpStatusCode.OK);
+        view.Content.Headers.ContentType!.MediaType.ShouldBe("application/pdf");
+        view.Content.Headers.ContentDisposition.ShouldBeNull();
+        view.Headers.GetValues("Content-Security-Policy").Single().ShouldStartWith("sandbox");
+        view.Headers.GetValues("X-Content-Type-Options").Single().ShouldBe("nosniff");
+        (await Admin.GetAsync($"/api/v1/assets/{archive.AssetId}/view", Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await reader.GetAsync($"/api/v1/assets/{pdf.AssetId}/view", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{pdf.AssetId}", Ct))!.CanDownload.ShouldBeTrue();
+        (await reader.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{pdf.AssetId}", Ct))!.CanDownload.ShouldBeFalse();
+    }
+
+    private async Task<Guid> WatermarkAsync(WatermarkRequest request)
+    {
+        var watermark = (await (await Admin.PostAsJsonAsync("/api/v1/watermarks", request, Ct)).Content.ReadFromJsonAsync<WatermarkDto>(Ct))!;
+        using var blue = new ImageMagick.MagickImage(ImageMagick.MagickColors.Blue, 100, 100);
+        (await Admin.PutAsync($"/api/v1/watermarks/{watermark.Id}/image", new ByteArrayContent(blue.ToByteArray(ImageMagick.MagickFormat.Png)), Ct)).EnsureSuccessStatusCode();
+        return watermark.Id;
+    }
+
+    private static async Task<ImageMagick.IMagickColor<byte>> CenterAsync(HttpClient client, Guid assetId, string kind)
+    {
+        using var response = await client.GetAsync($"/api/v1/assets/{assetId}/derivations/{kind}", Ct);
+        response.EnsureSuccessStatusCode();
+        using var image = new ImageMagick.MagickImage(await response.Content.ReadAsByteArrayAsync(Ct));
+        return image.GetPixels().GetPixel((int)image.Width / 2, (int)image.Height / 2).ToColor()!;
+    }
+
+    /// <summary>Compares renditions without their byte size, which depends on the encoder.</summary>
+    private sealed class SizeIgnored : IEqualityComparer<DerivationDto>
+    {
+        public bool Equals(DerivationDto? x, DerivationDto? y) => x! with { Size = 0 } == y! with { Size = 0 };
+
+        public int GetHashCode(DerivationDto obj) => (obj with { Size = 0 }).GetHashCode();
     }
 
     [Fact]

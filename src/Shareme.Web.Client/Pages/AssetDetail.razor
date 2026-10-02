@@ -1,12 +1,14 @@
 @page "/assets/{Id:guid}"
 @attribute [Authorize]
 @using Coworkee.Client.Blazor.Api
+@using Microsoft.AspNetCore.Components.Forms
 @using Coworkee.Contracts.Identity
 @using MudBlazor.Extensions.Components
 @using Shareme.Contracts.Assets
 @using Shareme.Contracts.Graph
 @using Shareme.Web.Client.Assets
 @inject ISharemeApi Api
+@inject IRenditionsApi Renditions
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
@@ -24,7 +26,11 @@ else
         <MudText Typo="Typo.h4">@_asset.Name</MudText>
         <MudChip T="string" Size="Size.Small" Color="@StatusColor(_asset.Status)" data-testid="asset-status">@_asset.Status</MudChip>
         <MudSpacer />
-        @if (_asset.CurrentVersion is not null)
+        @if (CanView)
+        {
+            <MudToggleIconButton @bind-Toggled="_showOriginal" Icon="@Icons.Material.Outlined.Preview" ToggledIcon="@Icons.Material.Filled.Preview" title="Show the original" data-testid="show-original" />
+        }
+        @if (_asset is { CurrentVersion: not null, CanDownload: true })
         {
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download" Href="@AssetUrls.Download(_asset.Id)" data-testid="download">Download</MudButton>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Link" OnClick="CreateLinkAsync" data-testid="create-link">Share link</MudButton>
@@ -41,7 +47,11 @@ else
     <MudGrid>
         <MudItem xs="12" md="7">
             <MudPaper Outlined="true" Class="pa-2" Style="min-height:320px" data-testid="preview">
-                @if (Media is { State: DerivationStates.Ready })
+                @if (CanView && _showOriginal)
+                {
+                    <MudExFileDisplay Url="@AssetUrls.View(_asset.Id)" ContentType="@_asset.CurrentVersion!.MimeType" FileName="@_asset.CurrentVersion.FileName" ShowFileName="false" data-testid="original" />
+                }
+                else if (Media is { State: DerivationStates.Ready })
                 {
                     <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Media, _asset.RenditionTag)" ContentType="@MediaType" FileName="@_asset.Name" ShowFileName="false" />
                 }
@@ -96,6 +106,42 @@ else
                 {
                     <MudText Typo="Typo.body2">No technical data was read from this file.</MudText>
                 }
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Renditions">
+            <div class="pa-4">
+                <MudSimpleTable Dense="true" Hover="true" data-testid="renditions">
+                    <thead><tr><th>Rendition</th><th>State</th><th>Size</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var (kind, name, type) in RenditionRows)
+                        {
+                            var derivation = _asset.Derivations.FirstOrDefault(d => d.Kind == kind);
+                            <tr data-rendition="@kind">
+                                <td>@name</td>
+                                <td>@(derivation?.State ?? "not created")@(derivation?.IsManual == true ? " (by hand)" : null)<MudText Typo="Typo.caption" Class="d-block">@derivation?.Error</MudText></td>
+                                <td>@(derivation is { Width: { } w, Height: { } h } ? $"{w} × {h}, " : null)@(derivation is { Size: > 0 } ? FormatSize(derivation.Size) : null)</td>
+                                <td style="text-align:right">
+                                    @if (derivation is { State: DerivationStates.Ready })
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.DownloadDerivation(_asset.Id, kind)" aria-label="Download rendition" />
+                                    }
+                                    else if (type is { IsOnDemand: true } && derivation?.State != DerivationStates.Pending)
+                                    {
+                                        <MudButton Size="Size.Small" OnClick="() => RunAsync(() => Renditions.RequestAsync(_asset.Id, kind))" data-testid="request-rendition">Create</MudButton>
+                                    }
+                                    @if (type is { AllowManualUpload: true })
+                                    {
+                                        <MudFileUpload T="IBrowserFile" Accept=".png,.jpg,.jpeg,.webp" FilesChanged="file => UploadRenditionAsync(kind, file)">
+                                            <CustomContent>
+                                                <MudIconButton Icon="@Icons.Material.Outlined.Upload" Size="Size.Small" aria-label="Upload rendition" OnClick="context.OpenFilePickerAsync" />
+                                            </CustomContent>
+                                        </MudFileUpload>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
             </div>
         </MudTabPanel>
         <MudTabPanel Text="Versions">
@@ -155,12 +201,21 @@ else
     private IReadOnlyList<EdgeDto> _edges = [];
     private List<BreadcrumbItem> _breadcrumb = [];
     private DownloadLinkDto? _link;
+    private IReadOnlyList<DerivationTypeDto> _types = [];
+    private bool _showOriginal;
 
     [Parameter] public Guid Id { get; set; }
 
     private DerivationDto? Preview => _asset?.Derivations.FirstOrDefault(d => d.Kind == DerivationKinds.Preview);
 
     private DerivationDto? Media => _asset?.Derivations.FirstOrDefault(d => d.Kind == DerivationKinds.Media);
+
+    /// <summary>Only originals that cannot run anything are shown in the page.</summary>
+    private bool CanView => _asset is { CanDownload: true, CurrentVersion.MimeType: { } mimeType } && InlineTypes.All.Contains(mimeType);
+
+    private IEnumerable<(string Kind, string Name, DerivationTypeDto? Type)> RenditionRows =>
+        _asset!.Derivations.Where(d => DerivationKinds.System.Contains(d.Kind)).Select(d => (d.Kind, d.Kind, (DerivationTypeDto?)null))
+            .Concat(_types.Where(t => t.AssetTypeKeys.Count == 0 || t.AssetTypeKeys.Contains(_asset.AssetType)).Select(t => (t.Key, t.Name, (DerivationTypeDto?)t)));
 
     private string MediaType => _asset?.CurrentVersion?.MimeType.StartsWith("audio/", StringComparison.Ordinal) == true ? "audio/mpeg" : "video/mp4";
 
@@ -177,6 +232,17 @@ else
         _asset = null;
         _link = null;
         await ReloadAsync();
+
+        // a page or text shows best as itself; images and media start with their renditions
+        _showOriginal = CanView && _asset?.CurrentVersion?.MimeType is "application/pdf" or "text/plain" or "text/csv";
+        try
+        {
+            _types = await Renditions.GetTypesAsync();
+        }
+        catch (ApiException)
+        {
+            _types = [];
+        }
     }
 
     private async Task ReloadAsync()
@@ -197,6 +263,12 @@ else
 
         await InvokeAsync(StateHasChanged);
     }
+
+    private Task UploadRenditionAsync(string kind, IBrowserFile? file) => file is null ? Task.CompletedTask : RunAsync(async () =>
+    {
+        await using var content = file.OpenReadStream(100L * 1024 * 1024);
+        await Renditions.UploadAsync(_asset!.Id, kind, content);
+    });
 
     private Task CreateLinkAsync() => RunAsync(async () => _link = await Api.CreateDownloadLinkAsync(_asset!.Id));
 

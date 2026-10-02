@@ -1,0 +1,240 @@
+@page "/admin/renditions"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Microsoft.AspNetCore.Components.Forms
+@using Shareme.Contracts.Assets
+@using Shareme.Web.Client.Assets
+@inject IRenditionsApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Renditions</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Renditions</MudText>
+
+<MudText Typo="Typo.h6">Rendition types</MudText>
+<MudSimpleTable Dense="true" Hover="true" data-testid="types">
+    <thead><tr><th>Key</th><th>Name</th><th>Size</th><th>Format</th><th>Mode</th><th>Watermark</th><th>Asset types</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var type in _types)
+        {
+            <tr data-type="@type.Key">
+                <td>@type.Key</td>
+                <td>@type.Name</td>
+                <td>@type.Width × @type.Height</td>
+                <td>@type.Format (@type.Quality)</td>
+                <td>@string.Join(", ", Modes(type))</td>
+                <td>@_watermarks.FirstOrDefault(w => w.Id == type.WatermarkId)?.Name</td>
+                <td>@(type.AssetTypeKeys.Count == 0 ? "all" : string.Join(", ", type.AssetTypeKeys))</td>
+                <td style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(type)" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteTypeAsync(type.Id))" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudText Typo="Typo.h6">@(_typeId is null ? "New rendition type" : "Edit rendition type")</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_type.Key" Label="Key" Disabled="_typeId is not null" data-testid="type-key" /></MudItem>
+        <MudItem xs="12" sm="8"><MudTextField @bind-Value="_type.Name" Label="Name" data-testid="type-name" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_type.Width" Label="Max width" Min="16" Max="8000" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_type.Height" Label="Max height" Min="16" Max="8000" /></MudItem>
+        <MudItem xs="6" sm="3">
+            <MudSelect T="string" @bind-Value="_type.Format" Label="Format">
+                @foreach (var format in DerivationFormats.All)
+                {
+                    <MudSelectItem Value="@format">@format</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_type.Quality" Label="Quality" Min="10" Max="100" /></MudItem>
+        <MudItem xs="12" sm="6">
+            <MudSelect T="Guid?" @bind-Value="_type.WatermarkId" Label="Watermark" Clearable="true">
+                @foreach (var watermark in _watermarks)
+                {
+                    <MudSelectItem T="Guid?" Value="@watermark.Id">@watermark.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_type.AssetTypes" Label="Asset types (comma separated, empty for all)" /></MudItem>
+        <MudItem xs="12">
+            <MudCheckBox @bind-Value="_type.IsDefault" Label="Render for every new file" data-testid="type-default" />
+            <MudCheckBox @bind-Value="_type.IsOnDemand" Label="Render on request" />
+            <MudCheckBox @bind-Value="_type.AllowManualUpload" Label="Allow uploading by hand" />
+        </MudItem>
+    </MudGrid>
+    <MudStack Row="true" Class="mt-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveTypeAsync" data-testid="save-type">Save</MudButton>
+        @if (_typeId is not null)
+        {
+            <MudButton OnClick="() => { _typeId = null; _type = new(); }">Cancel</MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+<MudText Typo="Typo.h6" Class="mt-6">Watermarks</MudText>
+<MudSimpleTable Dense="true" Hover="true" data-testid="watermarks">
+    <thead><tr><th>Name</th><th>Position</th><th>Opacity</th><th>Scale</th><th>Only when</th><th>Image</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var watermark in _watermarks)
+        {
+            <tr data-watermark="@watermark.Name">
+                <td>@watermark.Name</td>
+                <td>@watermark.Position</td>
+                <td>@watermark.Opacity %</td>
+                <td>@watermark.ScalePercent %</td>
+                <td>@(watermark.TriggerProperty is { } property ? $"{property} = {watermark.TriggerValue ?? "true"}" : "always")</td>
+                <td>
+                    <MudFileUpload T="IBrowserFile" Accept=".png" FilesChanged="file => UploadImageAsync(watermark.Id, file)">
+                        <CustomContent>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Upload" OnClick="context.OpenFilePickerAsync">@(watermark.HasImage ? "Replace PNG" : "Upload PNG")</MudButton>
+                        </CustomContent>
+                    </MudFileUpload>
+                </td>
+                <td style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(watermark)" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteWatermarkAsync(watermark.Id))" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudText Typo="Typo.h6">@(_watermarkId is null ? "New watermark" : "Edit watermark")</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_watermark.Name" Label="Name" data-testid="watermark-name" /></MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="string" @bind-Value="_watermark.Position" Label="Position">
+                @foreach (var position in WatermarkPositions.All)
+                {
+                    <MudSelectItem Value="@position">@position</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_watermark.Opacity" Label="Opacity %" Min="1" Max="100" /></MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_watermark.ScalePercent" Label="Scale %" Min="1" Max="100" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_watermark.TriggerProperty" Label="Only when property (key)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_watermark.TriggerValue" Label="has value (list key, empty for true)" /></MudItem>
+    </MudGrid>
+    <MudStack Row="true" Class="mt-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveWatermarkAsync" data-testid="save-watermark">Save</MudButton>
+        @if (_watermarkId is not null)
+        {
+            <MudButton OnClick="() => { _watermarkId = null; _watermark = new(); }">Cancel</MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<DerivationTypeDto> _types = [];
+    private IReadOnlyList<WatermarkDto> _watermarks = [];
+    private Guid? _typeId, _watermarkId;
+    private TypeForm _type = new();
+    private WatermarkForm _watermark = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _types = await Api.GetTypesAsync();
+            _watermarks = await Api.GetWatermarksAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not manage renditions." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private static IEnumerable<string> Modes(DerivationTypeDto type)
+    {
+        if (type.IsDefault) yield return "always";
+        if (type.IsOnDemand) yield return "on request";
+        if (type.AllowManualUpload) yield return "by hand";
+    }
+
+    private void Edit(DerivationTypeDto type)
+    {
+        _typeId = type.Id;
+        _type = new TypeForm
+        {
+            Key = type.Key, Name = type.Name, Width = type.Width, Height = type.Height, Format = type.Format, Quality = type.Quality, IsDefault = type.IsDefault,
+            IsOnDemand = type.IsOnDemand, AllowManualUpload = type.AllowManualUpload, WatermarkId = type.WatermarkId, AssetTypes = string.Join(", ", type.AssetTypeKeys),
+        };
+    }
+
+    private void Edit(WatermarkDto watermark)
+    {
+        _watermarkId = watermark.Id;
+        _watermark = new WatermarkForm
+        {
+            Name = watermark.Name, Position = watermark.Position, Opacity = watermark.Opacity, ScalePercent = watermark.ScalePercent,
+            TriggerProperty = watermark.TriggerProperty, TriggerValue = watermark.TriggerValue,
+        };
+    }
+
+    private Task SaveTypeAsync() => RunAsync(async () =>
+    {
+        var keys = (_type.AssetTypes ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        await Api.SaveTypeAsync(_typeId, new DerivationTypeRequest(
+            _type.Key ?? string.Empty, _type.Name ?? string.Empty, _type.Width, _type.Height, _type.Format, _type.Quality, _type.IsDefault, _type.IsOnDemand, _type.AllowManualUpload,
+            _type.WatermarkId, keys));
+        _typeId = null;
+        _type = new();
+    });
+
+    private Task SaveWatermarkAsync() => RunAsync(async () =>
+    {
+        await Api.SaveWatermarkAsync(_watermarkId, new WatermarkRequest(
+            _watermark.Name ?? string.Empty, _watermark.Position, _watermark.Opacity, _watermark.ScalePercent, _watermark.TriggerProperty, _watermark.TriggerValue));
+        _watermarkId = null;
+        _watermark = new();
+    });
+
+    private Task UploadImageAsync(Guid id, IBrowserFile? file) => file is null ? Task.CompletedTask : RunAsync(async () =>
+    {
+        await using var content = file.OpenReadStream(5L * 1024 * 1024);
+        await Api.SetWatermarkImageAsync(id, content);
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private sealed class TypeForm
+    {
+        public string? Key { get; set; }
+        public string? Name { get; set; }
+        public int Width { get; set; } = 1200;
+        public int Height { get; set; } = 1200;
+        public string Format { get; set; } = DerivationFormats.WebP;
+        public int Quality { get; set; } = 85;
+        public bool IsDefault { get; set; }
+        public bool IsOnDemand { get; set; } = true;
+        public bool AllowManualUpload { get; set; }
+        public Guid? WatermarkId { get; set; }
+        public string? AssetTypes { get; set; }
+    }
+
+    private sealed class WatermarkForm
+    {
+        public string? Name { get; set; }
+        public string Position { get; set; } = "southeast";
+        public int Opacity { get; set; } = 50;
+        public int ScalePercent { get; set; } = 25;
+        public string? TriggerProperty { get; set; }
+        public string? TriggerValue { get; set; }
+    }
+}

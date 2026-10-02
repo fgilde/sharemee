@@ -132,6 +132,9 @@ public sealed class Derivation : Entity, IMultiTenant, IHasRealtimeTopics
 
     public string? Error { get; set; }
 
+    /// <summary>Uploaded by hand; re-rendering keeps it.</summary>
+    public bool IsManual { get; set; }
+
     public DateTimeOffset PlannedAt { get; set; }
 
     public Guid TenantId { get; set; }
