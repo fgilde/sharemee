@@ -9,7 +9,7 @@
 @implements IDisposable
 
 <PageTitle>Data runs</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Mass edits and imports</MudText>
+<MudText Typo="Typo.h4" Class="mb-4">Mass edits, imports and AI tagging</MudText>
 
 @if (_job is { } job)
 {
@@ -92,7 +92,7 @@
         }
     }
 
-    private static string Kind(DataJobDto job) => job.Kind == DataJobKinds.Import ? "Import" : "Mass edit";
+    private static string Kind(DataJobDto job) => job.Kind switch { DataJobKinds.Import => "Import", DataJobKinds.Extraction => "AI tagging", _ => "Mass edit" };
 
     public void Dispose() => _timer?.Dispose();
 }

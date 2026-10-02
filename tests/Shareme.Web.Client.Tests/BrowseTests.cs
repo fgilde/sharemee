@@ -32,6 +32,7 @@ public sealed class BrowseTests : BunitContext
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_downloads);
         Services.AddSingleton(_data);
+        Services.AddSingleton(Substitute.For<Shareme.Web.Client.Metadata.IAiApi>());
         Services.AddSingleton(Substitute.For<Shareme.Web.Client.Workspaces.IWorkspacesApi>());
         Services.AddSingleton(_api);
         var metadata = Substitute.For<IMetadataApi>();

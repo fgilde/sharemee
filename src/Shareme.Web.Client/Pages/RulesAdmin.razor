@@ -4,6 +4,7 @@
 @using Shareme.Contracts.Automation
 @using Shareme.Web.Client.Metadata
 @inject IRulesApi Api
+@inject IAiApi Ai
 @inject ISnackbar Snackbar
 
 <PageTitle>Rules</PageTitle>
@@ -70,8 +71,15 @@
                 <MudSelectItem Value="true">then</MudSelectItem>
                 <MudSelectItem Value="false">else</MudSelectItem>
             </MudSelect>
-            <MudTextField @bind-Value="action.PropertyKey" Label="Property key" Style="max-width:220px" />
-            <MudTextField @bind-Value="action.Template" Label="Template" />
+            <MudSelect T="Guid?" @bind-Value="action.ExtractionId" Label="Writes" Style="max-width:200px" Clearable="true">
+                <MudSelectItem T="Guid?" Value="null">a template</MudSelectItem>
+                @foreach (var extraction in _extractions)
+                {
+                    <MudSelectItem T="Guid?" Value="extraction.Id">AI: @extraction.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="action.PropertyKey" Label="Property key" Style="max-width:220px" Disabled="action.ExtractionId is not null" />
+            <MudTextField @bind-Value="action.Template" Label="Template" Disabled="action.ExtractionId is not null" />
             <MudCheckBox @bind-Value="action.OnlyIfEmpty" Label="only if empty" />
             <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove action" OnClick="() => _actions.Remove(action)" />
         </MudStack>
@@ -145,6 +153,7 @@
 
 @code {
     private IReadOnlyList<RuleDto> _rules = [];
+    private IReadOnlyList<ExtractionDefinitionDto> _extractions = [];
     private IReadOnlyList<RuleJobDto> _jobs = [];
     private RuleJobDto? _report;
     private RuleTestDto? _test;
@@ -167,6 +176,16 @@
         catch (ApiException exception)
         {
             Snackbar.Add(exception.Status == 403 ? "You may not manage rules." : exception.Message, Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            _extractions = await Ai.GetDefinitionsAsync();
+        }
+        catch (ApiException)
+        {
+            // without the AI permission rules only write templates
         }
     }
 
@@ -180,7 +199,7 @@
         _sortIndex = rule.SortIndex;
         _isActive = rule.IsActive;
         _conditions = rule.Conditions.Select(c => new ConditionForm { Kind = c.Kind, Operator = c.Operator, PropertyKey = c.PropertyKey, Value = c.Value }).ToList();
-        _actions = rule.Actions.Select(a => new ActionForm { PropertyKey = a.PropertyKey, Template = a.Template, OnMatch = a.OnMatch, OnlyIfEmpty = a.OnlyIfEmpty }).ToList();
+        _actions = rule.Actions.Select(a => new ActionForm { PropertyKey = a.PropertyKey, Template = a.Template, OnMatch = a.OnMatch, OnlyIfEmpty = a.OnlyIfEmpty, ExtractionId = a.ExtractionId }).ToList();
         _test = null;
     }
 
@@ -201,7 +220,7 @@
         await Api.SaveAsync(_ruleId, new RuleRequest(
             _name ?? string.Empty,
             _conditions.Select(c => new RuleCondition(c.Kind, c.Operator, NeedsProperty(c.Operator) ? c.PropertyKey : null, c.Value)).ToList(),
-            _actions.Select(a => new RuleAction(a.PropertyKey ?? string.Empty, a.Template ?? string.Empty, a.OnMatch, a.OnlyIfEmpty)).ToList(),
+            _actions.Select(a => new RuleAction(a.PropertyKey ?? string.Empty, a.Template ?? string.Empty, a.OnMatch, a.OnlyIfEmpty, a.ExtractionId)).ToList(),
             types, _isActive, _sortIndex));
         Reset();
     });
@@ -278,5 +297,6 @@
         public string? Template { get; set; }
         public bool OnMatch { get; set; } = true;
         public bool OnlyIfEmpty { get; set; }
+        public Guid? ExtractionId { get; set; }
     }
 }

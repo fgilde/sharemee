@@ -13,6 +13,7 @@
 @inject Shareme.Web.Client.Workspaces.IWorkspacesApi WorkspacesApi
 @inject MudBlazor.Extensions.Services.MudExFileService Files
 @inject Shareme.Web.Client.Metadata.IDataApi Data
+@inject Shareme.Web.Client.Metadata.IAiApi Ai
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
 
@@ -100,6 +101,12 @@ else if (_detail is not null)
             </MudMenu>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(SelectedAssets, Title: _detail.Node.Name))" Disabled="SelectedAssets.Count == 0" data-testid="contact-sheet-selected">Contact sheet</MudButton>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.EditNote" OnClick="() => _massEdit = !_massEdit" data-testid="edit-selected">Edit metadata</MudButton>
+            <MudMenu Size="Size.Small" Label="AI tagging" StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadExtractionsAsync() : Task.CompletedTask" data-testid="ai-tagging">
+                @foreach (var extraction in _extractions)
+                {
+                    <MudMenuItem OnClick="() => ExtractAsync(extraction.Id)">@extraction.Name</MudMenuItem>
+                }
+            </MudMenu>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.TableView" OnClick="() => ExportAsync(new Shareme.Contracts.Automation.ExportRequest(NodeIds: _selected.ToList()), _detail.Node.Name)" data-testid="export-selected">Export</MudButton>
             <MudButton Size="Size.Small" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeleteSelectedAsync" data-testid="delete-selected">Delete</MudButton>
             <MudButton Size="Size.Small" OnClick="() => _selected.Clear()">Clear</MudButton>
@@ -238,6 +245,32 @@ else
     private readonly HashSet<Guid> _selected = [];
     private bool _massEdit;
     private bool? _importDryRun;
+    private IReadOnlyList<Shareme.Contracts.Automation.ExtractionDefinitionDto> _extractions = [];
+
+    private async Task LoadExtractionsAsync()
+    {
+        try
+        {
+            _extractions = await Ai.GetDefinitionsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not use AI tagging." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task ExtractAsync(Guid extraction)
+    {
+        try
+        {
+            var job = await Ai.RunAsync(new Shareme.Contracts.Automation.ExtractionRunRequest(extraction, SelectedAssets));
+            Nav.NavigateTo($"/data-jobs/{job.Id}");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
     private bool _gallery;
 
     [Parameter] public Guid? Id { get; set; }

@@ -2,6 +2,15 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P5c (AI tagging)
+
+- [ ] Rule actions keep a copy of the extraction's target key, so `OnlyIfEmpty` looks at the old property after the target changes.
+- [ ] Some OpenAI compatible servers reject `response_format: json_object`; make it optional.
+- [ ] The admin UI cannot remove a stored key (the API takes an empty string).
+- [ ] No unique index for pending suggestions per node and extraction; parallel runs may leave two.
+- [ ] Suggestions are listed with one access check each; filter by grants in the query.
+- [ ] A run that continues for files still rendering is linked only by a report line, not in the UI.
+
 ## From P5b (mass edit, import, export)
 
 - [ ] Exports run one access check per node inside the request; batch via `GrantedNodesAsync` or run large exports as a job.

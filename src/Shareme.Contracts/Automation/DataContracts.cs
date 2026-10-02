@@ -44,6 +44,7 @@ public static class DataJobKinds
 {
     public const string MassEdit = "massEdit";
     public const string Import = "import";
+    public const string Extraction = "extraction";
 }
 
 public static class DataJobResults
