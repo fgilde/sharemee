@@ -223,6 +223,13 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         var rendered = await DerivationsAsync(video.AssetId);
         rendered.Single(d => d.Kind == DerivationKinds.Thumbnail).State.ShouldBe(DerivationStates.Ready);
         rendered.Single(d => d.Kind == DerivationKinds.Media).State.ShouldBe(DerivationStates.Ready);
+        rendered.Single(d => d.Kind == DerivationKinds.Animated).MimeType.ShouldBe("image/gif");
+        using (var gif = new ImageMagick.MagickImageCollection(await Admin.GetByteArrayAsync($"/api/v1/assets/{video.AssetId}/derivations/{DerivationKinds.Animated}", Ct)))
+        {
+            gif.Count.ShouldBeGreaterThan(1, "the gif is animated");
+            gif[0].Width.ShouldBeLessThanOrEqualTo(240u);
+        }
+
         using var media = await Admin.GetAsync($"/api/v1/assets/{video.AssetId}/derivations/{DerivationKinds.Media}", Ct);
         media.Content.Headers.ContentType!.MediaType.ShouldBe("video/mp4");
         (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{video.AssetId}", Ct))!.CurrentVersion!.TechnicalMetadata.ShouldNotBeNull().ShouldNotBeEmpty();
@@ -531,6 +538,47 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         rendered.ShouldAllBe(d => d.State == DerivationStates.Ready);
         using var media = await Admin.GetAsync($"/api/v1/assets/{sound.AssetId}/derivations/{DerivationKinds.Media}", Ct);
         media.Content.Headers.ContentType!.MediaType.ShouldBe("audio/mpeg");
+    }
+
+    [Fact]
+    public async Task Models_are_shown_inline_and_rendered_by_blender()
+    {
+        var folder = await FolderAsync("Models");
+        var model = await UploadAsync(Admin, "cube.stl", CubeStl(), folder);
+
+        using var view = await Admin.GetAsync($"/api/v1/assets/{model.AssetId}/view", Ct);
+        view.StatusCode.ShouldBe(HttpStatusCode.OK);
+        view.Content.Headers.ContentType!.MediaType.ShouldBe("model/stl");
+        (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{model.AssetId}", Ct))!.AssetType.ShouldBe(AssetTypeKeys.Model);
+
+        var rendered = await DerivationsAsync(model.AssetId);
+        if (Tool("blender") is null)
+        {
+            rendered.ShouldAllBe(d => d.State == DerivationStates.NotSupported);
+            Assert.Skip("Blender is not installed");
+        }
+
+        rendered.Single(d => d.Kind == DerivationKinds.Preview).State.ShouldBe(DerivationStates.Ready);
+    }
+
+    /// <summary>An ASCII STL cube of twelve triangles.</summary>
+    private static byte[] CubeStl()
+    {
+        int[][] faces = [[0, 1, 2], [0, 2, 3], [4, 6, 5], [4, 7, 6], [0, 4, 5], [0, 5, 1], [1, 5, 6], [1, 6, 2], [2, 6, 7], [2, 7, 3], [3, 7, 4], [3, 4, 0]];
+        int[][] corners = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
+        var stl = new System.Text.StringBuilder("solid cube\n");
+        foreach (var face in faces)
+        {
+            stl.Append("facet normal 0 0 0\nouter loop\n");
+            foreach (var corner in face)
+            {
+                stl.Append($"vertex {corners[corner][0]} {corners[corner][1]} {corners[corner][2]}\n");
+            }
+
+            stl.Append("endloop\nendfacet\n");
+        }
+
+        return System.Text.Encoding.ASCII.GetBytes(stl.Append("endsolid cube\n").ToString());
     }
 
     [Fact]

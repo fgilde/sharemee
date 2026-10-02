@@ -170,6 +170,7 @@ internal sealed class AssetModelContributor : IModelContributor
                 new AssetType { Key = AssetTypeKeys.Audio, Name = "Audio" },
                 new AssetType { Key = AssetTypeKeys.Document, Name = "Document" },
                 new AssetType { Key = AssetTypeKeys.Archive, Name = "Archive", DownloadOriginalAlways = true },
+                new AssetType { Key = AssetTypeKeys.Model, Name = "3D model" },
                 new AssetType { Key = AssetTypeKeys.Other, Name = "Other", DownloadOriginalAlways = true });
         });
 
@@ -296,6 +297,13 @@ internal static class FileTypeSeeds
         Type("csv", "text/csv", AssetTypeKeys.Document),
         Type("md", "text/markdown", AssetTypeKeys.Document),
         Type("json", "application/json", AssetTypeKeys.Document),
+        Type("glb", "model/gltf-binary", AssetTypeKeys.Model, "676C5446"),
+        Type("gltf", "model/gltf+json", AssetTypeKeys.Model),
+        Type("stl", "model/stl", AssetTypeKeys.Model),
+        Type("obj", "model/obj", AssetTypeKeys.Model),
+        Type("fbx", "application/vnd.autodesk.fbx", AssetTypeKeys.Model),
+        Type("3mf", "model/3mf", AssetTypeKeys.Model, Zip),
+        Type("ply", "model/ply", AssetTypeKeys.Model, "706C79"),
         Type("zip", "application/zip", AssetTypeKeys.Archive, Zip),
         Type("7z", "application/x-7z-compressed", AssetTypeKeys.Archive, "377ABCAF271C"),
         Type("rar", "application/vnd.rar", AssetTypeKeys.Archive, "526172211A07"),

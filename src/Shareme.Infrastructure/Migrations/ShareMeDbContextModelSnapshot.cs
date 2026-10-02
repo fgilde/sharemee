@@ -1248,6 +1248,12 @@ namespace Shareme.Infrastructure.Migrations
                         },
                         new
                         {
+                            Key = "model",
+                            DownloadOriginalAlways = false,
+                            Name = "3D model"
+                        },
+                        new
+                        {
                             Key = "other",
                             DownloadOriginalAlways = true,
                             Name = "Other"
@@ -1882,6 +1888,62 @@ namespace Shareme.Infrastructure.Migrations
                             ForbiddenForUpload = false,
                             MagicNumbers = "[]",
                             MimeType = "application/json"
+                        },
+                        new
+                        {
+                            Extension = "glb",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"676C5446\"]",
+                            MimeType = "model/gltf-binary"
+                        },
+                        new
+                        {
+                            Extension = "gltf",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "model/gltf+json"
+                        },
+                        new
+                        {
+                            Extension = "stl",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "model/stl"
+                        },
+                        new
+                        {
+                            Extension = "obj",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "model/obj"
+                        },
+                        new
+                        {
+                            Extension = "fbx",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "application/vnd.autodesk.fbx"
+                        },
+                        new
+                        {
+                            Extension = "3mf",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "model/3mf"
+                        },
+                        new
+                        {
+                            Extension = "ply",
+                            AssetTypeKey = "model",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"706C79\"]",
+                            MimeType = "model/ply"
                         },
                         new
                         {

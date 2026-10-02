@@ -43,6 +43,7 @@ public sealed class ShareMeProcessingModule : CoworkeeModule, IWebModule
         services.AddSingleton<IRenditionSource, AudioSource>();
         services.AddSingleton<IRenditionSource>(provider => provider.GetRequiredService<PdfSource>());
         services.AddSingleton<IRenditionSource, OfficeSource>();
+        services.AddSingleton<IRenditionSource, ModelSource>();
         services.AddSingleton<TechnicalMetadataReader>();
 
         // oversized or slow images fail instead of eating memory, disk and cores of the host
@@ -295,7 +296,8 @@ internal sealed class RenderDerivationsJob(
         }
 
         var media = pending.FirstOrDefault(d => d.Kind == DerivationKinds.Media);
-        var stills = pending.Where(d => d.Kind != DerivationKinds.Media).ToList();
+        var animated = pending.FirstOrDefault(d => d.Kind == DerivationKinds.Animated);
+        var stills = pending.Where(d => d.Kind is not (DerivationKinds.Media or DerivationKinds.Animated)).ToList();
         var isImage = Images.ContainsKey(version.MimeType);
         var kept = isImage ? null : derivations.FirstOrDefault(d => d is { Kind: DerivationKinds.Still, State: DerivationStates.Ready, BlobKey: not null });
         var work = Directory.CreateDirectory(Path.Combine(WorkRoot(configuration), Guid.NewGuid().ToString("N"))).FullName;
@@ -362,7 +364,14 @@ internal sealed class RenderDerivationsJob(
             await RenderStillsAsync(version, stills, still, source?.TrimStill == true, cancellationToken);
             if (media is not null)
             {
-                await RenderMediaAsync(version, media, source, await OriginalAsync(), work, cancellationToken);
+                var original = await OriginalAsync();
+                await RenderCopyAsync(version, media, source is null ? null : () => source.MediaAsync(original, work, cancellationToken), cancellationToken);
+            }
+
+            if (animated is not null)
+            {
+                var original = await OriginalAsync();
+                await RenderCopyAsync(version, animated, source is null ? null : async () => await source.AnimatedAsync(original, work, cancellationToken) is { } gif ? (gif, "image/gif") : null, cancellationToken);
             }
         }
         finally
@@ -496,12 +505,13 @@ internal sealed class RenderDerivationsJob(
         }
     }
 
-    private async Task RenderMediaAsync(AssetVersion version, Derivation media, IRenditionSource? source, string input, string work, CancellationToken cancellationToken)
+    /// <summary>Stores a file a tool made (playable copy, animation) as the derivation; no tool or no output means not supported.</summary>
+    private async Task RenderCopyAsync(AssetVersion version, Derivation media, Func<Task<(string Path, string MimeType)?>>? make, CancellationToken cancellationToken)
     {
         (string Path, string MimeType)? copy;
         try
         {
-            copy = source is null ? null : await source.MediaAsync(input, work, cancellationToken);
+            copy = make is null ? null : await make();
         }
         catch (ToolFailedException exception)
         {

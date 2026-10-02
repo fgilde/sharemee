@@ -31,8 +31,80 @@ internal interface IRenditionSource
     /// <summary>A playable copy (MP4, MP3) or null when this media has none or the tool is missing.</summary>
     Task<(string Path, string MimeType)?> MediaAsync(string input, string workDirectory, CancellationToken cancellationToken) => Task.FromResult<(string, string)?>(null);
 
+    /// <summary>A short looping GIF, or null when this media has none or the tool is missing.</summary>
+    Task<string?> AnimatedAsync(string input, string workDirectory, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+
     /// <summary>Pages rendered onto a fixed canvas get their empty margins cut off.</summary>
     bool TrimStill => false;
+}
+
+/// <summary>3D meshes rendered headless by Blender (as Sharedien does for FBX): camera fitted to the meshes, a sun light, transparent background.</summary>
+internal sealed class ModelSource(ProcessingTools tools) : IRenditionSource
+{
+    private static readonly HashSet<string> Types = ["model/gltf-binary", "model/gltf+json", "model/stl", "model/obj", "model/ply", "application/vnd.autodesk.fbx"];
+
+    // importers of Blender 4.1+ first, older names as fallback; the input path and output path come after "--"
+    private const string Script = """
+        import bpy, math, sys
+        source, output = sys.argv[sys.argv.index("--") + 1:][:2]
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        ext = source.lower().rsplit(".", 1)[-1]
+        importers = {"glb": ["import_scene.gltf"], "gltf": ["import_scene.gltf"], "fbx": ["import_scene.fbx"],
+                     "obj": ["wm.obj_import", "import_scene.obj"], "stl": ["wm.stl_import", "import_mesh.stl"], "ply": ["wm.ply_import", "import_mesh.ply"]}
+        error = None
+        for name in importers[ext]:
+            group, operator = name.split(".")
+            try:
+                getattr(getattr(bpy.ops, group), operator)(filepath=source)
+                break
+            except (AttributeError, RuntimeError) as failure:
+                error = failure
+        else:
+            raise error
+        scene = bpy.context.scene
+        meshes = [o for o in scene.objects if o.type == "MESH"]
+        if not meshes:
+            sys.exit(3)
+        camera = bpy.data.objects.new("camera", bpy.data.cameras.new("camera"))
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        camera.rotation_euler = (math.radians(65), 0, math.radians(45))
+        for o in scene.objects:
+            o.select_set(o in meshes)
+        bpy.ops.view3d.camera_to_view_selected()
+        sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
+        sun.data.energy = 3
+        sun.rotation_euler = (math.radians(50), 0, math.radians(30))
+        scene.collection.objects.link(sun)
+        scene.render.engine = "CYCLES"
+        scene.cycles.device = "CPU"
+        scene.cycles.samples = 16
+        scene.render.film_transparent = True
+        scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 1600, 1200, 100
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.image_settings.color_mode = "RGBA"
+        scene.render.filepath = output
+        bpy.ops.render.render(write_still=True)
+        """;
+
+    public bool Supports(string mimeType) => Types.Contains(mimeType);
+
+    public async Task<string?> StillAsync(string input, string workDirectory, CancellationToken cancellationToken)
+    {
+        if (tools.Find(ProcessingTools.Blender) is not { } blender || Path.GetExtension(input) is not { Length: > 1 })
+        {
+            return null;
+        }
+
+        var script = Path.Combine(workDirectory, "render.py");
+        await File.WriteAllTextAsync(script, Script, cancellationToken);
+        var still = Path.Combine(workDirectory, "model.png");
+
+        // factory settings: no user add-ons or startup scripts run
+        var result = await ToolRunner.RunAsync(blender, ["-b", "--factory-startup", "-noaudio", "--python-exit-code", "2", "--python", script, "--", input, still],
+            workDirectory, TimeSpan.FromMinutes(5), cancellationToken);
+        return result.ExitCode == 0 && File.Exists(still) ? still : throw new ToolFailedException("The model could not be rendered: " + result.Error.Trim());
+    }
 }
 
 internal sealed class VideoSource(ProcessingTools tools) : IRenditionSource
@@ -61,6 +133,23 @@ internal sealed class VideoSource(ProcessingTools tools) : IRenditionSource
         }
 
         throw new ToolFailedException("No frame could be read from the video.");
+    }
+
+    /// <summary>One frame per second of the first 16 seconds, shown for 0.75 s each, 240 px, own palette (as Sharedien's animated thumbnail).</summary>
+    public async Task<string?> AnimatedAsync(string input, string workDirectory, CancellationToken cancellationToken)
+    {
+        if (tools.Find(ProcessingTools.FFmpeg) is not { } ffmpeg)
+        {
+            return null;
+        }
+
+        var output = Path.Combine(workDirectory, "animated.gif");
+        var result = await ToolRunner.RunAsync(ffmpeg,
+            ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "2", "-t", "16", "-i", input,
+             "-vf", "fps=1,setpts=0.75*PTS,scale=240:240:force_original_aspect_ratio=decrease:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse",
+             "-loop", "0", "-an", "-y", output],
+            workDirectory, TimeSpan.FromMinutes(3), cancellationToken);
+        return result.ExitCode == 0 && File.Exists(output) ? output : throw new ToolFailedException("The animated preview could not be made: " + result.Error.Trim());
     }
 
     public async Task<(string Path, string MimeType)?> MediaAsync(string input, string workDirectory, CancellationToken cancellationToken)

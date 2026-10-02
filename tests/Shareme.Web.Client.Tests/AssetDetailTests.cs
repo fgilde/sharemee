@@ -98,6 +98,17 @@ public sealed class AssetDetailTests : BunitContext
     }
 
     [Fact]
+    public void A_mesh_opens_in_the_3d_viewer()
+    {
+        var mesh = new AssetVersionDto(Guid.CreateVersion7(), 1, "cube.stl", 2048, new string('a', 64), "model/stl", "stl", DateTimeOffset.UtcNow, null);
+        _api.GetAssetAsync(_asset, Arg.Any<CancellationToken>()).Returns(new AssetDto(_asset, _folder, "cube.stl", AssetTypeKeys.Model, AssetStatuses.Ready, mesh, [mesh], [], CanDownload: true));
+
+        var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));
+
+        page.WaitForAssertion(() => page.Find("[data-testid='preview']").InnerHtml.ShouldContain("mud-ex-model3d-viewer"));
+    }
+
+    [Fact]
     public async Task Renditions_of_the_asset_type_can_be_created_or_uploaded()
     {
         var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));

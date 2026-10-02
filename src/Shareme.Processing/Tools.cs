@@ -13,6 +13,7 @@ internal sealed class ProcessingTools(IConfiguration configuration, ILogger<Proc
     public const string Ghostscript = "Ghostscript";
     public const string LibreOffice = "LibreOffice";
     public const string ExifTool = "ExifTool";
+    public const string Blender = "Blender";
 
     private static readonly Dictionary<string, string[]> Candidates = new()
     {
@@ -21,6 +22,7 @@ internal sealed class ProcessingTools(IConfiguration configuration, ILogger<Proc
         [Ghostscript] = ["gs", "gswin64c", "gswin32c"],
         [LibreOffice] = ["soffice", "libreoffice", @"C:\Program Files\LibreOffice\program\soffice.exe"],
         [ExifTool] = ["exiftool"],
+        [Blender] = ["blender", @"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"],
     };
 
     private readonly Dictionary<string, string?> _resolved = [];
