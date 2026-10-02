@@ -558,7 +558,8 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
             Assert.Skip("Blender is not installed");
         }
 
-        rendered.Single(d => d.Kind == DerivationKinds.Preview).State.ShouldBe(DerivationStates.Ready);
+        var preview = rendered.Single(d => d.Kind == DerivationKinds.Preview);
+        preview.State.ShouldBe(DerivationStates.Ready, preview.Error);
     }
 
     [Fact]
