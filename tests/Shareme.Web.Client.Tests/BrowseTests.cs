@@ -1,3 +1,4 @@
+using Shareme.Web.Client.Assets;
 using Bunit;
 using Coworkee.Client.Blazor;
 using Coworkee.Client.Blazor.Api;
@@ -18,6 +19,7 @@ namespace Shareme.Web.Client.Tests;
 public sealed class BrowseTests : BunitContext
 {
     private readonly ISharemeApi _api = Substitute.For<ISharemeApi>();
+    private readonly IDownloadsApi _downloads = Substitute.For<IDownloadsApi>();
     private readonly Guid _root = Guid.CreateVersion7();
     private readonly Guid _folder = Guid.CreateVersion7();
     private readonly Guid _child = Guid.CreateVersion7();
@@ -26,6 +28,8 @@ public sealed class BrowseTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
+        Services.AddSingleton(_downloads);
         Services.AddSingleton(_api);
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetNodeMetadataAsync(default, default).ReturnsForAnyArgs(new NodeMetadataDto(_folder, "folder", new Dictionary<string, EffectivePropertyDto>()));
@@ -54,6 +58,19 @@ public sealed class BrowseTests : BunitContext
 
         page.WaitForAssertion(() => page.Find($"[data-node='{_child}']").TextContent.ShouldContain("Campaigns"));
         page.Find("[data-testid='breadcrumb']").TextContent.ShouldContain("Root");
+    }
+
+    [Fact]
+    public async Task A_folder_downloads_as_zip_through_its_expiring_link()
+    {
+        _downloads.CreatePackageAsync(Arg.Any<Shareme.Contracts.Assets.DownloadPackageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new Shareme.Contracts.Assets.DownloadPackageDto("/api/v1/downloads/abc", DateTimeOffset.UtcNow.AddHours(1), 3, 0));
+        var page = Render<Browse>(p => p.Add(b => b.Id, _folder));
+
+        await page.WaitForElement("[data-testid='download-folder']").ClickAsync(new());
+
+        await _downloads.Received(1).CreatePackageAsync(Arg.Is<Shareme.Contracts.Assets.DownloadPackageRequest>(r => r.FolderId == _folder), Arg.Any<CancellationToken>());
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.ShouldEndWith("/api/v1/downloads/abc");
     }
 
     [Fact]

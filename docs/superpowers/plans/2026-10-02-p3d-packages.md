@@ -1,0 +1,9 @@
+# P3d Pakete und Archive – Plan
+
+Spec: `docs/superpowers/specs/2026-10-02-p3-processing-design.md` Abschnitt P3d.
+
+- Dateinamensregeln `FileNamingDefinition` je Mandant (Format, Schreibweise, eine Standardregel): Tokens `{name}`, `{ext}`, `{seq}` (mindestens dreistellig), `{date}`, `{year}`, `{month}`, `{day}`, `{type}`, `{kind}`, `{meta:key}` (erster Wert, Listenschlüssel); Endung wird immer angehängt, unzulässige Zeichen ersetzt, Dubletten im Zip mit „ (2)“. Vorschau `POST /file-namings/preview`. Die Standardregel gilt auch für Einzel-Downloads.
+- Zip-Download: Abweichung von der Spec ohne Job und Realtime-Fortschritt. `POST /downloads` (Asset-Liste oder Ordner mit Unterordnern, Originale oder eine Rendition-Art) prüft Rechte je Asset (Originale und ungeschützte eigene Renditions brauchen Download, Thumbnails/Previews und Renditions mit Wasserzeichen nur Lesen), legt ein Paket mit Dateiliste und zufälligem Token für eine Stunde an. `GET /downloads/{token}` streamt das Zip ohne Anmeldung, der Browser zeigt den Fortschritt selbst. Gepackte Formate werden nur gespeichert. Abgelaufene Pakete räumt der Storage-Cleanup.
+- Kontaktabzug `POST /downloads/contact-sheet`: PDF mit Thumbnails und Namen, 4 × 5 je Seite (Magick Montage), bis 200 Assets, Leserecht genügt.
+- Archiv-Entpacken `POST /assets/{id}/extract` (Download-Recht am Zip, Create-Recht im Ziel): Job legt Ordner (vorhandene gleichnamige werden wiederverwendet) und Assets an, filtert `__MACOSX`, Punkt-Dateien, `Thumbs.db`, `desktop.ini`, verbotene Typen und falsche Inhalte; höchstens 10 000 Einträge und `Shareme:Archives:MaxUnpackedBytes` (Standard 20 GB) tatsächlich entpackt. Status `GET /extractions/{id}` mit Zählern und den ersten Problemen.
+- UI: Ordner-Zip und Kontaktabzug im Browse-Kopf, Download/Kontaktabzug für die Auswahl, „Unpack“ an Zip-Assets, Namensregeln auf der Renditions-Admin-Seite.

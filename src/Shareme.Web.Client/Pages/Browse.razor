@@ -9,6 +9,8 @@
 @inject ISharemeApi Api
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+@inject Shareme.Web.Client.Assets.IDownloadsApi Downloads
+@inject MudBlazor.Extensions.Services.MudExFileService Files
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
 
@@ -36,6 +38,8 @@ else if (_detail is not null)
         <MudText Typo="Typo.h4">@_detail.Node.Name</MudText>
         <MudSpacer />
         <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch" Href="@($"/search?folder={_detail.Node.Id}")" aria-label="Search in this folder" data-testid="search-here" />
+        <MudIconButton Icon="@Icons.Material.Outlined.FolderZip" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(FolderId: _detail.Node.Id))" aria-label="Download this folder as zip" data-testid="download-folder" />
+        <MudIconButton Icon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(FolderId: _detail.Node.Id, Title: _detail.Node.Name))" aria-label="Contact sheet of this folder" data-testid="contact-sheet-folder" />
         <MudTooltip Text="@(_detail.IsSubscribed ? "Stop notifications" : "Notify me about changes")">
             <MudIconButton Icon="@(_detail.IsSubscribed ? Icons.Material.Filled.NotificationsActive : Icons.Material.Outlined.NotificationsNone)"
                            OnClick="ToggleSubscriptionAsync" aria-label="Notifications for this folder" data-testid="subscribe" />
@@ -58,6 +62,8 @@ else if (_detail is not null)
         <MudPaper Outlined="true" Class="pa-2 mb-2 d-flex align-center gap-2" data-testid="selection-bar">
             <MudText Typo="Typo.body2">@_selected.Count selected</MudText>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.DriveFileMove" OnClick="() => _moving = _children.Where(c => _selected.Contains(c.Id)).ToList()">Move</MudButton>
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(SelectedAssets))" Disabled="SelectedAssets.Count == 0" data-testid="download-selected">Download</MudButton>
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(SelectedAssets, Title: _detail.Node.Name))" Disabled="SelectedAssets.Count == 0" data-testid="contact-sheet-selected">Contact sheet</MudButton>
             <MudButton Size="Size.Small" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeleteSelectedAsync" data-testid="delete-selected">Delete</MudButton>
             <MudButton Size="Size.Small" OnClick="() => _selected.Clear()">Clear</MudButton>
         </MudPaper>
@@ -285,6 +291,40 @@ else
     {
         await ForEachAsync(nodes.Where(n => n.Id != target).Select(n => n.Id), id => Api.MoveNodeAsync(id, target), "moved");
         _moving = null;
+    }
+
+    private List<Guid> SelectedAssets => _children.Where(c => c.Semantic == "asset" && _selected.Contains(c.Id)).Select(c => c.Id).ToList();
+
+    /// <summary>The zip streams from an expiring link, so the browser shows its own progress.</summary>
+    private async Task DownloadAsync(Shareme.Contracts.Assets.DownloadPackageRequest request)
+    {
+        try
+        {
+            var package = await Downloads.CreatePackageAsync(request);
+            if (package.Skipped > 0)
+            {
+                Snackbar.Add($"{package.Skipped} files are left out (no download right or nothing to download).", Severity.Info);
+            }
+
+            Nav.NavigateTo(package.Url.TrimStart('/'), forceLoad: true);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task ContactSheetAsync(Shareme.Contracts.Assets.ContactSheetRequest request)
+    {
+        try
+        {
+            var pdf = await Downloads.ContactSheetAsync(request);
+            await Files.DownloadContentAsync(pdf, "application/pdf", $"{request.Title ?? "contact"}-contact-sheet.pdf");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
     }
 
     private Task DeleteSelectedAsync() => ForEachAsync(_selected.ToList(), id => Api.DeleteNodeAsync(id), "moved to the recycle bin");

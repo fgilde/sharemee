@@ -25,6 +25,10 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
         services.AddMessagingFromAssembly(typeof(ShareMeAssetsModule).Assembly);
         services.AddSingleton<IModelContributor, AssetModelContributor>();
         services.AddSingleton<IModelContributor, RenditionModelContributor>();
+        services.AddSingleton<IModelContributor, DownloadModelContributor>();
+        services.AddScoped<DownloadPackageWriter>();
+        services.AddSingleton<IModelContributor, ArchiveModelContributor>();
+        services.AddScoped<ArchiveExtractionJob>();
         services.AddSingleton<IPermissionDefinitionContributor, AssetPermissionDefinitions>();
         services.AddScoped<INodePurgeListener, AssetPurgeListener>();
         services.AddScoped<BlobLinkResolver>();
@@ -95,6 +99,44 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
         watermarks.MapPut("/{id:guid}", (Guid id, WatermarkRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveWatermark(id, body), ct).ToHttpResult());
         watermarks.MapPut("/{id:guid}/image", (Guid id, HttpRequest request, IDispatcher d, CancellationToken ct) => d.SendAsync(new SetWatermarkImage(id, request.Body), ct).ToHttpResult());
         watermarks.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteWatermark(id), ct).ToHttpResult());
+
+        assets.MapPost("/{id:guid}/extract", (Guid id, ExtractArchiveRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new ExtractArchive(id, body), ct).ToHttpResult());
+        app.MapGet("/api/v1/extractions/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetArchiveExtraction(id), ct).ToHttpResult()).WithTags("Assets").RequireAuthorization();
+
+        var namings = app.MapGroup("/api/v1/file-namings").WithTags("Downloads").RequireAuthorization();
+        namings.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetFileNamings(), ct).ToHttpResult());
+        namings.MapPost("/", (FileNamingRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveFileNaming(null, body), ct).ToHttpResult());
+        namings.MapPut("/{id:guid}", (Guid id, FileNamingRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveFileNaming(id, body), ct).ToHttpResult());
+        namings.MapDelete("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteFileNaming(id), ct).ToHttpResult());
+        namings.MapPost("/preview", (FileNamingPreviewRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new PreviewFileNaming(body), ct).ToHttpResult());
+
+        var downloads = app.MapGroup("/api/v1/downloads").WithTags("Downloads");
+        downloads.MapPost("/", (DownloadPackageRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateDownloadPackage(body), ct).ToHttpResult()).RequireAuthorization();
+
+        // the random id is the authorization, like a blob link, so browsers can download it directly
+        downloads.MapGet("/{id:guid}", async (Guid id, HttpContext context, DownloadPackageWriter writer, CancellationToken ct) =>
+        {
+            if (await writer.FindAsync(id, ct) is not { } package)
+            {
+                return Results.NotFound();
+            }
+
+            // ponytail: the async zip writer still writes small headers synchronously on a non-seekable body; the file data goes async
+            if (context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpBodyControlFeature>() is { } body)
+            {
+                body.AllowSynchronousIO = true;
+            }
+
+            var response = context.Response;
+            response.ContentType = "application/zip";
+            response.Headers.XContentTypeOptions = "nosniff";
+            response.Headers.CacheControl = "private, no-store";
+            var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+            disposition.SetHttpFileName(package.Name + ".zip");
+            response.Headers.ContentDisposition = disposition.ToString();
+            await writer.WriteAsync(package, response.Body, ct);
+            return Results.Empty;
+        }).AllowAnonymous();
 
         app.MapGet("/api/v1/blobs/{token}", async (string token, HttpResponse response, BlobLinkResolver resolver, CancellationToken ct) =>
             await resolver.ResolveAsync(token, ct) is { } download ? File(response, download) : Results.NotFound()).WithTags("Assets").AllowAnonymous();

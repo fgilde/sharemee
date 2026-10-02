@@ -67,3 +67,49 @@ internal sealed class RenditionsApi(HttpClient http) : ApiClientBase(http), IRen
         using var response = await SendContentAsync(HttpMethod.Put, url, body, cancellationToken);
     }
 }
+
+public interface IDownloadsApi
+{
+    Task<IReadOnlyList<FileNamingDto>> GetNamingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveNamingAsync(Guid? id, FileNamingRequest request, CancellationToken cancellationToken = default);
+
+    Task DeleteNamingAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<string>> PreviewNamingAsync(FileNamingPreviewRequest request, CancellationToken cancellationToken = default);
+
+    Task<DownloadPackageDto> CreatePackageAsync(DownloadPackageRequest request, CancellationToken cancellationToken = default);
+
+    Task<byte[]> ContactSheetAsync(ContactSheetRequest request, CancellationToken cancellationToken = default);
+
+    Task<ArchiveExtractionDto> ExtractAsync(Guid assetId, ExtractArchiveRequest request, CancellationToken cancellationToken = default);
+
+    Task<ArchiveExtractionDto> GetExtractionAsync(Guid id, CancellationToken cancellationToken = default);
+}
+
+internal sealed class DownloadsApi(HttpClient http) : ApiClientBase(http), IDownloadsApi
+{
+    public async Task<IReadOnlyList<FileNamingDto>> GetNamingsAsync(CancellationToken cancellationToken = default) => await GetAsync<FileNamingDto[]>("api/v1/file-namings", cancellationToken);
+
+    public Task SaveNamingAsync(Guid? id, FileNamingRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync(id is null ? HttpMethod.Post : HttpMethod.Put, "api/v1/file-namings" + (id is { } i ? $"/{i}" : string.Empty), request, cancellationToken);
+
+    public Task DeleteNamingAsync(Guid id, CancellationToken cancellationToken = default) => SendAsync(HttpMethod.Delete, $"api/v1/file-namings/{id}", null, cancellationToken);
+
+    public async Task<IReadOnlyList<string>> PreviewNamingAsync(FileNamingPreviewRequest request, CancellationToken cancellationToken = default) =>
+        await SendAsync<string[]>(HttpMethod.Post, "api/v1/file-namings/preview", request, cancellationToken);
+
+    public Task<DownloadPackageDto> CreatePackageAsync(DownloadPackageRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<DownloadPackageDto>(HttpMethod.Post, "api/v1/downloads", request, cancellationToken);
+
+    public async Task<byte[]> ContactSheetAsync(ContactSheetRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendCoreAsync(HttpMethod.Post, "api/v1/downloads/contact-sheet", request, cancellationToken);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    public Task<ArchiveExtractionDto> ExtractAsync(Guid assetId, ExtractArchiveRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<ArchiveExtractionDto>(HttpMethod.Post, $"api/v1/assets/{assetId}/extract", request, cancellationToken);
+
+    public Task<ArchiveExtractionDto> GetExtractionAsync(Guid id, CancellationToken cancellationToken = default) => GetAsync<ArchiveExtractionDto>($"api/v1/extractions/{id}", cancellationToken);
+}

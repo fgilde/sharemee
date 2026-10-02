@@ -5,6 +5,7 @@
 @using Shareme.Contracts.Assets
 @using Shareme.Web.Client.Assets
 @inject IRenditionsApi Api
+@inject IDownloadsApi Downloads
 @inject ISnackbar Snackbar
 
 <PageTitle>Renditions</PageTitle>
@@ -127,7 +128,64 @@
     </MudStack>
 </MudPaper>
 
+<MudText Typo="Typo.h6" Class="mt-6">Download file names</MudText>
+<MudText Typo="Typo.body2" Class="mb-2">Tokens: @string.Join(" ", FileNamingTokens.Variables.Select(v => "{" + v + "}")) {meta:property-key}. The extension is always added; the default rule names every download.</MudText>
+<MudSimpleTable Dense="true" Hover="true" data-testid="namings">
+    <thead><tr><th>Name</th><th>Format</th><th>Casing</th><th></th><th></th></tr></thead>
+    <tbody>
+        @foreach (var naming in _namings)
+        {
+            <tr data-naming="@naming.Name">
+                <td>@naming.Name</td>
+                <td style="font-family:monospace">@naming.Format</td>
+                <td>@naming.Casing</td>
+                <td>@(naming.IsDefault ? "default" : null)</td>
+                <td style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => { _namingId = naming.Id; _naming = new NamingForm { Name = naming.Name, Format = naming.Format, Casing = naming.Casing, IsDefault = naming.IsDefault }; }" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Downloads.DeleteNamingAsync(naming.Id))" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudGrid>
+        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_naming.Name" Label="Name" data-testid="naming-name" /></MudItem>
+        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_naming.Format" Label="Format" data-testid="naming-format" /></MudItem>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="string" @bind-Value="_naming.Casing" Label="Casing">
+                @foreach (var casing in FileNamingCasings.All)
+                {
+                    <MudSelectItem Value="@casing">@casing</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12"><MudCheckBox @bind-Value="_naming.IsDefault" Label="Default for all downloads" /></MudItem>
+    </MudGrid>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" OnClick="SaveNamingAsync" data-testid="save-naming">Save</MudButton>
+</MudPaper>
+
 @code {
+    private IReadOnlyList<FileNamingDto> _namings = [];
+    private Guid? _namingId;
+    private NamingForm _naming = new();
+
+    private Task SaveNamingAsync() => RunAsync(async () =>
+    {
+        await Downloads.SaveNamingAsync(_namingId, new FileNamingRequest(_naming.Name ?? string.Empty, _naming.Format, _naming.Casing, _naming.IsDefault));
+        _namingId = null;
+        _naming = new();
+    });
+
+    private sealed class NamingForm
+    {
+        public string? Name { get; set; }
+        public string Format { get; set; } = FileNamingTokens.DefaultFormat;
+        public string Casing { get; set; } = FileNamingCasings.None;
+        public bool IsDefault { get; set; }
+    }
+
     private IReadOnlyList<DerivationTypeDto> _types = [];
     private IReadOnlyList<WatermarkDto> _watermarks = [];
     private Guid? _typeId, _watermarkId;
@@ -142,6 +200,7 @@
         {
             _types = await Api.GetTypesAsync();
             _watermarks = await Api.GetWatermarksAsync();
+            _namings = await Downloads.GetNamingsAsync();
         }
         catch (ApiException exception)
         {

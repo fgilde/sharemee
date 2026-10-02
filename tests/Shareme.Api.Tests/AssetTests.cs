@@ -367,6 +367,115 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Several_assets_or_a_folder_download_as_one_zip_named_by_the_rule()
+    {
+        (await Admin.PostAsJsonAsync("/api/v1/metadata/definitions", new PropertyDefinitionRequest("caption", "Caption"), Ct)).EnsureSuccessStatusCode();
+        var folder = await FolderAsync("Shoot");
+        var day = (await (await Admin.PostAsJsonAsync("/api/v1/nodes", new CreateNodeRequest(folder, "Day 2"), Ct)).Content.ReadFromJsonAsync<NodeDto>(Ct))!.Id;
+        using var red = new ImageMagick.MagickImage(ImageMagick.MagickColors.Red, 60, 40);
+        var redBytes = red.ToByteArray(ImageMagick.MagickFormat.Png);
+        var first = await UploadAsync(Admin, "a.png", redBytes, folder);
+        var second = await UploadAsync(Admin, "b.png", redBytes, day);
+        (await Admin.PutAsJsonAsync($"/api/v1/nodes/{first.AssetId}/metadata", new Dictionary<string, List<MetadataValue>>
+        {
+            ["caption"] = [new(V: JsonSerializer.SerializeToElement("Beach"))],
+        }, Ct)).EnsureSuccessStatusCode();
+        await DerivationsAsync(first.AssetId);
+        await DerivationsAsync(second.AssetId);
+
+        (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Broken", "{nope}"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Shouting", "{Name}"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Caption", "{meta:caption}-{seq}", FileNamingCasings.Lower, IsDefault: true), Ct)).EnsureSuccessStatusCode();
+        (await (await Admin.PostAsJsonAsync("/api/v1/file-namings/preview", new FileNamingPreviewRequest("{meta:caption}_{name}", [first.AssetId]), Ct))
+            .Content.ReadFromJsonAsync<string[]>(Ct))!.ShouldBe(["Beach_a.png"]);
+
+        var package = (await (await Admin.PostAsJsonAsync("/api/v1/downloads", new DownloadPackageRequest(FolderId: folder), Ct)).Content.ReadFromJsonAsync<DownloadPackageDto>(Ct))!;
+        package.Count.ShouldBe(2);
+        using var anonymous = api.Factory.CreateClient();
+        using var zipResponse = await anonymous.GetAsync(package.Url, Ct);
+        zipResponse.Content.Headers.ContentType!.MediaType.ShouldBe("application/zip");
+        using (var zip = new System.IO.Compression.ZipArchive(new MemoryStream(await zipResponse.Content.ReadAsByteArrayAsync(Ct))))
+        {
+            zip.Entries.Select(e => e.FullName).ShouldContain(name => System.Text.RegularExpressions.Regex.IsMatch(name, "^beach-00[12]\\.png$"));
+            zip.Entries.Select(e => e.FullName).ShouldContain(name => System.Text.RegularExpressions.Regex.IsMatch(name, "^Day 2/-00[12]\\.png$"));
+            using var entry = new MemoryStream();
+            await using (var content = zip.Entries.First().Open())
+            {
+                await content.CopyToAsync(entry, Ct);
+            }
+
+            entry.ToArray().ShouldBe(redBytes);
+        }
+
+        // single downloads follow the default rule too
+        using (var single = await Admin.GetAsync($"/api/v1/assets/{first.AssetId}/download", Ct))
+        {
+            single.Content.Headers.ContentDisposition!.FileNameStar.ShouldBe("beach-001.png");
+        }
+
+        // readers get renditions, originals need the download right
+        var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
+        (await reader.PostAsJsonAsync("/api/v1/downloads", new DownloadPackageRequest([first.AssetId, second.AssetId]), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var thumbnails = (await (await reader.PostAsJsonAsync("/api/v1/downloads", new DownloadPackageRequest([first.AssetId, second.AssetId], Kind: DerivationKinds.Thumbnail), Ct))
+            .Content.ReadFromJsonAsync<DownloadPackageDto>(Ct))!;
+        thumbnails.Count.ShouldBe(2);
+        (await anonymous.GetAsync($"/api/v1/downloads/{Guid.NewGuid()}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        // titles go into ImageMagick literally, '@file' reads nothing
+        using var sheet = await reader.PostAsJsonAsync("/api/v1/downloads/contact-sheet", new ContactSheetRequest(FolderId: folder, Title: "@appsettings.json 100%[w]"), Ct);
+        sheet.StatusCode.ShouldBe(HttpStatusCode.OK);
+        sheet.Content.Headers.ContentType!.MediaType.ShouldBe("application/pdf");
+        System.Text.Encoding.ASCII.GetString((await sheet.Content.ReadAsByteArrayAsync(Ct))[..5]).ShouldBe("%PDF-");
+    }
+
+    [Fact]
+    public async Task Zip_archives_unpack_into_folders_without_junk_or_forbidden_files()
+    {
+        var folder = await FolderAsync("Archives");
+        using var picture = new ImageMagick.MagickImage(ImageMagick.MagickColors.Green, 30, 30);
+        using var bundle = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(bundle, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Add(string name, byte[] content)
+            {
+                using var entry = zip.CreateEntry(name).Open();
+                entry.Write(content);
+            }
+
+            Add("photos/one.png", picture.ToByteArray(ImageMagick.MagickFormat.Png));
+            Add("photos/deep/two.txt", "hello"u8.ToArray());
+            Add("__MACOSX/photos/._one.png", [1, 2, 3]);
+            Add(".DS_Store", [1, 2, 3]);
+            Add("tool.exe", [0x4D, 0x5A]);
+            Add("bad.png", [1, 2, 3, 4]);
+            Add(string.Join('/', Enumerable.Repeat("deeper", 40)) + "/x.txt", "x"u8.ToArray());
+        }
+
+        var archive = await UploadAsync(Admin, "bundle.zip", bundle.ToArray(), folder);
+        var other = await UploadAsync(Admin, "note.txt", "x"u8.ToArray(), folder);
+        var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
+        (await Admin.PostAsJsonAsync($"/api/v1/assets/{other.AssetId}/extract", new ExtractArchiveRequest(), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await reader.PostAsJsonAsync($"/api/v1/assets/{archive.AssetId}/extract", new ExtractArchiveRequest(), Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        var started = (await (await Admin.PostAsJsonAsync($"/api/v1/assets/{archive.AssetId}/extract", new ExtractArchiveRequest(), Ct)).Content.ReadFromJsonAsync<ArchiveExtractionDto>(Ct))!;
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        ArchiveExtractionDto done;
+        while ((done = (await Admin.GetFromJsonAsync<ArchiveExtractionDto>($"/api/v1/extractions/{started.Id}", Ct))!).State is ExtractionStates.Queued or ExtractionStates.Running)
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the archive was not unpacked");
+            await Task.Delay(250, Ct);
+        }
+
+        done.ShouldSatisfyAllConditions(d => d.State.ShouldBe(ExtractionStates.Completed), d => d.Extracted.ShouldBe(2), d => d.Filtered.ShouldBe(2), d => d.Failed.ShouldBe(3));
+        done.Problems.ShouldContain(p => p.StartsWith("tool.exe"));
+        var children = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{folder}/children", Ct))!.Items;
+        var photos = children.Single(c => c.Name == "photos");
+        var inPhotos = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{photos.Id}/children", Ct))!.Items;
+        inPhotos.Select(c => c.Name).ShouldBe(["deep", "one.png"], ignoreOrder: true);
+        (await DerivationsAsync(inPhotos.Single(c => c.Name == "one.png").Id)).Single(d => d.Kind == DerivationKinds.Thumbnail).State.ShouldBe(DerivationStates.Ready);
+    }
+
+    [Fact]
     public async Task Only_originals_that_cannot_run_anything_are_shown_inline()
     {
         var folder = await FolderAsync("Inline");

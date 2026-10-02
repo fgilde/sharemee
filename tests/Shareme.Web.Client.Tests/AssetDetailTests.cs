@@ -26,6 +26,7 @@ public sealed class AssetDetailTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<IDownloadsApi>());
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_api);
         _renditions.GetTypesAsync(default).ReturnsForAnyArgs([
