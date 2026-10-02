@@ -66,6 +66,7 @@ public sealed class ElasticContainer : IAsyncDisposable
         .WithEnvironment("discovery.type", "single-node")
         .WithEnvironment("xpack.security.enabled", "false")
         .WithEnvironment("ES_JAVA_OPTS", "-Xms512m -Xmx512m")
+        .WithEnvironment("cluster.routing.allocation.disk.threshold_enabled", "false")
         .WithPortBinding(9200, true)
         .WithWaitStrategy(DotNet.Testcontainers.Builders.Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(9200).ForPath("/_cluster/health")))
         .Build();
