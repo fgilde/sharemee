@@ -15,6 +15,7 @@
     <PackageVersion Include="Coworkee.AuthServer" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Settings" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.BackgroundJobs" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Storage" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Mailing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Auditing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Theming" Version="$(CoworkeeVersion)" />

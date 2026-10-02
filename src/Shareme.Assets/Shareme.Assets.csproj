@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />
+    <CoworkeePackage Include="Coworkee.Storage" />
+    <CoworkeePackage Include="Coworkee.BackgroundJobs" />
+  </ItemGroup>
+</Project>

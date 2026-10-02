@@ -97,6 +97,9 @@ public abstract class Node : AuditedAggregateRoot, IMultiTenant, ISoftDelete, IH
     }
 
     public void MarkChanged(string kind) => Raise(new NodeChanged(Id, kind));
+
+    /// <summary>Lets modules that extend nodes raise their own events on the node.</summary>
+    public void Publish(IDomainEvent domainEvent) => Raise(domainEvent);
 }
 
 public sealed class Folder : Node
@@ -107,6 +110,12 @@ public sealed class Folder : Node
 public sealed class Asset : Node
 {
     public override NodeSemantic Semantic => NodeSemantic.Asset;
+
+    public string AssetTypeKey { get; set; } = "other";
+
+    public Guid? CurrentVersionId { get; set; }
+
+    public string Status { get; set; } = "importing";
 }
 
 public sealed class CustomNode : Node
@@ -159,6 +168,12 @@ public sealed class NodeSubscription : Entity, IMultiTenant
     public Guid UserId { get; set; }
 
     public Guid TenantId { get; set; }
+}
+
+/// <summary>Runs inside the purge transaction before nodes are hard deleted, for cleanup of data that lives outside the graph.</summary>
+public interface INodePurgeListener
+{
+    Task OnPurgingAsync(IQueryable<Guid> nodeIds, CancellationToken cancellationToken);
 }
 
 public static class NodePaths
@@ -226,6 +241,13 @@ internal sealed class GraphModelContributor : IModelContributor
             node.HasIndex(n => n.DeletedWithId);
             node.HasOne<Node>().WithMany().HasForeignKey(n => n.ParentId).OnDelete(DeleteBehavior.NoAction);
             node.HasOne<NodeType>().WithMany().HasForeignKey(n => n.NodeTypeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Asset>(asset =>
+        {
+            asset.Property(a => a.AssetTypeKey).HasMaxLength(50);
+            asset.Property(a => a.Status).HasMaxLength(20);
+            asset.HasIndex(a => a.CurrentVersionId);
         });
 
         modelBuilder.Entity<EdgeType>(type =>

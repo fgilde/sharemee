@@ -2,6 +2,16 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P1c (storage, assets)
+
+- [ ] Upload assembly goes through a temp file (`Shareme:Uploads:TempRoot`), so it needs free disk of the file size; stream into S3 multipart / Azure blocks while hashing instead.
+- [ ] Download link tokens carry only the blob key (resolver looks up the version across tenants); fixed 15 minute lifetime, no revocation; P1d derivations need their own lookup.
+- [ ] FileSystem provider leaves `*.tmp` files after a crash during a write (sweep in the cleanup job).
+- [ ] Two parallel PUTs of the same chunk index can hit the `UploadChunks` primary key (500); treat the unique violation as success.
+- [ ] `AssetVersionCreated` is raised for duplicates too; P1d derivations should key on the SHA-256 to skip identical content.
+- [ ] Spec puts processing status and file type id on `AssetVersion`; P1d adds the derivation table and must include derivation keys in the purge listener and the link resolver.
+- [ ] The current version has no metadata snapshot; "metadata as of version N" must fall back to the live asset for the current one.
+
 ## From P1b (metadata)
 
 - [ ] Deleting and recreating a definition with the same key revives stored values under the new type (strip `Metadata - 'key'` on delete).

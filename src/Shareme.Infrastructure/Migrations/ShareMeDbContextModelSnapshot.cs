@@ -1144,6 +1144,748 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasAnnotation("Coworkee:NotAudited", true);
                 });
 
+            modelBuilder.Entity("Shareme.Assets.AssetType", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("DownloadOriginalAlways")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("AssetTypes", "sm");
+
+                    b.HasData(
+                        new
+                        {
+                            Key = "image",
+                            DownloadOriginalAlways = false,
+                            Name = "Image"
+                        },
+                        new
+                        {
+                            Key = "video",
+                            DownloadOriginalAlways = false,
+                            Name = "Video"
+                        },
+                        new
+                        {
+                            Key = "audio",
+                            DownloadOriginalAlways = false,
+                            Name = "Audio"
+                        },
+                        new
+                        {
+                            Key = "document",
+                            DownloadOriginalAlways = false,
+                            Name = "Document"
+                        },
+                        new
+                        {
+                            Key = "archive",
+                            DownloadOriginalAlways = true,
+                            Name = "Archive"
+                        },
+                        new
+                        {
+                            Key = "other",
+                            DownloadOriginalAlways = true,
+                            Name = "Other"
+                        });
+                });
+
+            modelBuilder.Entity("Shareme.Assets.AssetVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BlobKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Extension")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("MetadataSnapshot")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BlobKey");
+
+                    b.HasIndex("AssetId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Sha256");
+
+                    b.ToTable("AssetVersions", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Assets.FileType", b =>
+                {
+                    b.Property<string>("Extension")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("AssetTypeKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("ForbiddenForUpload")
+                        .HasColumnType("boolean");
+
+                    b.PrimitiveCollection<string>("MagicNumbers")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Extension");
+
+                    b.HasIndex("AssetTypeKey");
+
+                    b.ToTable("FileTypes", "sm");
+
+                    b.HasData(
+                        new
+                        {
+                            Extension = "jpg",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"FFD8FF\"]",
+                            MimeType = "image/jpeg"
+                        },
+                        new
+                        {
+                            Extension = "jpeg",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"FFD8FF\"]",
+                            MimeType = "image/jpeg"
+                        },
+                        new
+                        {
+                            Extension = "png",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"89504E470D0A1A0A\"]",
+                            MimeType = "image/png"
+                        },
+                        new
+                        {
+                            Extension = "gif",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"474946383761\",\"474946383961\"]",
+                            MimeType = "image/gif"
+                        },
+                        new
+                        {
+                            Extension = "webp",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"52494646\"]",
+                            MimeType = "image/webp"
+                        },
+                        new
+                        {
+                            Extension = "tif",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"49492A00\",\"4D4D002A\"]",
+                            MimeType = "image/tiff"
+                        },
+                        new
+                        {
+                            Extension = "tiff",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"49492A00\",\"4D4D002A\"]",
+                            MimeType = "image/tiff"
+                        },
+                        new
+                        {
+                            Extension = "bmp",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"424D\"]",
+                            MimeType = "image/bmp"
+                        },
+                        new
+                        {
+                            Extension = "svg",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "image/svg+xml"
+                        },
+                        new
+                        {
+                            Extension = "heic",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "image/heic"
+                        },
+                        new
+                        {
+                            Extension = "psd",
+                            AssetTypeKey = "image",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"38425053\"]",
+                            MimeType = "image/vnd.adobe.photoshop"
+                        },
+                        new
+                        {
+                            Extension = "mp4",
+                            AssetTypeKey = "video",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "video/mp4"
+                        },
+                        new
+                        {
+                            Extension = "mov",
+                            AssetTypeKey = "video",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "video/quicktime"
+                        },
+                        new
+                        {
+                            Extension = "avi",
+                            AssetTypeKey = "video",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"52494646\"]",
+                            MimeType = "video/x-msvideo"
+                        },
+                        new
+                        {
+                            Extension = "webm",
+                            AssetTypeKey = "video",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"1A45DFA3\"]",
+                            MimeType = "video/webm"
+                        },
+                        new
+                        {
+                            Extension = "mkv",
+                            AssetTypeKey = "video",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"1A45DFA3\"]",
+                            MimeType = "video/x-matroska"
+                        },
+                        new
+                        {
+                            Extension = "mp3",
+                            AssetTypeKey = "audio",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "audio/mpeg"
+                        },
+                        new
+                        {
+                            Extension = "wav",
+                            AssetTypeKey = "audio",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"52494646\"]",
+                            MimeType = "audio/wav"
+                        },
+                        new
+                        {
+                            Extension = "ogg",
+                            AssetTypeKey = "audio",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"4F676753\"]",
+                            MimeType = "audio/ogg"
+                        },
+                        new
+                        {
+                            Extension = "flac",
+                            AssetTypeKey = "audio",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"664C6143\"]",
+                            MimeType = "audio/flac"
+                        },
+                        new
+                        {
+                            Extension = "m4a",
+                            AssetTypeKey = "audio",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "audio/mp4"
+                        },
+                        new
+                        {
+                            Extension = "pdf",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"25504446\"]",
+                            MimeType = "application/pdf"
+                        },
+                        new
+                        {
+                            Extension = "docx",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        },
+                        new
+                        {
+                            Extension = "xlsx",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        },
+                        new
+                        {
+                            Extension = "pptx",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                        },
+                        new
+                        {
+                            Extension = "doc",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"D0CF11E0A1B11AE1\"]",
+                            MimeType = "application/msword"
+                        },
+                        new
+                        {
+                            Extension = "xls",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"D0CF11E0A1B11AE1\"]",
+                            MimeType = "application/vnd.ms-excel"
+                        },
+                        new
+                        {
+                            Extension = "ppt",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"D0CF11E0A1B11AE1\"]",
+                            MimeType = "application/vnd.ms-powerpoint"
+                        },
+                        new
+                        {
+                            Extension = "txt",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "text/plain"
+                        },
+                        new
+                        {
+                            Extension = "csv",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "text/csv"
+                        },
+                        new
+                        {
+                            Extension = "md",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "text/markdown"
+                        },
+                        new
+                        {
+                            Extension = "json",
+                            AssetTypeKey = "document",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "application/json"
+                        },
+                        new
+                        {
+                            Extension = "zip",
+                            AssetTypeKey = "archive",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"504B0304\"]",
+                            MimeType = "application/zip"
+                        },
+                        new
+                        {
+                            Extension = "7z",
+                            AssetTypeKey = "archive",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"377ABCAF271C\"]",
+                            MimeType = "application/x-7z-compressed"
+                        },
+                        new
+                        {
+                            Extension = "rar",
+                            AssetTypeKey = "archive",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"526172211A07\"]",
+                            MimeType = "application/vnd.rar"
+                        },
+                        new
+                        {
+                            Extension = "gz",
+                            AssetTypeKey = "archive",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[\"1F8B\"]",
+                            MimeType = "application/gzip"
+                        },
+                        new
+                        {
+                            Extension = "tar",
+                            AssetTypeKey = "archive",
+                            ForbiddenForUpload = false,
+                            MagicNumbers = "[]",
+                            MimeType = "application/x-tar"
+                        },
+                        new
+                        {
+                            Extension = "exe",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "dll",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "bat",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "cmd",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "com",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "msi",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "scr",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "ps1",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "vbs",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "vbe",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "js",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "jse",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "wsf",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "wsh",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "jar",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "sh",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "cpl",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "hta",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "lnk",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "url",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "msc",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "pif",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "reg",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        },
+                        new
+                        {
+                            Extension = "inf",
+                            AssetTypeKey = "other",
+                            ForbiddenForUpload = true,
+                            MagicNumbers = "[]",
+                            MimeType = "application/octet-stream"
+                        });
+                });
+
+            modelBuilder.Entity("Shareme.Assets.OrphanBlob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OrphanBlobs", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Assets.UploadChunk", b =>
+                {
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("SessionId", "Index");
+
+                    b.ToTable("UploadChunks", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Assets.UploadSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ChunkSize")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<string>("DuplicateOf")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("TargetFolderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("VersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("VersionNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UserId", "State");
+
+                    b.ToTable("UploadSessions", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Graph.Edge", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1747,6 +2489,21 @@ namespace Shareme.Infrastructure.Migrations
                 {
                     b.HasBaseType("Shareme.Graph.Node");
 
+                    b.Property<string>("AssetTypeKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid?>("CurrentVersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasIndex("CurrentVersionId");
+
                     b.HasDiscriminator().HasValue("asset");
                 });
 
@@ -1925,6 +2682,33 @@ namespace Shareme.Infrastructure.Migrations
                     b.Navigation("Application");
 
                     b.Navigation("Authorization");
+                });
+
+            modelBuilder.Entity("Shareme.Assets.AssetVersion", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Assets.FileType", b =>
+                {
+                    b.HasOne("Shareme.Assets.AssetType", null)
+                        .WithMany()
+                        .HasForeignKey("AssetTypeKey")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Assets.UploadChunk", b =>
+                {
+                    b.HasOne("Shareme.Assets.UploadSession", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Shareme.Graph.Edge", b =>

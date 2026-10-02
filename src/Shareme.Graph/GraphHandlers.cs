@@ -125,7 +125,7 @@ internal sealed class EdgeHandlers(CoworkeeDbContext db, NodeAccess access)
     }
 }
 
-internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access)
+internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, IEnumerable<INodePurgeListener> purgeListeners)
     : IHandler<GetRecycleBin, Result<PagedResult<RecycleBinItemDto>>>, IHandler<RestoreNode, Result>, IHandler<PurgeNode, Result>
 {
     public async Task<Result<PagedResult<RecycleBinItemDto>>> HandleAsync(GetRecycleBin query, CancellationToken cancellationToken)
@@ -189,10 +189,15 @@ internal sealed class RecycleBinHandlers(CoworkeeDbContext db, ICurrentUser curr
             return NodeErrors.NotFound;
         }
 
-        // ponytail: hard delete bypasses audit and blob cleanup; P1c adds a purge job that removes stored files first
+        // ponytail: hard delete bypasses audit; stored files are queued for cleanup by the purge listeners
         // earlier bin entries inside the subtree go with it, their parent is gone afterwards
         var subtree = Deleted().Where(n => n.Path.StartsWith(path));
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        foreach (var listener in purgeListeners)
+        {
+            await listener.OnPurgingAsync(subtree.Select(n => n.Id), cancellationToken);
+        }
+
         await db.Set<ResourcePermission>().Where(p => p.ResourceType == NodePermissions.ResourceType && subtree.Select(n => n.Id).Contains(p.ResourceId))
             .ExecuteDeleteAsync(cancellationToken);
         await subtree.ExecuteDeleteAsync(cancellationToken);
