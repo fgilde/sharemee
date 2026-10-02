@@ -6,6 +6,8 @@ using System.Text.Json;
 using Coworkee.Contracts;
 using Coworkee.Contracts.Identity;
 using Coworkee.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Shareme.Contracts.Assets;
 using Shareme.Contracts.Graph;
 using Shareme.Contracts.Metadata;
@@ -212,6 +214,89 @@ public sealed class WorkspaceTests(ApiFixture api) : IAsyncLifetime
         var states = (await owner.GetFromJsonAsync<StateDto[]>($"/api/v1/workspaces/{workspace.Id}/states", Ct))!;
         (await MoveAsync(owner, task, states[1].Id, 0)).EnsureSuccessStatusCode();
         (await NotifiedAsync(member, "task.moved")).Title.ShouldContain("In progress");
+    }
+
+    [Fact]
+    public async Task Shares_give_outsiders_exactly_what_was_shared_until_revoked()
+    {
+        var (owner, ownerId) = await UserAsync(WorkspacePermissions.Create);
+        var (member, memberId) = await UserAsync();
+        var workspace = (await (await owner.PostAsJsonAsync("/api/v1/workspaces", new CreateWorkspaceRequest("Press kit"), Ct)).Content.ReadFromJsonAsync<WorkspaceDto>(Ct))!;
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/members", new AddWorkspaceMemberRequest(memberId), Ct)).EnsureSuccessStatusCode();
+        using var red = new ImageMagick.MagickImage(ImageMagick.MagickColors.Red, 80, 40);
+        var first = await UploadAsync(owner, "logo.png", red.ToByteArray(ImageMagick.MagickFormat.Png), workspace.Id);
+        var second = await UploadAsync(owner, "banner.png", red.ToByteArray(ImageMagick.MagickFormat.Png), workspace.Id);
+        await RenderedAsync(owner, first.AssetId);
+        await RenderedAsync(owner, second.AssetId);
+
+        var request = new ShareRequest("Press", DateTimeOffset.UtcNow.AddDays(7), ["journalist@paper.test"]);
+        (await member.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/shares", request, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/shares", request with { RecipientEmails = ["not an address"] }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var share = (await (await owner.PostAsJsonAsync($"/api/v1/workspaces/{workspace.Id}/shares", request, Ct)).Content.ReadFromJsonAsync<ShareDto>(Ct))!;
+        share.Recipients.Single().Email.ShouldBe("journalist@paper.test");
+        var token = await TokenFromMailAsync("journalist@paper.test");
+
+        using var outsider = api.Factory.CreateClient();
+        var opened = (await outsider.GetFromJsonAsync<PublicShareDto>($"/api/v1/public/shares/{token}", Ct))!;
+        opened.Items.Select(i => i.Name).ShouldBe(["banner.png", "logo.png"]);
+        opened.Items.ShouldAllBe(i => i.AvailableKinds.SequenceEqual(new[] { Shareme.Contracts.Assets.DerivationKinds.Preview }));
+        using (var preview = await outsider.GetAsync($"/api/v1/public/shares/{token}/assets/{first.AssetId}/preview", Ct))
+        {
+            preview.StatusCode.ShouldBe(HttpStatusCode.OK);
+            preview.Content.Headers.ContentType!.MediaType.ShouldBe("image/webp");
+        }
+
+        (await outsider.GetAsync($"/api/v1/public/shares/{token}/assets/{first.AssetId}/original", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound, "originals were not shared");
+        (await outsider.GetAsync($"/api/v1/public/shares/{token}/assets/{first.AssetId}/thumbnail", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var package = (await (await outsider.PostAsync($"/api/v1/public/shares/{token}/zip?kind=preview", null, Ct)).Content.ReadFromJsonAsync<Shareme.Contracts.Assets.DownloadPackageDto>(Ct))!;
+        package.Count.ShouldBe(2);
+        (await outsider.GetAsync(package.Url, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await owner.GetFromJsonAsync<ShareDto[]>($"/api/v1/workspaces/{workspace.Id}/shares", Ct))!.Single().Recipients.Single().LastAccessAt.ShouldNotBeNull();
+
+        (await owner.DeleteAsync($"/api/v1/shares/{share.Id}", Ct)).EnsureSuccessStatusCode();
+        (await outsider.GetAsync($"/api/v1/public/shares/{token}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        // guessing is slowed down
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 130; i++)
+        {
+            statuses.Add((await outsider.GetAsync("/api/v1/public/shares/guess", Ct)).StatusCode);
+        }
+
+        statuses.ShouldContain(HttpStatusCode.TooManyRequests);
+    }
+
+    private async Task<string> TokenFromMailAsync(string to)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (true)
+        {
+            await using (var scope = api.Factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<Shareme.Infrastructure.ShareMeDbContext>();
+                var mail = await db.Set<Coworkee.Mailing.OutgoingMail>().IgnoreQueryFilters().Where(m => m.To == to).OrderByDescending(m => m.Id).FirstOrDefaultAsync(Ct);
+                if (mail is not null)
+                {
+                    var token = System.Text.RegularExpressions.Regex.Match(mail.HtmlBody, "/s/([A-Za-z0-9_-]+)").Groups[1].Value;
+                    token.ShouldNotBeNullOrEmpty();
+                    return token;
+                }
+            }
+
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "no invitation was queued");
+            await Task.Delay(200, Ct);
+        }
+    }
+
+    private static async Task RenderedAsync(HttpClient client, Guid assetId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while ((await client.GetFromJsonAsync<Shareme.Contracts.Assets.AssetDto>($"/api/v1/assets/{assetId}", Ct))!.Derivations is var derivations
+            && (derivations.Count == 0 || derivations.Any(d => d.State == Shareme.Contracts.Assets.DerivationStates.Pending)))
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "renditions were not produced");
+            await Task.Delay(250, Ct);
+        }
     }
 
     private static async Task<Coworkee.Contracts.Notifications.NotificationDto> NotifiedAsync(HttpClient client, string type)

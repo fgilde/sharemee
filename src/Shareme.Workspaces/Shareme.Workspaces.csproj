@@ -4,5 +4,6 @@
     <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
     <CoworkeePackage Include="Coworkee.Identity" />
     <CoworkeePackage Include="Coworkee.Notifications" />
+    <CoworkeePackage Include="Coworkee.Mailing" />
   </ItemGroup>
 </Project>

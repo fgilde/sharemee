@@ -1,0 +1,109 @@
+@page "/s/{Token}"
+@attribute [AllowAnonymous]
+@layout Shareme.Web.Client.Workspaces.PublicLayout
+@using Coworkee.Client.Blazor.Api
+@using MudBlazor.Extensions.Components
+@using Shareme.Contracts.Assets
+@using Shareme.Contracts.Workspaces
+@using Shareme.Web.Client.Workspaces
+@inject IWorkspacesApi Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_share?.Name ?? "Shared files")</PageTitle>
+
+@if (_share is null)
+{
+    <MudText Typo="Typo.body1" data-testid="share-state">@(_failed ? "This link is not valid (any more)." : "Loading…")</MudText>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4" data-testid="share-title">@_share.Name</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption">available until @_share.ValidUntil.ToLocalTime().ToString("d")</MudText>
+        @foreach (var kind in Bundles)
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.FolderZip" OnClick="() => ZipAsync(kind)" data-testid="@($"zip-{kind}")">All as zip (@kind)</MudButton>
+        }
+    </MudStack>
+
+    <MudGrid>
+        <MudItem xs="12" md="@(_selected is null ? 12 : 7)">
+            <MudGrid Spacing="2" data-testid="share-items">
+                @foreach (var item in _share.Items)
+                {
+                    <MudItem xs="6" sm="4" md="3">
+                        <MudCard Outlined="true" Style="cursor:pointer" @onclick="() => _selected = item" data-item="@item.Name">
+                            @if (Thumbnail(item) is { } kind)
+                            {
+                                <MudCardMedia Image="@ShareUrls.File(Token, item.AssetId, kind)" Height="140" />
+                            }
+                            <MudCardContent Class="pa-2"><MudText Typo="Typo.body2">@item.Name</MudText></MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudItem>
+        @if (_selected is { } selected)
+        {
+            <MudItem xs="12" md="5">
+                <MudPaper Outlined="true" Class="pa-2" data-testid="share-preview">
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.h6">@selected.Name</MudText>
+                        <MudSpacer />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Close" OnClick="() => _selected = null" />
+                    </MudStack>
+                    @if (selected.AvailableKinds.Contains(DerivationKinds.Preview))
+                    {
+                        <MudExFileDisplay @key="selected.AssetId" Url="@ShareUrls.File(Token, selected.AssetId, DerivationKinds.Preview)" ContentType="image/webp" FileName="@selected.Name" ShowFileName="false" />
+                    }
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Class="mt-2">
+                        @foreach (var kind in selected.AvailableKinds)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Download" Href="@ShareUrls.File(Token, selected.AssetId, kind, download: true)">@kind</MudButton>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private PublicShareDto? _share;
+    private PublicShareItemDto? _selected;
+    private bool _failed;
+
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    private IEnumerable<string> Bundles => (_share!.AllowOriginals ? new[] { DownloadKinds.Original } : []).Concat(_share.RenditionKinds.Where(k => k != DerivationKinds.Thumbnail));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            _share = await Api.OpenShareAsync(Token);
+        }
+        catch (ApiException)
+        {
+            _failed = true;
+        }
+    }
+
+    private static string? Thumbnail(PublicShareItemDto item) =>
+        item.AvailableKinds.Contains(DerivationKinds.Thumbnail) ? DerivationKinds.Thumbnail : item.AvailableKinds.Contains(DerivationKinds.Preview) ? DerivationKinds.Preview : null;
+
+    private async Task ZipAsync(string kind)
+    {
+        try
+        {
+            var package = await Api.PackShareAsync(Token, kind);
+            Nav.NavigateTo(package.Url.TrimStart('/'), forceLoad: true);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+}
