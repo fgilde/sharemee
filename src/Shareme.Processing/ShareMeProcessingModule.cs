@@ -20,17 +20,28 @@ using Shareme.Graph;
 
 namespace Shareme.Processing;
 
-/// <summary>Renders thumbnails and previews; jobs run on the <see cref="Queue"/> queue, served by the processing host.</summary>
+/// <summary>Renders thumbnails, previews and playable copies; jobs run on the <see cref="Queue"/> queue, served by the processing host.</summary>
 [DependsOn(typeof(ShareMeAssetsModule))]
 public sealed class ShareMeProcessingModule : CoworkeeModule, IWebModule
 {
     public const string Queue = "processing";
 
+    /// <summary>Folder for work files; originals are copied there, so it needs room for the largest upload per worker.</summary>
+    public const string TempRootSetting = "Shareme:Processing:TempRoot";
+
     public override void ConfigureServices(ModuleServiceContext context)
     {
-        context.Services.AddMessagingFromAssembly(typeof(ShareMeProcessingModule).Assembly);
-        context.Services.AddScoped<RenderDerivationsJob>();
-        context.Services.AddRecurringJob<RenditionSweepJob>(RenditionSweepJob.Id, "*/10 * * * *");
+        var services = context.Services;
+        services.AddMessagingFromAssembly(typeof(ShareMeProcessingModule).Assembly);
+        services.AddScoped<RenderDerivationsJob>();
+        services.AddRecurringJob<RenditionSweepJob>(RenditionSweepJob.Id, "*/10 * * * *");
+        services.AddSingleton<ProcessingTools>();
+        services.AddSingleton<PdfSource>();
+        services.AddSingleton<IRenditionSource, VideoSource>();
+        services.AddSingleton<IRenditionSource, AudioSource>();
+        services.AddSingleton<IRenditionSource>(provider => provider.GetRequiredService<PdfSource>());
+        services.AddSingleton<IRenditionSource, OfficeSource>();
+        services.AddSingleton<TechnicalMetadataReader>();
 
         // oversized or slow images fail instead of eating memory, disk and cores of the host
         ResourceLimits.Width = 16_000;
@@ -66,8 +77,15 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
             return Error.NotFound("assets.not_found", "The asset has no content yet.");
         }
 
+        var mimeType = await db.Set<AssetVersion>().Where(v => v.Id == versionId).Select(v => v.MimeType).SingleAsync(cancellationToken);
         var now = clock.GetUtcNow();
         var existing = await db.Set<Derivation>().Where(d => d.VersionId == versionId).ToListAsync(cancellationToken);
+        if (existing.Any(d => d.State == DerivationStates.Pending))
+        {
+            // renders can take many minutes; a second request would only run the same work twice
+            return Error.Conflict("assets.rendering", "The renditions are being created already.");
+        }
+
         foreach (var derivation in existing)
         {
             if (derivation.BlobKey is { } key)
@@ -81,7 +99,7 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
             derivation.PlannedAt = now;
         }
 
-        db.AddRange(DerivationKinds.All.Except(existing.Select(d => d.Kind))
+        db.AddRange(DerivationKinds.For(mimeType).Except(existing.Select(d => d.Kind))
             .Select(kind => new Derivation { VersionId = versionId, AssetId = asset.Id, Kind = kind, PlannedAt = now }));
         asset.RenditionTag = null;
         await db.SaveChangesAsync(cancellationToken);
@@ -95,8 +113,13 @@ internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs
 {
     public async Task HandleAsync(AssetVersionCreated domainEvent, CancellationToken cancellationToken)
     {
+        if (await db.Set<AssetVersion>().Where(v => v.Id == domainEvent.VersionId).Select(v => v.MimeType).SingleOrDefaultAsync(cancellationToken) is not { } mimeType)
+        {
+            return;
+        }
+
         var existing = await db.Set<Derivation>().Where(d => d.VersionId == domainEvent.VersionId).Select(d => new { d.Kind, d.State }).ToListAsync(cancellationToken);
-        var missing = DerivationKinds.All.Except(existing.Select(d => d.Kind)).ToList();
+        var missing = DerivationKinds.For(mimeType).Except(existing.Select(d => d.Kind)).ToList();
         if (missing.Count > 0)
         {
             db.AddRange(missing.Select(kind => new Derivation { VersionId = domainEvent.VersionId, AssetId = domainEvent.AssetId, Kind = kind, PlannedAt = clock.GetUtcNow() }));
@@ -111,74 +134,163 @@ internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs
     }
 }
 
-/// <summary>Re-queues renditions whose job got lost and gives up on those stuck for a day.</summary>
-internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jobs, TimeProvider clock) : IRecurringJob
+/// <summary>Re-queues renditions whose job got lost, gives up on those stuck for a day and removes work folders of crashed jobs.</summary>
+internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jobs, Microsoft.Extensions.Configuration.IConfiguration configuration, TimeProvider clock) : IRecurringJob
 {
     public const string Id = "shareme-rendition-sweep";
+
+    // longer than the slowest render (copy, metadata, stills, ten minute encode), so a running job is not started twice
+    private static readonly TimeSpan Lost = TimeSpan.FromHours(2);
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
+        foreach (var folder in new DirectoryInfo(RenderDerivationsJob.WorkRoot(configuration)) is { Exists: true } root ? root.EnumerateDirectories() : [])
+        {
+            if (folder.LastWriteTimeUtc < now.UtcDateTime.AddDays(-1))
+            {
+                try
+                {
+                    folder.Delete(recursive: true);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // still in use; the next sweep tries again
+                }
+            }
+        }
+
         var pending = db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.State == DerivationStates.Pending);
         await pending.Where(d => d.PlannedAt < now.AddDays(-1))
             .ExecuteUpdateAsync(d => d.SetProperty(x => x.State, DerivationStates.Failed).SetProperty(x => x.Error, "Rendering did not finish within a day."), cancellationToken);
-        foreach (var versionId in await pending.Where(d => d.PlannedAt < now.AddMinutes(-10)).Select(d => d.VersionId).Distinct().Take(500).ToListAsync(cancellationToken))
+        foreach (var versionId in await pending.Where(d => d.PlannedAt < now - Lost).Select(d => d.VersionId).Distinct().Take(500).ToListAsync(cancellationToken))
         {
             jobs.Enqueue<RenderDerivationsJob, Guid>(versionId, ShareMeProcessingModule.Queue);
         }
     }
 }
 
-/// <summary>Renders the pending derivations of one version; runs with or without a tenant (sweeps), so it reads by id across tenants.</summary>
-internal sealed class RenderDerivationsJob(CoworkeeDbContext db, IBlobStorage storage, TimeProvider clock, ILogger<RenderDerivationsJob> logger) : IBackgroundJob<Guid>
+/// <summary>
+/// Renders the pending derivations of one version: images directly, other media through a source that turns them into a still image
+/// (and for video and audio a playable copy). Runs with or without a tenant (sweeps), so it reads by id across tenants.
+/// </summary>
+internal sealed class RenderDerivationsJob(
+    CoworkeeDbContext db, IBlobStorage storage, IEnumerable<IRenditionSource> sources, TechnicalMetadataReader metadata,
+    Microsoft.Extensions.Configuration.IConfiguration configuration, TimeProvider clock, ILogger<RenderDerivationsJob> logger)
+    : IBackgroundJob<Guid>
 {
     private static readonly Dictionary<string, int> Sizes = new() { [DerivationKinds.Thumbnail] = 320, [DerivationKinds.Preview] = 1600 };
 
-    // ponytail: still images through Magick.NET only; video, office, pdf and 3d renditions come in P3
-    private static readonly Dictionary<string, MagickFormat> Renderable = new()
-    {
-        ["image/jpeg"] = MagickFormat.Jpeg,
-        ["image/png"] = MagickFormat.Png,
-        ["image/gif"] = MagickFormat.Gif,
-        ["image/webp"] = MagickFormat.WebP,
-        ["image/tiff"] = MagickFormat.Tiff,
-        ["image/bmp"] = MagickFormat.Bmp,
-        ["image/vnd.adobe.photoshop"] = MagickFormat.Psd,
-    };
+    private static readonly HashSet<string> TextTypes = ["text/plain", "text/csv", "text/markdown"];
+
+    private static IReadOnlyDictionary<string, MagickFormat> Images => ImageFormats.ByMimeType;
+
+    public static string WorkRoot(Microsoft.Extensions.Configuration.IConfiguration configuration) =>
+        Path.Combine(configuration[ShareMeProcessingModule.TempRootSetting] is { Length: > 0 } root ? root : Path.GetTempPath(), "shareme-render");
+
+    /// <summary>The work file name: only a plain extension survives (tools pick filters by it), text goes in as .txt so every office version reads it.</summary>
+    private static string InputName(AssetVersion version) =>
+        "original" + (TextTypes.Contains(version.MimeType) ? ".txt"
+            : version.Extension is { } extension && System.Text.RegularExpressions.Regex.IsMatch(extension, "^[a-z0-9]{1,10}$") ? "." + extension : string.Empty);
 
     public async Task ExecuteAsync(Guid versionId, CancellationToken cancellationToken)
     {
-        var version = await db.Set<AssetVersion>().IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(v => v.Id == versionId, cancellationToken);
+        var version = await db.Set<AssetVersion>().IgnoreQueryFilters().SingleOrDefaultAsync(v => v.Id == versionId, cancellationToken);
         var pending = await db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.VersionId == versionId && d.State == DerivationStates.Pending).ToListAsync(cancellationToken);
         if (version is null || pending.Count == 0)
         {
             return;
         }
 
-        if (!Renderable.TryGetValue(version.MimeType, out var format))
+        var work = Directory.CreateDirectory(Path.Combine(WorkRoot(configuration), Guid.NewGuid().ToString("N"))).FullName;
+        try
         {
-            pending.ForEach(d => d.State = DerivationStates.NotSupported);
+            // a missing original is a storage or configuration problem: throw so the job is retried instead of failing the rendition
+            var input = Path.Combine(work, InputName(version));
+            await using (var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken)
+                ?? throw new FileNotFoundException($"The original of version {versionId} is not in storage."))
+            await using (var file = File.Create(input))
+            {
+                await original.CopyToAsync(file, cancellationToken);
+            }
+
+            if (version.TechnicalMetadata.Count == 0)
+            {
+                version.TechnicalMetadata = await metadata.ReadAsync(input, version.MimeType, work, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            var source = sources.FirstOrDefault(s => s.Supports(version.MimeType));
+            string? still;
+            try
+            {
+                still = Images.ContainsKey(version.MimeType) ? input : source is null ? null : await source.StillAsync(input, work, cancellationToken);
+            }
+            catch (ToolFailedException exception)
+            {
+                await FailAsync(pending.Where(d => d.Kind != DerivationKinds.Media), exception.Message, cancellationToken);
+                still = null;
+            }
+
+            await RenderStillsAsync(version, pending.Where(d => d.Kind != DerivationKinds.Media && d.State == DerivationStates.Pending).ToList(), still, source?.TrimStill == true, cancellationToken);
+            if (pending.FirstOrDefault(d => d.Kind == DerivationKinds.Media) is { } media)
+            {
+                await RenderMediaAsync(version, media, source, input, work, cancellationToken);
+            }
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(work, recursive: true);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // a tool may still hold a file for a moment; the rendition sweep removes the folder later
+            }
+        }
+    }
+
+    private async Task RenderStillsAsync(AssetVersion version, List<Derivation> derivations, string? still, bool trim, CancellationToken cancellationToken)
+    {
+        if (derivations.Count == 0)
+        {
+            return;
+        }
+
+        if (still is null)
+        {
+            derivations.ForEach(d => d.State = DerivationStates.NotSupported);
             await db.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        // a missing original is a storage or configuration problem: throw so the job is retried instead of failing the rendition
-        await using var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken)
-            ?? throw new FileNotFoundException($"The original of version {versionId} is not in storage.");
         MagickImage image;
         try
         {
-            // the format comes from the checked file type, never from content sniffing
-            image = new MagickImage(original, new MagickReadSettings { Format = format, FrameIndex = 0, FrameCount = 1 });
+            // the format comes from the checked file type for originals, renderer outputs are PNG
+            // originals are read with the coder of their checked type; everything the sources produce is PNG
+            image = new MagickImage(still, new MagickReadSettings
+            {
+                Format = Images.TryGetValue(version.MimeType, out var format) ? format : MagickFormat.Png,
+                FrameIndex = 0,
+                FrameCount = 1,
+            });
         }
         catch (MagickException exception)
         {
-            await FailAsync(pending, exception, cancellationToken);
+            await FailAsync(derivations, exception.Message, cancellationToken);
             return;
         }
 
         using (image)
         {
+            if (trim)
+            {
+                image.Trim();
+                image.ResetPage();
+            }
+
             image.AutoOrient();
             if (image.GetColorProfile() is not null)
             {
@@ -189,42 +301,72 @@ internal sealed class RenderDerivationsJob(CoworkeeDbContext db, IBlobStorage st
                 image.ColorSpace = ColorSpace.sRGB;
             }
 
-            foreach (var derivation in pending)
+            foreach (var derivation in derivations)
             {
-                await RenderAsync(image, version, derivation, cancellationToken);
+                byte[] bytes;
+                uint width, height;
+                try
+                {
+                    using var rendition = image.Clone();
+                    var size = (uint)Sizes[derivation.Kind];
+                    rendition.Resize(new MagickGeometry(size, size) { Greater = true });
+                    rendition.Strip();
+                    rendition.Quality = 80;
+                    bytes = rendition.ToByteArray(MagickFormat.WebP);
+                    (width, height) = (rendition.Width, rendition.Height);
+                }
+                catch (MagickException exception)
+                {
+                    await FailAsync([derivation], exception.Message, cancellationToken);
+                    continue;
+                }
+
+                await StoreAsync(version, derivation, new MemoryStream(bytes), bytes.Length, "image/webp", (int)width, (int)height, cancellationToken);
             }
         }
     }
 
-    private async Task RenderAsync(MagickImage image, AssetVersion version, Derivation derivation, CancellationToken cancellationToken)
+    private async Task RenderMediaAsync(AssetVersion version, Derivation media, IRenditionSource? source, string input, string work, CancellationToken cancellationToken)
     {
-        byte[] bytes;
-        uint width, height;
+        (string Path, string MimeType)? copy;
         try
         {
-            using var rendition = image.Clone();
-            var size = (uint)Sizes[derivation.Kind];
-            rendition.Resize(new MagickGeometry(size, size) { Greater = true });
-            rendition.Strip();
-            rendition.Quality = 80;
-            bytes = rendition.ToByteArray(MagickFormat.WebP);
-            (width, height) = (rendition.Width, rendition.Height);
+            copy = source is null ? null : await source.MediaAsync(input, work, cancellationToken);
         }
-        catch (MagickException exception)
+        catch (ToolFailedException exception)
         {
-            await FailAsync([derivation], exception, cancellationToken);
+            await FailAsync([media], exception.Message, cancellationToken);
             return;
         }
 
+        if (copy is not { } output)
+        {
+            media.State = DerivationStates.NotSupported;
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await using var file = File.OpenRead(output.Path);
+        await StoreAsync(version, media, file, file.Length, output.MimeType, null, null, cancellationToken);
+    }
+
+    private async Task StoreAsync(AssetVersion version, Derivation derivation, Stream content, long size, string mimeType, int? width, int? height, CancellationToken cancellationToken)
+    {
         var key = BlobKeys.New(version.TenantId, clock);
-        await storage.PutAsync(key, new MemoryStream(bytes), "image/webp", cancellationToken);
+        await storage.PutAsync(key, content, mimeType, cancellationToken);
         try
         {
+            if (derivation.BlobKey is { } previous)
+            {
+                // a job that ran twice must not leave the first file behind
+                db.Add(new OrphanBlob { Key = previous });
+            }
+
             derivation.BlobKey = key;
-            derivation.MimeType = "image/webp";
-            derivation.Size = bytes.Length;
-            derivation.Width = (int)width;
-            derivation.Height = (int)height;
+            derivation.MimeType = mimeType;
+            derivation.Size = size;
+            derivation.Width = width;
+            derivation.Height = height;
             derivation.State = DerivationStates.Ready;
             if (derivation.Kind == DerivationKinds.Thumbnail
                 && await db.Set<Asset>().IgnoreQueryFilters().SingleOrDefaultAsync(a => a.Id == version.AssetId && a.CurrentVersionId == version.Id, cancellationToken) is { } asset)
@@ -243,13 +385,13 @@ internal sealed class RenderDerivationsJob(CoworkeeDbContext db, IBlobStorage st
         }
     }
 
-    private async Task FailAsync(IEnumerable<Derivation> derivations, MagickException exception, CancellationToken cancellationToken)
+    private async Task FailAsync(IEnumerable<Derivation> derivations, string error, CancellationToken cancellationToken)
     {
-        logger.LogWarning(exception, "A rendition could not be created.");
+        logger.LogWarning("A rendition could not be created: {Error}", error);
         foreach (var derivation in derivations)
         {
             derivation.State = DerivationStates.Failed;
-            derivation.Error = exception.Message.Length > 1000 ? exception.Message[..1000] : exception.Message;
+            derivation.Error = error.Length > 1000 ? error[..1000] : error;
         }
 
         await db.SaveChangesAsync(cancellationToken);

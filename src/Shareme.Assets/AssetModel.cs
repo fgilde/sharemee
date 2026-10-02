@@ -53,6 +53,9 @@ public sealed class AssetVersion : AuditedEntity, IMultiTenant
     /// <summary>The asset's metadata at the moment this version was replaced.</summary>
     public string? MetadataSnapshot { get; set; }
 
+    /// <summary>What the file says about itself (dimensions, duration, codecs, camera data); read by the processing host.</summary>
+    public Dictionary<string, string> TechnicalMetadata { get; set; } = [];
+
     public Guid TenantId { get; set; }
 }
 
@@ -185,6 +188,11 @@ internal sealed class AssetModelContributor : IModelContributor
             version.Property(v => v.Extension).HasMaxLength(20);
             version.Property(v => v.BlobKey).HasMaxLength(512);
             version.Property(v => v.MetadataSnapshot).HasColumnType("jsonb");
+            version.Property(v => v.TechnicalMetadata).HasColumnType("jsonb")
+                .HasConversion(d => System.Text.Json.JsonSerializer.Serialize(d, (System.Text.Json.JsonSerializerOptions?)null),
+                    s => System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(s, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<Dictionary<string, string>>(
+                    (a, b) => a!.Count == b!.Count && !a.Except(b).Any(), d => d.Count, d => new Dictionary<string, string>(d)));
             version.HasIndex(v => new { v.AssetId, v.Number }).IsUnique();
             version.HasIndex(v => new { v.TenantId, v.Sha256 });
             version.HasIndex(v => v.BlobKey);
@@ -254,6 +262,8 @@ internal static class FileTypeSeeds
         Type("svg", "image/svg+xml", AssetTypeKeys.Image),
         Type("heic", "image/heic", AssetTypeKeys.Image),
         Type("psd", "image/vnd.adobe.photoshop", AssetTypeKeys.Image, "38425053"),
+        Type("eps", "application/postscript", AssetTypeKeys.Image, "25215053", "C5D0D3C6"),
+        Type("ai", "application/pdf", AssetTypeKeys.Image, "25504446", "25215053"),
         Type("mp4", "video/mp4", AssetTypeKeys.Video),
         Type("mov", "video/quicktime", AssetTypeKeys.Video),
         Type("avi", "video/x-msvideo", AssetTypeKeys.Video, Riff),
@@ -271,6 +281,10 @@ internal static class FileTypeSeeds
         Type("doc", "application/msword", AssetTypeKeys.Document, Ole),
         Type("xls", "application/vnd.ms-excel", AssetTypeKeys.Document, Ole),
         Type("ppt", "application/vnd.ms-powerpoint", AssetTypeKeys.Document, Ole),
+        Type("odt", "application/vnd.oasis.opendocument.text", AssetTypeKeys.Document, Zip),
+        Type("ods", "application/vnd.oasis.opendocument.spreadsheet", AssetTypeKeys.Document, Zip),
+        Type("odp", "application/vnd.oasis.opendocument.presentation", AssetTypeKeys.Document, Zip),
+        Type("rtf", "application/rtf", AssetTypeKeys.Document, "7B5C727466"),
         Type("txt", "text/plain", AssetTypeKeys.Document),
         Type("csv", "text/csv", AssetTypeKeys.Document),
         Type("md", "text/markdown", AssetTypeKeys.Document),

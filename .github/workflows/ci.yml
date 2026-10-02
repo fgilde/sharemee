@@ -42,6 +42,9 @@ jobs:
         shell: pwsh
         run: ./coworkee/build/pack-local.ps1
 
+      - name: Install rendering tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg ghostscript libimage-exiftool-perl libreoffice-writer-nogui
+
       - name: Trust the development certificate
         run: dotnet dev-certs https --trust
 

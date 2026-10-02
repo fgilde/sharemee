@@ -40,14 +40,23 @@ public sealed record UploadSessionDto(
 
 public sealed record UploadResultDto(Guid AssetId, Guid VersionId, int VersionNumber, IReadOnlyList<Guid> DuplicateOf);
 
-public sealed record AssetVersionDto(Guid Id, int Number, string FileName, long Size, string Sha256, string MimeType, string? Extension, DateTimeOffset CreatedAt, Guid? CreatedBy);
+public sealed record AssetVersionDto(
+    Guid Id, int Number, string FileName, long Size, string Sha256, string MimeType, string? Extension, DateTimeOffset CreatedAt, Guid? CreatedBy,
+    IReadOnlyDictionary<string, string>? TechnicalMetadata = null);
 
 public static class DerivationKinds
 {
     public const string Thumbnail = "thumbnail";
     public const string Preview = "preview";
 
-    public static readonly IReadOnlyList<string> All = [Thumbnail, Preview];
+    /// <summary>A playable copy of video (MP4) or audio (MP3).</summary>
+    public const string Media = "media";
+
+    public static readonly IReadOnlyList<string> All = [Thumbnail, Preview, Media];
+
+    /// <summary>The renditions planned for a file of this type.</summary>
+    public static IReadOnlyList<string> For(string mimeType) =>
+        mimeType.StartsWith("video/", StringComparison.Ordinal) || mimeType.StartsWith("audio/", StringComparison.Ordinal) ? All : [Thumbnail, Preview];
 }
 
 public static class DerivationStates

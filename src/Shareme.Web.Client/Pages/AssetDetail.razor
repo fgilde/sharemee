@@ -41,7 +41,11 @@ else
     <MudGrid>
         <MudItem xs="12" md="7">
             <MudPaper Outlined="true" Class="pa-2" Style="min-height:320px" data-testid="preview">
-                @if (Preview is { State: DerivationStates.Ready })
+                @if (Media is { State: DerivationStates.Ready })
+                {
+                    <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Media, _asset.RenditionTag)" ContentType="@MediaType" FileName="@_asset.Name" ShowFileName="false" />
+                }
+                else if (Preview is { State: DerivationStates.Ready })
                 {
                     <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Preview, _asset.RenditionTag)" ContentType="image/webp" FileName="@_asset.Name" ShowFileName="false" />
                 }
@@ -74,6 +78,25 @@ else
     <MudTabs Elevation="0" Outlined="true" Class="mt-6">
         <MudTabPanel Text="Metadata">
             <div class="pa-4"><MetadataEditor @key="_asset.Id" NodeId="_asset.Id" /></div>
+        </MudTabPanel>
+        <MudTabPanel Text="Technical">
+            <div class="pa-4">
+                @if (_asset.CurrentVersion?.TechnicalMetadata is { Count: > 0 } facts)
+                {
+                    <MudSimpleTable Dense="true" data-testid="technical">
+                        <tbody>
+                            @foreach (var (key, value) in facts.OrderBy(f => f.Key))
+                            {
+                                <tr><td style="white-space:nowrap">@key</td><td style="word-break:break-all">@value</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">No technical data was read from this file.</MudText>
+                }
+            </div>
         </MudTabPanel>
         <MudTabPanel Text="Versions">
             <div class="pa-4">
@@ -136,6 +159,10 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private DerivationDto? Preview => _asset?.Derivations.FirstOrDefault(d => d.Kind == DerivationKinds.Preview);
+
+    private DerivationDto? Media => _asset?.Derivations.FirstOrDefault(d => d.Kind == DerivationKinds.Media);
+
+    private string MediaType => _asset?.CurrentVersion?.MimeType.StartsWith("audio/", StringComparison.Ordinal) == true ? "audio/mpeg" : "video/mp4";
 
     private string PreviewText => Preview?.State switch
     {
