@@ -561,6 +561,30 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         rendered.Single(d => d.Kind == DerivationKinds.Preview).State.ShouldBe(DerivationStates.Ready);
     }
 
+    [Fact]
+    public async Task Models_that_refer_to_other_files_are_not_rendered()
+    {
+        var work = Directory.CreateTempSubdirectory("shareme-model-").FullName;
+        try
+        {
+            var gltf = Path.Combine(work, "original.gltf");
+            await File.WriteAllTextAsync(gltf, """{"asset":{"version":"2.0"},"buffers":[{"uri":"/dev/zero","byteLength":4}]}""", Ct);
+            await Should.ThrowAsync<Shareme.Processing.ToolFailedException>(() => Shareme.Processing.ModelSource.SelfContainedAsync(gltf, work, Ct));
+
+            var embedded = Path.Combine(work, "embedded.gltf");
+            await File.WriteAllTextAsync(embedded, """{"asset":{"version":"2.0"},"buffers":[{"uri":"data:application/octet-stream;base64,AAAAAA==","byteLength":4}]}""", Ct);
+            (await Shareme.Processing.ModelSource.SelfContainedAsync(embedded, work, Ct)).ShouldBe(embedded);
+
+            var obj = Path.Combine(work, "original.obj");
+            await File.WriteAllLinesAsync(obj, ["mtllib /etc/passwd", "v 0 0 0", "v 1 0 0", "v 0 1 0", "f 1 2 3"], Ct);
+            (await File.ReadAllTextAsync(await Shareme.Processing.ModelSource.SelfContainedAsync(obj, work, Ct), Ct)).ShouldNotContain("mtllib");
+        }
+        finally
+        {
+            Directory.Delete(work, recursive: true);
+        }
+    }
+
     /// <summary>An ASCII STL cube of twelve triangles.</summary>
     private static byte[] CubeStl()
     {

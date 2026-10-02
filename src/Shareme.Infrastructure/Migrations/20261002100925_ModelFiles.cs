@@ -12,6 +12,20 @@ namespace Shareme.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // "animated" became a system rendition; a custom type of that name keeps working under another key
+            migrationBuilder.Sql("""UPDATE sm."Derivations" SET "Kind" = 'animated-custom' WHERE "Kind" = 'animated';""");
+            migrationBuilder.Sql("""UPDATE sm."DerivationTypes" SET "Key" = 'animated-custom' WHERE "Key" = 'animated';""");
+
+            // files uploaded before their type was known become 3D models (rerender then makes their previews)
+            migrationBuilder.Sql("""
+                UPDATE sm."AssetVersions" SET "MimeType" = CASE "Extension"
+                    WHEN 'glb' THEN 'model/gltf-binary' WHEN 'gltf' THEN 'model/gltf+json' WHEN 'stl' THEN 'model/stl' WHEN 'obj' THEN 'model/obj'
+                    WHEN 'fbx' THEN 'application/vnd.autodesk.fbx' WHEN '3mf' THEN 'model/3mf' ELSE 'model/ply' END
+                WHERE "Extension" IN ('glb', 'gltf', 'stl', 'obj', 'fbx', '3mf', 'ply');
+                UPDATE sm."Nodes" n SET "AssetTypeKey" = 'model'
+                FROM sm."AssetVersions" v WHERE v."Id" = n."CurrentVersionId" AND v."Extension" IN ('glb', 'gltf', 'stl', 'obj', 'fbx', '3mf', 'ply');
+                """);
+
             migrationBuilder.InsertData(
                 schema: "sm",
                 table: "AssetTypes",

@@ -2,6 +2,12 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P3e (3D, animated thumbnails)
+
+- [ ] Blender runs without memory limit or sandbox (2 threads, factory startup, no autoexec, sidecar references refused); a container without network and with only the work folder would allow FBX, which stays unrendered until then.
+- [ ] The processing container image has no Blender (size); CI installs it.
+- [ ] The animated GIF is only reachable in the renditions tab; galleries could play it on hover.
+
 ## From P3d (packages, archives)
 
 - [ ] ImageMagick has no restrictive policy (no '@file' reads, no URL coders): MagickNET.Initialize with a custom policy crashed the test host; user text going into Magick is escaped (MagickText.Literal) instead.

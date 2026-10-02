@@ -41,7 +41,8 @@ internal interface IRenditionSource
 /// <summary>3D meshes rendered headless by Blender (as Sharedien does for FBX): camera fitted to the meshes, a sun light, transparent background.</summary>
 internal sealed class ModelSource(ProcessingTools tools) : IRenditionSource
 {
-    private static readonly HashSet<string> Types = ["model/gltf-binary", "model/gltf+json", "model/stl", "model/obj", "model/ply", "application/vnd.autodesk.fbx"];
+    // ponytail: FBX can name textures anywhere on the host and cannot be rewritten safely; it renders once Blender runs in a sandbox
+    private static readonly HashSet<string> Types = ["model/gltf-binary", "model/gltf+json", "model/stl", "model/obj", "model/ply"];
 
     // importers of Blender 4.1+ first, older names as fallback; the input path and output path come after "--"
     private const string Script = """
@@ -51,20 +52,19 @@ internal sealed class ModelSource(ProcessingTools tools) : IRenditionSource
         ext = source.lower().rsplit(".", 1)[-1]
         importers = {"glb": ["import_scene.gltf"], "gltf": ["import_scene.gltf"], "fbx": ["import_scene.fbx"],
                      "obj": ["wm.obj_import", "import_scene.obj"], "stl": ["wm.stl_import", "import_mesh.stl"], "ply": ["wm.ply_import", "import_mesh.ply"]}
-        error = None
         for name in importers[ext]:
             group, operator = name.split(".")
             try:
                 getattr(getattr(bpy.ops, group), operator)(filepath=source)
                 break
-            except (AttributeError, RuntimeError) as failure:
-                error = failure
+            except AttributeError:
+                continue
         else:
-            raise error
+            sys.exit("No importer for ." + ext)
         scene = bpy.context.scene
         meshes = [o for o in scene.objects if o.type == "MESH"]
         if not meshes:
-            sys.exit(3)
+            sys.exit("The file holds no meshes.")
         camera = bpy.data.objects.new("camera", bpy.data.cameras.new("camera"))
         scene.collection.objects.link(camera)
         scene.camera = camera
@@ -96,14 +96,67 @@ internal sealed class ModelSource(ProcessingTools tools) : IRenditionSource
             return null;
         }
 
+        // an upload never comes with sidecar files: references to other files would read the host (or a network share)
+        input = await SelfContainedAsync(input, workDirectory, cancellationToken);
+
         var script = Path.Combine(workDirectory, "render.py");
         await File.WriteAllTextAsync(script, Script, cancellationToken);
         var still = Path.Combine(workDirectory, "model.png");
 
         // factory settings: no user add-ons or startup scripts run
-        var result = await ToolRunner.RunAsync(blender, ["-b", "--factory-startup", "-noaudio", "--python-exit-code", "2", "--python", script, "--", input, still],
+        var result = await ToolRunner.RunAsync(blender, ["-b", "--factory-startup", "-Y", "-noaudio", "-t", "2", "--python-exit-code", "2", "--python", script, "--", input, still],
             workDirectory, TimeSpan.FromMinutes(5), cancellationToken);
         return result.ExitCode == 0 && File.Exists(still) ? still : throw new ToolFailedException("The model could not be rendered: " + result.Error.Trim());
+    }
+
+    /// <summary>glTF only with embedded data (data: URIs or the GLB buffer), OBJ without its material library; anything else refers to no other files.</summary>
+    internal static async Task<string> SelfContainedAsync(string input, string workDirectory, CancellationToken cancellationToken)
+    {
+        switch (Path.GetExtension(input).ToLowerInvariant())
+        {
+            case ".obj":
+                var cleaned = Path.Combine(workDirectory, "model.obj");
+                var lines = (await File.ReadAllLinesAsync(input, cancellationToken)).Where(line => !line.TrimStart().StartsWith("mtllib", StringComparison.OrdinalIgnoreCase));
+                await File.WriteAllLinesAsync(cleaned, lines, cancellationToken);
+                return cleaned;
+            case ".gltf":
+                EnsureEmbedded(await File.ReadAllBytesAsync(input, cancellationToken));
+                return input;
+            case ".glb":
+                var bytes = await File.ReadAllBytesAsync(input, cancellationToken);
+
+                // 12 byte header, then the JSON chunk: length, type "JSON", data
+                var length = bytes.Length >= 20 ? BitConverter.ToInt32(bytes, 12) : -1;
+                if (length < 0 || 20 + (long)length > bytes.Length)
+                {
+                    throw new ToolFailedException("The model is not a valid GLB file.");
+                }
+
+                EnsureEmbedded(bytes.AsSpan(20, length).ToArray());
+                return input;
+            default:
+                return input;
+        }
+    }
+
+    private static void EnsureEmbedded(byte[] json)
+    {
+        System.Text.Json.Nodes.JsonNode? document;
+        try
+        {
+            document = System.Text.Json.Nodes.JsonNode.Parse(json);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new ToolFailedException("The model is not valid glTF.");
+        }
+
+        var uris = new[] { "buffers", "images" }.SelectMany(list => document?[list] as System.Text.Json.Nodes.JsonArray ?? [])
+            .Select(item => item?["uri"]?.GetValue<string>()).OfType<string>();
+        if (uris.Any(uri => !uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ToolFailedException("The model refers to other files; upload it as a single .glb with embedded textures.");
+        }
     }
 }
 
@@ -147,7 +200,7 @@ internal sealed class VideoSource(ProcessingTools tools) : IRenditionSource
         var result = await ToolRunner.RunAsync(ffmpeg,
             ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "2", "-t", "16", "-i", input,
              "-vf", "fps=1,setpts=0.75*PTS,scale=240:240:force_original_aspect_ratio=decrease:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse",
-             "-loop", "0", "-an", "-y", output],
+             "-r", "4/3", "-loop", "0", "-an", "-y", output],
             workDirectory, TimeSpan.FromMinutes(3), cancellationToken);
         return result.ExitCode == 0 && File.Exists(output) ? output : throw new ToolFailedException("The animated preview could not be made: " + result.Error.Trim());
     }
