@@ -26,8 +26,8 @@ var api = builder.AddProject<Projects.Shareme_Api>("shareme-api")
     .WithReference(infrastructure.Redis)
     .WaitFor(infrastructure.Redis)
     .WithEnvironment("Coworkee__Storage__FileSystem__Root", blobRoot)
+    // search is optional at start: the index is created on first use and index jobs retry until Elasticsearch answers
     .WithReference(infrastructure.Search)
-    .WaitFor(infrastructure.Search)
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints();
 
