@@ -2,6 +2,17 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P3a (renderers)
+
+- [ ] Technical metadata of every version is sent with `GetAsset`; send the current version's only. The per-render update of `AssetVersion` may write the whole dictionary into the audit trail.
+- [ ] Range requests on media need seekable storage streams (S3/Azure providers return non-seekable ones, so `<video>` cannot seek there).
+- [ ] The `{}` default of `TechnicalMetadata` is hand edited in the migration; the model snapshot has no default.
+- [ ] The audio waveform is not shown on the detail page next to the player.
+- [ ] No CI step builds the processing image (package typos surface at deploy time); no memory cap per tool beyond the container limit.
+- [ ] No failure path test (truncated video ⇒ `failed` with a message).
+- [ ] P3b: move planning (`DerivationKinds.For`) into processing once derivation types are a catalog; keep the intermediate still (frame, page, office PDF) so on-demand types, crops and watermarks do not rerun the heavy tool; decide whether on-demand and uploaded derivations survive a rerender; map derivation formats to extensions instead of the three case switch.
+- [ ] Technical metadata is not mirrored into `sys.*` catalog properties yet (search facets on duration or dimensions need it).
+
 ## From P2 (search)
 
 - [ ] Bulks use `refresh=wait_for` everywhere, also during tenant rebuilds; batch by bytes rather than count once documents carry content (P3).

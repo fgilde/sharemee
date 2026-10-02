@@ -5,6 +5,22 @@ using ImageMagick;
 namespace Shareme.Processing;
 
 /// <summary>Turns a file of some media type into a still image (for thumbnail and preview) and, for time based media, a browser friendly copy.</summary>
+/// <summary>Image types read directly by the image library, always with the coder pinned from the checked file type.</summary>
+internal static class ImageFormats
+{
+    public static readonly IReadOnlyDictionary<string, MagickFormat> ByMimeType = new Dictionary<string, MagickFormat>
+    {
+        ["image/jpeg"] = MagickFormat.Jpeg,
+        ["image/png"] = MagickFormat.Png,
+        ["image/gif"] = MagickFormat.Gif,
+        ["image/webp"] = MagickFormat.WebP,
+        ["image/tiff"] = MagickFormat.Tiff,
+        ["image/bmp"] = MagickFormat.Bmp,
+        ["image/vnd.adobe.photoshop"] = MagickFormat.Psd,
+        ["image/heic"] = MagickFormat.Heic,
+    };
+}
+
 internal interface IRenditionSource
 {
     bool Supports(string mimeType);
@@ -14,6 +30,9 @@ internal interface IRenditionSource
 
     /// <summary>A playable copy (MP4, MP3) or null when this media has none or the tool is missing.</summary>
     Task<(string Path, string MimeType)?> MediaAsync(string input, string workDirectory, CancellationToken cancellationToken) => Task.FromResult<(string, string)?>(null);
+
+    /// <summary>Pages rendered onto a fixed canvas get their empty margins cut off.</summary>
+    bool TrimStill => false;
 }
 
 internal sealed class VideoSource(ProcessingTools tools) : IRenditionSource
@@ -34,7 +53,7 @@ internal sealed class VideoSource(ProcessingTools tools) : IRenditionSource
         // a second in avoids black first frames; very short clips fall back to the first frame
         foreach (var at in new[] { "1", "0" })
         {
-            await ToolRunner.RunAsync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-ss", at, "-i", input, "-frames:v", "1", "-y", still], workDirectory, TimeSpan.FromMinutes(2), cancellationToken);
+            await ToolRunner.RunAsync(ffmpeg, ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "2", "-ss", at, "-i", input, "-frames:v", "1", "-y", still], workDirectory, TimeSpan.FromMinutes(2), cancellationToken);
             if (File.Exists(still) && new FileInfo(still).Length > 0)
             {
                 return still;
@@ -54,7 +73,8 @@ internal sealed class VideoSource(ProcessingTools tools) : IRenditionSource
         // ponytail: one 720p H.264 preview capped at ten minutes; adaptive streaming renditions come later
         var output = Path.Combine(workDirectory, "preview.mp4");
         var result = await ToolRunner.RunAsync(ffmpeg,
-            ["-hide_banner", "-loglevel", "error", "-i", input, "-t", "600", "-vf", "scale='min(1280,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p",
+            ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "2", "-i", input, "-t", "600",
+             "-vf", "scale=w='min(1280,iw)':h='min(1280,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p",
              "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", output],
             workDirectory, Limit, cancellationToken);
         return result.ExitCode == 0 && File.Exists(output) ? (output, "video/mp4") : throw new ToolFailedException("The video preview could not be encoded: " + result.Error.Trim());
@@ -73,7 +93,7 @@ internal sealed class AudioSource(ProcessingTools tools) : IRenditionSource
         }
 
         var wave = Path.Combine(workDirectory, "wave.png");
-        var result = await ToolRunner.RunAsync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", input, "-filter_complex", "showwavespic=s=1600x400:colors=0x3f51b5", "-frames:v", "1", "-y", wave],
+        var result = await ToolRunner.RunAsync(ffmpeg, ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "2", "-i", input, "-filter_complex", "showwavespic=s=1600x400:colors=0x3f51b5", "-frames:v", "1", "-y", wave],
             workDirectory, TimeSpan.FromMinutes(2), cancellationToken);
         return result.ExitCode == 0 && File.Exists(wave) ? wave : throw new ToolFailedException("No waveform could be drawn: " + result.Error.Trim());
     }
@@ -86,7 +106,7 @@ internal sealed class AudioSource(ProcessingTools tools) : IRenditionSource
         }
 
         var output = Path.Combine(workDirectory, "preview.mp3");
-        var result = await ToolRunner.RunAsync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", input, "-vn", "-t", "1800", "-c:a", "libmp3lame", "-b:a", "128k", "-y", output],
+        var result = await ToolRunner.RunAsync(ffmpeg, ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "2", "-i", input, "-vn", "-t", "1800", "-c:a", "libmp3lame", "-b:a", "128k", "-y", output],
             workDirectory, TimeSpan.FromMinutes(5), cancellationToken);
         return result.ExitCode == 0 && File.Exists(output) ? (output, "audio/mpeg") : throw new ToolFailedException("The audio preview could not be encoded: " + result.Error.Trim());
     }
@@ -97,6 +117,8 @@ internal sealed class PdfSource(ProcessingTools tools) : IRenditionSource
 {
     public bool Supports(string mimeType) => mimeType is "application/pdf" or "application/postscript";
 
+    public bool TrimStill => true;
+
     public async Task<string?> StillAsync(string input, string workDirectory, CancellationToken cancellationToken)
     {
         if (tools.Find(ProcessingTools.Ghostscript) is not { } gs)
@@ -106,9 +128,11 @@ internal sealed class PdfSource(ProcessingTools tools) : IRenditionSource
 
         var still = Path.Combine(workDirectory, "page.png");
         var result = await ToolRunner.RunAsync(gs,
-            ["-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET", "-dEPSCrop", "-sDEVICE=png16m", "-r150", "-dFirstPage=1", "-dLastPage=1", "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4", "-sOutputFile=" + still, input],
+            // a fixed canvas bounds the output whatever the page size claims; the margins are trimmed afterwards
+            ["-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET", "-dEPSCrop", "-sDEVICE=png16m", "-g2000x2000", "-dFitPage", "-dPDFFitPage", "-dFirstPage=1", "-dLastPage=1",
+             "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4", "-sOutputFile=" + still, input],
             workDirectory, TimeSpan.FromMinutes(2), cancellationToken);
-        return result.ExitCode == 0 && File.Exists(still) ? still : throw new ToolFailedException("The document could not be rendered: " + result.Error.Trim());
+        return result.ExitCode == 0 && File.Exists(still) ? still : throw new ToolFailedException("The document could not be rendered: " + (result.Error + result.Output).Trim());
     }
 }
 
@@ -125,7 +149,26 @@ internal sealed class OfficeSource(ProcessingTools tools, PdfSource pdf) : IRend
         "application/rtf", "text/plain", "text/csv", "text/markdown",
     ];
 
+    // documents must not reach the network (linked images, OLE links) nor run macros: all proxies point at a dead local port
+    private const string LockedDownProfile = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetProxyType" oor:op="fuse"><value>1</value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetNoProxy" oor:op="fuse"><value></value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPProxyName" oor:op="fuse"><value>127.0.0.1</value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPProxyPort" oor:op="fuse"><value>1</value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPSProxyName" oor:op="fuse"><value>127.0.0.1</value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPSProxyPort" oor:op="fuse"><value>1</value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetFTPProxyName" oor:op="fuse"><value>127.0.0.1</value></prop></item>
+        <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetFTPProxyPort" oor:op="fuse"><value>1</value></prop></item>
+        <item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item>
+        <item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
+        </oor:items>
+        """;
+
     public bool Supports(string mimeType) => Types.Contains(mimeType);
+
+    public bool TrimStill => true;
 
     public async Task<string?> StillAsync(string input, string workDirectory, CancellationToken cancellationToken)
     {
@@ -134,8 +177,11 @@ internal sealed class OfficeSource(ProcessingTools tools, PdfSource pdf) : IRend
             return null;
         }
 
-        // a profile per call keeps parallel conversions from fighting over one LibreOffice user directory
-        var profile = new Uri(Path.Combine(workDirectory, "profile")).AbsoluteUri;
+        // a profile per call keeps parallel conversions apart and carries the locked down settings
+        var profileDirectory = Path.Combine(workDirectory, "profile");
+        Directory.CreateDirectory(Path.Combine(profileDirectory, "user"));
+        await File.WriteAllTextAsync(Path.Combine(profileDirectory, "user", "registrymodifications.xcu"), LockedDownProfile, cancellationToken);
+        var profile = new Uri(profileDirectory).AbsoluteUri;
         var result = await ToolRunner.RunAsync(office, ["--headless", "--norestore", "--nolockcheck", $"-env:UserInstallation={profile}", "--convert-to", "pdf", "--outdir", workDirectory, input],
             workDirectory, TimeSpan.FromMinutes(3), cancellationToken);
         var converted = Path.Combine(workDirectory, Path.GetFileNameWithoutExtension(input) + ".pdf");
@@ -157,7 +203,7 @@ internal sealed class TechnicalMetadataReader(ProcessingTools tools)
         {
             if (tools.Find(ProcessingTools.ExifTool) is { } exiftool)
             {
-                var result = await ToolRunner.RunAsync(exiftool, ["-json", "-n", "-G", input], workDirectory, TimeSpan.FromMinutes(1), cancellationToken);
+                var result = await ToolRunner.RunAsync(exiftool, ["-json", "-n", "-G", "-api", "largefilesupport=1", input], workDirectory, TimeSpan.FromMinutes(1), cancellationToken);
                 if (result.ExitCode == 0 && JsonDocument.Parse(result.Output).RootElement is { ValueKind: JsonValueKind.Array } array && array.GetArrayLength() > 0)
                 {
                     return Flatten(array[0].EnumerateObject().Where(p => !p.Name.StartsWith("File:", StringComparison.Ordinal) && !p.Name.StartsWith("ExifTool:", StringComparison.Ordinal) && p.Name != "SourceFile"));
@@ -170,9 +216,9 @@ internal sealed class TechnicalMetadataReader(ProcessingTools tools)
                 return result.ExitCode == 0 ? FromProbe(JsonDocument.Parse(result.Output).RootElement) : [];
             }
 
-            if (mimeType.StartsWith("image/", StringComparison.Ordinal))
+            if (ImageFormats.ByMimeType.TryGetValue(mimeType, out var format))
             {
-                var info = new MagickImageInfo(input);
+                var info = new MagickImageInfo(input, new MagickReadSettings { Format = format });
                 return new Dictionary<string, string>
                 {
                     ["Image:Width"] = info.Width.ToString(CultureInfo.InvariantCulture),

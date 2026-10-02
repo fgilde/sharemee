@@ -1,11 +1,12 @@
 using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Shareme.Processing;
 
 /// <summary>External programs the renderers use; each can be configured under <c>Processing:Tools:{Name}</c> or is looked up on the PATH.</summary>
-internal sealed class ProcessingTools(IConfiguration configuration)
+internal sealed class ProcessingTools(IConfiguration configuration, ILogger<ProcessingTools> logger)
 {
     public const string FFmpeg = "FFmpeg";
     public const string FFprobe = "FFprobe";
@@ -31,7 +32,20 @@ internal sealed class ProcessingTools(IConfiguration configuration)
         {
             if (!_resolved.TryGetValue(tool, out var path))
             {
-                path = configuration[$"Processing:Tools:{tool}"] is { Length: > 0 } configured ? Resolve(configured) : Candidates[tool].Select(Resolve).FirstOrDefault(p => p is not null);
+                if (configuration[$"Processing:Tools:{tool}"] is { Length: > 0 } configured)
+                {
+                    path = Resolve(configured);
+                    if (path is null)
+                    {
+                        // a typo would otherwise look exactly like "not installed"
+                        logger.LogWarning("Processing:Tools:{Tool} is set to '{Path}', which does not exist; files needing it are not rendered.", tool, configured);
+                    }
+                }
+                else
+                {
+                    path = Candidates[tool].Select(Resolve).FirstOrDefault(p => p is not null);
+                }
+
                 _resolved[tool] = path;
             }
 
@@ -41,9 +55,10 @@ internal sealed class ProcessingTools(IConfiguration configuration)
 
     private static string? Resolve(string name)
     {
-        if (Path.IsPathRooted(name))
+        if (Path.IsPathRooted(name) || name.Contains('/') || name.Contains('\\'))
         {
-            return File.Exists(name) ? name : null;
+            var full = Path.GetFullPath(name);
+            return File.Exists(full) ? full : null;
         }
 
         var extensions = OperatingSystem.IsWindows() ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE").Split(';').Prepend(string.Empty) : [string.Empty];
@@ -79,6 +94,8 @@ internal static class ToolRunner
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (var argument in arguments)
         {
@@ -100,7 +117,18 @@ internal static class ToolRunner
         }
         catch (OperationCanceledException)
         {
-            process.Kill(entireProcessTree: true);
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // it ended on its own between the time limit and the kill
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             throw new ToolFailedException($"{Path.GetFileName(executable)} did not finish within {timeout.TotalSeconds:0} s.");
         }

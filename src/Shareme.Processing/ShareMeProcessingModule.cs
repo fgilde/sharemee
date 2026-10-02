@@ -26,6 +26,9 @@ public sealed class ShareMeProcessingModule : CoworkeeModule, IWebModule
 {
     public const string Queue = "processing";
 
+    /// <summary>Folder for work files; originals are copied there, so it needs room for the largest upload per worker.</summary>
+    public const string TempRootSetting = "Shareme:Processing:TempRoot";
+
     public override void ConfigureServices(ModuleServiceContext context)
     {
         var services = context.Services;
@@ -77,6 +80,12 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
         var mimeType = await db.Set<AssetVersion>().Where(v => v.Id == versionId).Select(v => v.MimeType).SingleAsync(cancellationToken);
         var now = clock.GetUtcNow();
         var existing = await db.Set<Derivation>().Where(d => d.VersionId == versionId).ToListAsync(cancellationToken);
+        if (existing.Any(d => d.State == DerivationStates.Pending))
+        {
+            // renders can take many minutes; a second request would only run the same work twice
+            return Error.Conflict("assets.rendering", "The renditions are being created already.");
+        }
+
         foreach (var derivation in existing)
         {
             if (derivation.BlobKey is { } key)
@@ -125,18 +134,36 @@ internal sealed class PlanDerivations(CoworkeeDbContext db, IBackgroundJobs jobs
     }
 }
 
-/// <summary>Re-queues renditions whose job got lost and gives up on those stuck for a day.</summary>
-internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jobs, TimeProvider clock) : IRecurringJob
+/// <summary>Re-queues renditions whose job got lost, gives up on those stuck for a day and removes work folders of crashed jobs.</summary>
+internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jobs, Microsoft.Extensions.Configuration.IConfiguration configuration, TimeProvider clock) : IRecurringJob
 {
     public const string Id = "shareme-rendition-sweep";
+
+    // longer than the slowest render (copy, metadata, stills, ten minute encode), so a running job is not started twice
+    private static readonly TimeSpan Lost = TimeSpan.FromHours(2);
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
+        foreach (var folder in new DirectoryInfo(RenderDerivationsJob.WorkRoot(configuration)) is { Exists: true } root ? root.EnumerateDirectories() : [])
+        {
+            if (folder.LastWriteTimeUtc < now.UtcDateTime.AddDays(-1))
+            {
+                try
+                {
+                    folder.Delete(recursive: true);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // still in use; the next sweep tries again
+                }
+            }
+        }
+
         var pending = db.Set<Derivation>().IgnoreQueryFilters().Where(d => d.State == DerivationStates.Pending);
         await pending.Where(d => d.PlannedAt < now.AddDays(-1))
             .ExecuteUpdateAsync(d => d.SetProperty(x => x.State, DerivationStates.Failed).SetProperty(x => x.Error, "Rendering did not finish within a day."), cancellationToken);
-        foreach (var versionId in await pending.Where(d => d.PlannedAt < now.AddMinutes(-10)).Select(d => d.VersionId).Distinct().Take(500).ToListAsync(cancellationToken))
+        foreach (var versionId in await pending.Where(d => d.PlannedAt < now - Lost).Select(d => d.VersionId).Distinct().Take(500).ToListAsync(cancellationToken))
         {
             jobs.Enqueue<RenderDerivationsJob, Guid>(versionId, ShareMeProcessingModule.Queue);
         }
@@ -148,21 +175,23 @@ internal sealed class RenditionSweepJob(CoworkeeDbContext db, IBackgroundJobs jo
 /// (and for video and audio a playable copy). Runs with or without a tenant (sweeps), so it reads by id across tenants.
 /// </summary>
 internal sealed class RenderDerivationsJob(
-    CoworkeeDbContext db, IBlobStorage storage, IEnumerable<IRenditionSource> sources, TechnicalMetadataReader metadata, TimeProvider clock, ILogger<RenderDerivationsJob> logger)
+    CoworkeeDbContext db, IBlobStorage storage, IEnumerable<IRenditionSource> sources, TechnicalMetadataReader metadata,
+    Microsoft.Extensions.Configuration.IConfiguration configuration, TimeProvider clock, ILogger<RenderDerivationsJob> logger)
     : IBackgroundJob<Guid>
 {
     private static readonly Dictionary<string, int> Sizes = new() { [DerivationKinds.Thumbnail] = 320, [DerivationKinds.Preview] = 1600 };
 
-    private static readonly Dictionary<string, MagickFormat> Images = new()
-    {
-        ["image/jpeg"] = MagickFormat.Jpeg,
-        ["image/png"] = MagickFormat.Png,
-        ["image/gif"] = MagickFormat.Gif,
-        ["image/webp"] = MagickFormat.WebP,
-        ["image/tiff"] = MagickFormat.Tiff,
-        ["image/bmp"] = MagickFormat.Bmp,
-        ["image/vnd.adobe.photoshop"] = MagickFormat.Psd,
-    };
+    private static readonly HashSet<string> TextTypes = ["text/plain", "text/csv", "text/markdown"];
+
+    private static IReadOnlyDictionary<string, MagickFormat> Images => ImageFormats.ByMimeType;
+
+    public static string WorkRoot(Microsoft.Extensions.Configuration.IConfiguration configuration) =>
+        Path.Combine(configuration[ShareMeProcessingModule.TempRootSetting] is { Length: > 0 } root ? root : Path.GetTempPath(), "shareme-render");
+
+    /// <summary>The work file name: only a plain extension survives (tools pick filters by it), text goes in as .txt so every office version reads it.</summary>
+    private static string InputName(AssetVersion version) =>
+        "original" + (TextTypes.Contains(version.MimeType) ? ".txt"
+            : version.Extension is { } extension && System.Text.RegularExpressions.Regex.IsMatch(extension, "^[a-z0-9]{1,10}$") ? "." + extension : string.Empty);
 
     public async Task ExecuteAsync(Guid versionId, CancellationToken cancellationToken)
     {
@@ -173,11 +202,11 @@ internal sealed class RenderDerivationsJob(
             return;
         }
 
-        var work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "shareme-render", Guid.NewGuid().ToString("N"))).FullName;
+        var work = Directory.CreateDirectory(Path.Combine(WorkRoot(configuration), Guid.NewGuid().ToString("N"))).FullName;
         try
         {
             // a missing original is a storage or configuration problem: throw so the job is retried instead of failing the rendition
-            var input = Path.Combine(work, "original" + (version.Extension is { } extension ? "." + extension : string.Empty));
+            var input = Path.Combine(work, InputName(version));
             await using (var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken)
                 ?? throw new FileNotFoundException($"The original of version {versionId} is not in storage."))
             await using (var file = File.Create(input))
@@ -203,7 +232,7 @@ internal sealed class RenderDerivationsJob(
                 still = null;
             }
 
-            await RenderStillsAsync(version, pending.Where(d => d.Kind != DerivationKinds.Media && d.State == DerivationStates.Pending).ToList(), still, cancellationToken);
+            await RenderStillsAsync(version, pending.Where(d => d.Kind != DerivationKinds.Media && d.State == DerivationStates.Pending).ToList(), still, source?.TrimStill == true, cancellationToken);
             if (pending.FirstOrDefault(d => d.Kind == DerivationKinds.Media) is { } media)
             {
                 await RenderMediaAsync(version, media, source, input, work, cancellationToken);
@@ -215,14 +244,14 @@ internal sealed class RenderDerivationsJob(
             {
                 Directory.Delete(work, recursive: true);
             }
-            catch (IOException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                // a tool may still hold a file for a moment; the temp folder is swept by the OS
+                // a tool may still hold a file for a moment; the rendition sweep removes the folder later
             }
         }
     }
 
-    private async Task RenderStillsAsync(AssetVersion version, List<Derivation> derivations, string? still, CancellationToken cancellationToken)
+    private async Task RenderStillsAsync(AssetVersion version, List<Derivation> derivations, string? still, bool trim, CancellationToken cancellationToken)
     {
         if (derivations.Count == 0)
         {
@@ -240,9 +269,10 @@ internal sealed class RenderDerivationsJob(
         try
         {
             // the format comes from the checked file type for originals, renderer outputs are PNG
+            // originals are read with the coder of their checked type; everything the sources produce is PNG
             image = new MagickImage(still, new MagickReadSettings
             {
-                Format = still.EndsWith(".png", StringComparison.Ordinal) && !Images.ContainsKey(version.MimeType) ? MagickFormat.Png : Images[version.MimeType],
+                Format = Images.TryGetValue(version.MimeType, out var format) ? format : MagickFormat.Png,
                 FrameIndex = 0,
                 FrameCount = 1,
             });
@@ -255,6 +285,12 @@ internal sealed class RenderDerivationsJob(
 
         using (image)
         {
+            if (trim)
+            {
+                image.Trim();
+                image.ResetPage();
+            }
+
             image.AutoOrient();
             if (image.GetColorProfile() is not null)
             {
@@ -320,6 +356,12 @@ internal sealed class RenderDerivationsJob(
         await storage.PutAsync(key, content, mimeType, cancellationToken);
         try
         {
+            if (derivation.BlobKey is { } previous)
+            {
+                // a job that ran twice must not leave the first file behind
+                db.Add(new OrphanBlob { Key = previous });
+            }
+
             derivation.BlobKey = key;
             derivation.MimeType = mimeType;
             derivation.Size = size;

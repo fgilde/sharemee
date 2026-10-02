@@ -169,13 +169,13 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         var folder = await FolderAsync("Renders");
         using var picture = new ImageMagick.MagickImage(ImageMagick.MagickColors.OrangeRed, 2400, 1200);
         var image = await UploadAsync(Admin, "wide.png", picture.ToByteArray(ImageMagick.MagickFormat.Png), folder);
-        var pdf = await UploadAsync(Admin, "bundle.zip", [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00], folder);
+        var archive = await UploadAsync(Admin, "bundle.zip", [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00], folder);
         var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
 
         var rendered = await DerivationsAsync(image.AssetId);
         rendered.Single(d => d.Kind == DerivationKinds.Thumbnail).ShouldBe(new DerivationDto(DerivationKinds.Thumbnail, DerivationStates.Ready, 320, 160));
         rendered.Single(d => d.Kind == DerivationKinds.Preview).ShouldBe(new DerivationDto(DerivationKinds.Preview, DerivationStates.Ready, 1600, 800));
-        (await DerivationsAsync(pdf.AssetId)).ShouldAllBe(d => d.State == DerivationStates.NotSupported);
+        (await DerivationsAsync(archive.AssetId)).ShouldAllBe(d => d.State == DerivationStates.NotSupported);
 
         using var thumbnail = await reader.GetAsync($"/api/v1/assets/{image.AssetId}/derivations/{DerivationKinds.Thumbnail}", Ct);
         thumbnail.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -186,7 +186,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         // lists carry a tag that names the thumbnail; it changes with new content and with a fresh render
         var listed = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{folder}/children", Ct))!.Items;
         var tag = listed.Single(n => n.Id == image.AssetId).Thumbnail.ShouldNotBeNull();
-        listed.Single(n => n.Id == pdf.AssetId).Thumbnail.ShouldBeNull();
+        listed.Single(n => n.Id == archive.AssetId).Thumbnail.ShouldBeNull();
         (await Admin.PostAsync($"/api/v1/assets/{image.AssetId}/derivations/rerender", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
         (await DerivationsAsync(image.AssetId)).ShouldAllBe(d => d.State == DerivationStates.Ready);
         (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{image.AssetId}", Ct))!.RenditionTag.ShouldNotBeNull().ShouldNotBe(tag);
@@ -216,7 +216,9 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
             "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", clip);
         var folder = await FolderAsync("Clips");
 
-        var video = await UploadAsync(Admin, "clip.mp4", await File.ReadAllBytesAsync(clip, Ct), folder);
+        var bytes = await File.ReadAllBytesAsync(clip, Ct);
+        File.Delete(clip);
+        var video = await UploadAsync(Admin, "clip.mp4", bytes, folder);
 
         var rendered = await DerivationsAsync(video.AssetId);
         rendered.Single(d => d.Kind == DerivationKinds.Thumbnail).State.ShouldBe(DerivationStates.Ready);
