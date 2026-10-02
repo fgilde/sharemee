@@ -12,6 +12,7 @@
 @inject Shareme.Web.Client.Assets.IDownloadsApi Downloads
 @inject Shareme.Web.Client.Workspaces.IWorkspacesApi WorkspacesApi
 @inject MudBlazor.Extensions.Services.MudExFileService Files
+@inject Shareme.Web.Client.Metadata.IDataApi Data
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
 
@@ -41,6 +42,11 @@ else if (_detail is not null)
         <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch" Href="@($"/search?folder={_detail.Node.Id}")" aria-label="Search in this folder" data-testid="search-here" />
         <MudIconButton Icon="@Icons.Material.Outlined.FolderZip" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(FolderId: _detail.Node.Id))" aria-label="Download this folder as zip" data-testid="download-folder" />
         <MudIconButton Icon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(FolderId: _detail.Node.Id, Title: _detail.Node.Name))" aria-label="Contact sheet of this folder" data-testid="contact-sheet-folder" />
+        <MudIconButton Icon="@Icons.Material.Outlined.TableView" OnClick="() => ExportAsync(new Shareme.Contracts.Automation.ExportRequest(FolderId: _detail.Node.Id), _detail.Node.Name)" aria-label="Export the metadata of this folder" data-testid="export-folder" />
+        <MudMenu Icon="@Icons.Material.Outlined.UploadFile" AriaLabel="Import metadata" data-testid="import-menu">
+            <MudMenuItem OnClick="() => _importDryRun = true">Dry run with a file…</MudMenuItem>
+            <MudMenuItem OnClick="() => _importDryRun = false">Import a file…</MudMenuItem>
+        </MudMenu>
         <MudTooltip Text="@(_detail.IsSubscribed ? "Stop notifications" : "Notify me about changes")">
             <MudIconButton Icon="@(_detail.IsSubscribed ? Icons.Material.Filled.NotificationsActive : Icons.Material.Outlined.NotificationsNone)"
                            OnClick="ToggleSubscriptionAsync" aria-label="Notifications for this folder" data-testid="subscribe" />
@@ -57,6 +63,24 @@ else if (_detail is not null)
     </MudStack>
 
     <div class="mb-4"><UploadPanel FolderId="_detail.Node.Id" /></div>
+
+    @if (_importDryRun is { } dryRun)
+    {
+        <MudPaper Outlined="true" Class="pa-2 mb-2 d-flex align-center gap-2" data-testid="import-panel">
+            <MudText Typo="Typo.body2">@(dryRun ? "Check" : "Import") an XLSX or CSV file with an "id" column, or a "name" column matching names in this folder, and one column per property (key, key[lang], key@context). Empty cells leave values as they are.</MudText>
+            <MudFileUpload T="Microsoft.AspNetCore.Components.Forms.IBrowserFile" Accept=".xlsx,.csv" FilesChanged="file => ImportAsync(file, dryRun)">
+                <CustomContent>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Upload" OnClick="context.OpenFilePickerAsync" data-testid="import-file">Choose file</MudButton>
+                </CustomContent>
+            </MudFileUpload>
+            <MudButton Size="Size.Small" OnClick="() => _importDryRun = null">Cancel</MudButton>
+        </MudPaper>
+    }
+
+    @if (_massEdit)
+    {
+        <Shareme.Web.Client.Metadata.MassEditPanel NodeIds="_selected.ToList()" Closed="() => _massEdit = false" />
+    }
 
     @if (_selected.Count > 0)
     {
@@ -75,6 +99,8 @@ else if (_detail is not null)
                 }
             </MudMenu>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(SelectedAssets, Title: _detail.Node.Name))" Disabled="SelectedAssets.Count == 0" data-testid="contact-sheet-selected">Contact sheet</MudButton>
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.EditNote" OnClick="() => _massEdit = !_massEdit" data-testid="edit-selected">Edit metadata</MudButton>
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.TableView" OnClick="() => ExportAsync(new Shareme.Contracts.Automation.ExportRequest(NodeIds: _selected.ToList()), _detail.Node.Name)" data-testid="export-selected">Export</MudButton>
             <MudButton Size="Size.Small" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeleteSelectedAsync" data-testid="delete-selected">Delete</MudButton>
             <MudButton Size="Size.Small" OnClick="() => _selected.Clear()">Clear</MudButton>
         </MudPaper>
@@ -210,6 +236,8 @@ else
     private string? _renameValue;
     private List<NodeDto>? _moving;
     private readonly HashSet<Guid> _selected = [];
+    private bool _massEdit;
+    private bool? _importDryRun;
     private bool _gallery;
 
     [Parameter] public Guid? Id { get; set; }
@@ -362,6 +390,38 @@ else
         catch (ApiException exception)
         {
             Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task ExportAsync(Shareme.Contracts.Automation.ExportRequest request, string name)
+    {
+        try
+        {
+            var content = await Data.ExportAsync(request);
+            await Files.DownloadContentAsync(content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{name}-metadata.xlsx");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task ImportAsync(Microsoft.AspNetCore.Components.Forms.IBrowserFile? file, bool dryRun)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var content = file.OpenReadStream(Shareme.Contracts.Automation.DataLimits.MaxImportBytes);
+            var job = await Data.ImportAsync(content, _detail!.Node.Id, dryRun);
+            Nav.NavigateTo($"/data-jobs/{job.Id}");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
         }
     }
 

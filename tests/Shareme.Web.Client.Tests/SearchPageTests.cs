@@ -20,6 +20,8 @@ public sealed class SearchPageTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
+        Services.AddSingleton(Substitute.For<Shareme.Web.Client.Metadata.IDataApi>());
         Services.AddSingleton(_api);
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetDefinitionsAsync(default, default).ReturnsForAnyArgs([]);

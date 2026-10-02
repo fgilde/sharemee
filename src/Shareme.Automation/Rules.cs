@@ -36,6 +36,7 @@ public sealed class ShareMeAutomationModule : CoworkeeModule, IWebModule
         context.Services.AddSingleton<IPermissionDefinitionContributor, AutomationPermissionDefinitions>();
         context.Services.AddScoped<RuleEngine>();
         context.Services.AddScoped<RuleJobRunner>();
+        context.Services.AddScoped<DataJobRunner>();
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -51,6 +52,7 @@ public sealed class ShareMeAutomationModule : CoworkeeModule, IWebModule
         jobs.MapPost("/", (RuleJobRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new StartRuleJob(body), ct).ToHttpResult());
         jobs.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRuleJobs(), ct).ToHttpResult());
         jobs.MapGet("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRuleJob(id), ct).ToHttpResult());
+        DataOperationsEndpoints.Map(app);
     }
 }
 
@@ -128,6 +130,19 @@ internal sealed class AutomationModelContributor : IModelContributor
             Json(job.Property(j => j.Entries));
             job.HasIndex(j => j.CreatedAt);
         });
+
+        modelBuilder.Entity<DataJob>(job =>
+        {
+            job.ToTable("DataJobs", "sm");
+            job.Property(j => j.Kind).HasMaxLength(20);
+            job.Property(j => j.State).HasMaxLength(20);
+            job.Property(j => j.Error).HasMaxLength(1000);
+            job.Property(j => j.BlobKey).HasMaxLength(200);
+            job.Property(j => j.NodeIds).HasColumnType("jsonb");
+            Json(job.Property(j => j.Mutations));
+            Json(job.Property(j => j.Entries));
+            job.HasIndex(j => new { j.StartedBy, j.CreatedAt });
+        });
     }
 
     private static void Json<T>(Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<List<T>> property) =>
@@ -142,7 +157,10 @@ internal sealed class AutomationModelContributor : IModelContributor
 internal sealed class AutomationPermissionDefinitions : IPermissionDefinitionContributor
 {
     public void Define(PermissionDefinitionContext context) =>
-        context.Group(AutomationPermissions.GroupName, "Automation").Add(AutomationPermissions.ManageRules, "Manage rules and run them on existing content");
+        context.Group(AutomationPermissions.GroupName, "Automation")
+            .Add(AutomationPermissions.ManageRules, "Manage rules and run them on existing content")
+            .Add(DataPermissions.MassEdit, "Change and import metadata of many nodes at once")
+            .Add(DataPermissions.MassEditLarge, $"Change up to {DataLimits.MaxNodes} nodes at once");
 }
 
 /// <summary>What happened to a node and why rules look at it now.</summary>
@@ -251,7 +269,7 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
                 // a template that failed to render is not written, so a broken pattern never clears a value; unchanged values are not written either
                 var before = problems.Count;
                 var text = await RenderAsync(action.Template, context.Node, problems, cancellationToken);
-                if (problems.Count == before && !(current.Count == 1 ? Text(current[0]) == text : current.Count == 0 && text.Length == 0))
+                if (problems.Count == before && !(current.Count == 1 ? MetadataText.Text(current[0]) == text : current.Count == 0 && text.Length == 0))
                 {
                     values[action.PropertyKey] = text;
                 }
@@ -273,27 +291,17 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         var update = new Dictionary<string, List<MetadataValue>?>(StringComparer.Ordinal);
         foreach (var (key, text) in values)
         {
-            update[key] = text.Length == 0 ? null : definitions.TryGetValue(key, out var definition) ? [ToValue(definition, text)] : [new MetadataValue(V: JsonSerializer.SerializeToElement(text))];
+            update[key] = text.Length == 0 ? null : definitions.TryGetValue(key, out var definition) ? [MetadataText.Parse(definition, text)] : [new MetadataValue(V: JsonSerializer.SerializeToElement(text))];
         }
 
-        // its own scope: a failed save does not stay tracked in the caller's context, and jobs do not pile up tracked nodes
-        try
-        {
-            await using var scope = scopes.CreateAsyncScope();
-            var result = await scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync(new SetNodeMetadata(node.Id, update, Replace: false, MetadataSources.Rule), cancellationToken);
-            return result.IsSuccess ? null : result.Error!.Details is { Count: > 0 } details
-                ? string.Join("; ", details.Select(d => $"{d.Key}: {string.Join(" ", d.Value)}"))
-                : result.Error.Message;
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return exception is ConcurrencyConflictException ? "The node was changed at the same time." : "The values could not be saved.";
-        }
+        return await MetadataWrites.WriteAsync(scopes, new SetNodeMetadata(node.Id, update, Replace: false, MetadataSources.Rule), cancellationToken) is { } error
+            ? MetadataWrites.Describe(error)
+            : null;
     }
 
     private async Task<bool> HoldsAsync(RuleCondition condition, RuleContext context, List<string> problems, CancellationToken cancellationToken)
     {
-        var values = condition.PropertyKey is { } key && context.Node.Metadata.TryGetValue(key, out var found) ? found.Select(Text).ToList() : [];
+        var values = condition.PropertyKey is { } key && context.Node.Metadata.TryGetValue(key, out var found) ? found.Select(MetadataText.Text).ToList() : [];
         var expected = condition.Value ?? string.Empty;
         switch (condition.Operator)
         {
@@ -404,7 +412,7 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
         return result.Trim();
     }
 
-    private static string First(Node node, string key) => node.Metadata.TryGetValue(key, out var values) && values.FirstOrDefault() is { } value ? Text(value) : string.Empty;
+    private static string First(Node node, string key) => node.Metadata.TryGetValue(key, out var values) && values.FirstOrDefault() is { } value ? MetadataText.Text(value) : string.Empty;
 
     /// <summary>The node's own value, else the nearest ancestor's.</summary>
     private async Task<string> InAscendantsAsync(Node node, string key, CancellationToken cancellationToken)
@@ -446,31 +454,6 @@ internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog c
     {
         problems.Add($"Unknown template token {token}.");
         return string.Empty;
-    }
-
-    internal static string Text(MetadataValue value) => value.List ?? value.V switch
-    {
-        { ValueKind: JsonValueKind.String } text => text.GetString() ?? string.Empty,
-        { } other => other.GetRawText(),
-        null => string.Empty,
-    };
-
-    /// <summary>The rendered text as a value of the property's type; the metadata checks report what does not fit.</summary>
-    private static MetadataValue ToValue(PropertyDefinition definition, string text)
-    {
-        if (definition.ListMode != ListModes.None && (!definition.AllowCustomValues || definition.ListValues.Any(v => v.Key == text)))
-        {
-            return new MetadataValue(List: text);
-        }
-
-        return definition.ValueType switch
-        {
-            PropertyValueTypes.Integer when long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var whole) => new MetadataValue(V: JsonSerializer.SerializeToElement(whole)),
-            PropertyValueTypes.Decimal when decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) =>
-                new MetadataValue(V: JsonSerializer.SerializeToElement(number)),
-            PropertyValueTypes.Boolean when bool.TryParse(text, out var flag) => new MetadataValue(V: JsonSerializer.SerializeToElement(flag)),
-            _ => new MetadataValue(V: JsonSerializer.SerializeToElement(text)),
-        };
     }
 }
 

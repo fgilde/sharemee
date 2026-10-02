@@ -23,7 +23,8 @@ public sealed record GetNodeMetadata(Guid Id) : IQuery<Result<NodeMetadataDto>>,
 }
 
 /// <summary>Replace sets the whole own value set; otherwise only the given keys change and a null list removes a key. <paramref name="Source"/> tells listeners who changed it (rules do not react to their own writes).</summary>
-public sealed record SetNodeMetadata(Guid Id, IReadOnlyDictionary<string, List<MetadataValue>?> Values, bool Replace, string Source = MetadataSources.User) : ICommand<Result>, IResourceRequest
+/// <summary>Sets own values of a node; with <see cref="ValidateOnly"/> it only checks them, for dry runs.</summary>
+public sealed record SetNodeMetadata(Guid Id, IReadOnlyDictionary<string, List<MetadataValue>?> Values, bool Replace, string Source = MetadataSources.User, bool ValidateOnly = false) : ICommand<Result>, IResourceRequest
 {
     public string ResourceType => NodePermissions.ResourceType;
 
@@ -37,6 +38,7 @@ public static class MetadataSources
     public const string User = "user";
     public const string Rule = "rule";
     public const string Import = "import";
+    public const string MassEdit = "massEdit";
 }
 
 /// <summary>Own values of a node changed; <see cref="Keys"/> are the properties whose values differ now.</summary>
@@ -153,7 +155,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
             return Error.Validation(errors.ToDictionary(e => e.Key, e => e.Value.ToArray(), StringComparer.Ordinal));
         }
 
-        if (serialized == JsonSerializer.Serialize(node.Metadata))
+        if (command.ValidateOnly || serialized == JsonSerializer.Serialize(node.Metadata))
         {
             return Result.Success();
         }
