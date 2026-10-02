@@ -306,7 +306,7 @@ else
                 Snackbar.Add($"{package.Skipped} files are left out (no download right or nothing to download).", Severity.Info);
             }
 
-            Nav.NavigateTo(package.Url, forceLoad: true);
+            Nav.NavigateTo(package.Url.TrimStart('/'), forceLoad: true);
         }
         catch (ApiException exception)
         {

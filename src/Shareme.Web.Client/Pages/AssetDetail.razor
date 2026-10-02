@@ -289,8 +289,24 @@ else
 
     private Task ExtractAsync() => RunAsync(async () =>
     {
-        await Downloads.ExtractAsync(_asset!.Id, new ExtractArchiveRequest());
-        Snackbar.Add("The archive is being unpacked into this folder.", Severity.Success);
+        var run = await Downloads.ExtractAsync(_asset!.Id, new ExtractArchiveRequest());
+        Snackbar.Add("The archive is being unpacked into this folder.", Severity.Info);
+
+        // follows the run for a while and reports how it ended
+        for (var poll = 0; poll < 120 && run.State is ExtractionStates.Queued or ExtractionStates.Running; poll++)
+        {
+            await Task.Delay(2000);
+            run = await Downloads.GetExtractionAsync(run.Id);
+        }
+
+        if (run.State == ExtractionStates.Completed)
+        {
+            Snackbar.Add($"Unpacked {run.Extracted} files" + (run.Failed + run.Filtered > 0 ? $", {run.Filtered} skipped, {run.Failed} refused: {string.Join("; ", run.Problems.Take(3))}" : "."), run.Failed > 0 ? Severity.Warning : Severity.Success);
+        }
+        else if (run.State == ExtractionStates.Failed)
+        {
+            Snackbar.Add(run.Error ?? "The archive could not be unpacked.", Severity.Error);
+        }
     });
 
     private Task CreateLinkAsync() => RunAsync(async () => _link = await Api.CreateDownloadLinkAsync(_asset!.Id));

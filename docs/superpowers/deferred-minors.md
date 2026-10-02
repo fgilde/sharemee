@@ -2,6 +2,16 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P3d (packages, archives)
+
+- [ ] ImageMagick has no restrictive policy (no '@file' reads, no URL coders): MagickNET.Initialize with a custom policy crashed the test host; user text going into Magick is escaped (MagickText.Literal) instead.
+- [ ] Zip download keeps AllowSynchronousIO for the small headers the writer emits on a non-seekable body; a header-buffering stream would remove it.
+- [ ] Entries over 4 GB in streamed zips are not tested with Explorer, macOS Archive Utility and 7-Zip.
+- [ ] The extraction reads the whole central directory before the entry count check (bounded by the archive size); an EOCD pre-check would stop huge directories earlier.
+- [ ] Unpacking again after a partial failure duplicates the files already imported (folders are reused); no duplicate detection or Duplicate status for extracted files.
+- [ ] Package links are bearer links for an hour and are not revoked when rights change or assets are deleted.
+- [ ] A blob that breaks while being copied into a zip ends the response with an incomplete zip.
+
 ## From P3c (crop, variants)
 
 - [ ] A failed variant keeps no error text (only status failed); store it where the asset page can show it.

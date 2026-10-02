@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261002094400_Packages")]
+    [Migration("20261002095935_Packages")]
     partial class Packages
     {
         /// <inheritdoc />
@@ -1192,7 +1192,10 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ArchiveId");
+                    b.HasIndex("ArchiveId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ArchiveExtractions_Active")
+                        .HasFilter("\"State\" IN ('queued', 'running')");
 
                     b.ToTable("ArchiveExtractions", "sm");
                 });

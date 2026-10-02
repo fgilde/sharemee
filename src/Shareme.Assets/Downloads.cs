@@ -11,6 +11,7 @@ using Coworkee.Domain;
 using Coworkee.Infrastructure.Persistence;
 using Coworkee.Storage;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Shareme.Contracts.Assets;
 using Shareme.Contracts.Graph;
 using Shareme.Contracts.Metadata;
@@ -85,6 +86,13 @@ internal static partial class FileNames
     [GeneratedRegex(@"\{([a-z]+)(?::([a-z0-9_-]+))?\}")]
     private static partial Regex Token();
 
+    [GeneratedRegex(@"\{[^}]*\}?")]
+    private static partial Regex Braces();
+
+    /// <summary>The file name without its extension, but only the extension the file type check found (so "v1.2 final" stays whole).</summary>
+    public static string Stem(string fileName, string? extension) =>
+        extension is { Length: > 0 } && fileName.EndsWith("." + extension, StringComparison.OrdinalIgnoreCase) ? fileName[..^(extension.Length + 1)] : fileName;
+
     /// <summary>Unknown tokens, or null when the format is fine.</summary>
     public static string? Validate(string format)
     {
@@ -93,7 +101,10 @@ internal static partial class FileNames
             return "A format of up to 300 characters is required.";
         }
 
-        var unknown = Token().Matches(format).Where(m => m.Groups[1].Value == FileNamingTokens.MetaPrefix ? !m.Groups[2].Success : !FileNamingTokens.Variables.Contains(m.Groups[1].Value)).Select(m => m.Value).ToList();
+        var unknown = Braces().Matches(format).Select(m => m.Value)
+            .Where(token => Token().Match(token) is not { Success: true } m || m.Length != token.Length
+                || (m.Groups[1].Value == FileNamingTokens.MetaPrefix ? !m.Groups[2].Success : !FileNamingTokens.Variables.Contains(m.Groups[1].Value)))
+            .ToList();
         return unknown.Count > 0 ? $"Unknown tokens: {string.Join(", ", unknown)}." : null;
     }
 
@@ -132,11 +143,12 @@ internal static partial class FileNames
     }
 
     /// <summary>Appends " (2)", " (3)" … to names already taken (case-insensitive, as on Windows and macOS).</summary>
-    public static string Unique(string path, ISet<string> taken)
+    public static string Unique(string path, string? extension, ISet<string> taken)
     {
         var candidate = path;
-        var stem = System.IO.Path.ChangeExtension(path, null);
-        var extension = System.IO.Path.GetExtension(path);
+        var suffix = extension is { Length: > 0 } ? "." + extension : string.Empty;
+        var stem = suffix.Length > 0 && path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) ? path[..^suffix.Length] : path;
+        extension = suffix.Length > 0 && path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) ? suffix : string.Empty;
         for (var n = 2; !taken.Add(candidate); n++)
         {
             candidate = $"{stem} ({n}){extension}";
@@ -273,7 +285,7 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
         var versions = await AssetSelection.CurrentVersionsAsync(db, assets, cancellationToken);
         var now = clock.GetUtcNow();
         IReadOnlyList<string> names = assets.Where(a => versions.ContainsKey(a.Id)).Select((asset, index) => FileNames.Apply(request.Format, request.Casing,
-            new FileNames.Context(Path.GetFileNameWithoutExtension(versions[asset.Id].FileName), versions[asset.Id].Extension, index + 1, assets.Count, now, asset.AssetTypeKey, DownloadKinds.Original, asset.Metadata)))
+            new FileNames.Context(FileNames.Stem(versions[asset.Id].FileName, versions[asset.Id].Extension), versions[asset.Id].Extension, index + 1, assets.Count, now, asset.AssetTypeKey, DownloadKinds.Original, asset.Metadata)))
             .ToList();
         return Result<IReadOnlyList<string>>.Success(names);
     }
@@ -337,9 +349,9 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
             }
 
             var fileName = FileNames.Apply(naming?.Format ?? FileNamingTokens.DefaultFormat, naming?.Casing ?? FileNamingCasings.None,
-                new FileNames.Context(Path.GetFileNameWithoutExtension(version.FileName), extension, items.Count + 1, readable.Count, now, asset.AssetTypeKey, request.Kind, asset.Metadata));
+                new FileNames.Context(FileNames.Stem(version.FileName, version.Extension), extension, items.Count + 1, readable.Count, now, asset.AssetTypeKey, request.Kind, asset.Metadata));
             var folder = string.Join('/', asset.PathIds.Where(folderNames.ContainsKey).Select(id => folderNames[id]));
-            items.Add(new DownloadItem(key, FileNames.Unique(folder.Length > 0 ? folder + "/" + fileName : fileName, taken)));
+            items.Add(new DownloadItem(key, FileNames.Unique(folder.Length > 0 ? folder + "/" + fileName : fileName, FileNames.Clean(extension), taken)));
         }
 
         if (items.Count == 0)
@@ -355,7 +367,7 @@ internal sealed class DownloadHandlers(CoworkeeDbContext db, ICurrentUser curren
             ExpiresAt = now.Add(Lifetime),
         };
         db.Add(package);
-        return new DownloadPackageDto($"/api/v1/downloads/{package.Token}", package.ExpiresAt, items.Count, candidates.Count - items.Count);
+        return new DownloadPackageDto($"/api/v1/downloads/{package.Token}", package.ExpiresAt, items.Count, readable.Count - items.Count);
     }
 
     private static FileNamingDto Map(FileNamingDefinition n) => new(n.Id, n.Name, n.Format, n.Casing, n.IsDefault);
@@ -389,7 +401,9 @@ internal static class AssetSelection
                 return Error.Validation("FolderId", $"The folder holds more than {max} files; take its subfolders one by one.");
             }
 
-            var names = await db.Set<Folder>().AsNoTracking().Where(f => f.Path.StartsWith(folder.Path) && f.Id != folder.Id).ToDictionaryAsync(f => f.Id, f => FileNames.Clean(f.Name), cancellationToken);
+            // folders the caller cannot read keep their names to themselves; their files land one level up
+            var subfolders = await db.Set<Folder>().AsNoTracking().Where(f => f.Path.StartsWith(folder.Path) && f.Id != folder.Id).ToListAsync(cancellationToken);
+            var names = (await WithPermissionAsync(db, access, subfolders, NodePermissions.Read, cancellationToken)).ToDictionary(f => f.Id, f => FileNames.Clean(f.Name));
             return new Selection(below, names, folder.Name);
         }
 
@@ -399,7 +413,8 @@ internal static class AssetSelection
     }
 
     /// <summary>The assets the caller holds the permission on, in their order: a grant on the asset or on a folder above it, unless inheritance is interrupted in between.</summary>
-    public static async Task<IReadOnlyList<Asset>> WithPermissionAsync(CoworkeeDbContext db, NodeAccess access, IReadOnlyList<Asset> assets, string permission, CancellationToken cancellationToken)
+    public static async Task<IReadOnlyList<T>> WithPermissionAsync<T>(CoworkeeDbContext db, NodeAccess access, IReadOnlyList<T> assets, string permission, CancellationToken cancellationToken)
+        where T : Node
     {
         if (assets.Count == 0 || await access.IsGlobalAsync(permission, cancellationToken))
         {
@@ -421,7 +436,7 @@ internal static class AssetSelection
 }
 
 /// <summary>Streams a prepared package as zip; the link is the authorization. Files gone from storage meanwhile are left out.</summary>
-internal sealed class DownloadPackageWriter(CoworkeeDbContext db, IBlobStorage storage, TimeProvider clock)
+internal sealed class DownloadPackageWriter(CoworkeeDbContext db, IBlobStorage storage, TimeProvider clock, Microsoft.Extensions.Logging.ILogger<DownloadPackageWriter> logger)
 {
     private static readonly HashSet<string> Packed = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".mp4", ".mov", ".webm", ".mkv", ".mp3", ".m4a", ".ogg", ".flac", ".zip", ".7z", ".rar", ".gz", ".docx", ".xlsx", ".pptx", ".pdf"];
 
@@ -431,12 +446,24 @@ internal sealed class DownloadPackageWriter(CoworkeeDbContext db, IBlobStorage s
         return await db.Set<DownloadPackage>().IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(p => p.Token == token && p.ExpiresAt > now, cancellationToken);
     }
 
+    /// <summary>A file that cannot be opened is left out; one that breaks while being copied ends the response, the zip is then incomplete.</summary>
     public async Task WriteAsync(DownloadPackage package, Stream output, CancellationToken cancellationToken)
     {
-        using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+        await using var zip = await ZipArchive.CreateAsync(output, ZipArchiveMode.Create, leaveOpen: true, entryNameEncoding: null, cancellationToken);
         foreach (var item in package.Items)
         {
-            if (await storage.OpenReadAsync(item.BlobKey, cancellationToken) is not { } content)
+            Stream? content;
+            try
+            {
+                content = await storage.OpenReadAsync(item.BlobKey, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(exception, "{Path} is left out of a download package.", item.Path);
+                continue;
+            }
+
+            if (content is null)
             {
                 continue;
             }
@@ -445,7 +472,7 @@ internal sealed class DownloadPackageWriter(CoworkeeDbContext db, IBlobStorage s
             {
                 // already compressed formats are stored, which keeps big packages fast
                 var entry = zip.CreateEntry(item.Path, Packed.Contains(Path.GetExtension(item.Path).ToLowerInvariant()) ? CompressionLevel.NoCompression : CompressionLevel.Fastest);
-                await using var target = entry.Open();
+                await using var target = await entry.OpenAsync(cancellationToken);
                 await content.CopyToAsync(target, cancellationToken);
             }
         }

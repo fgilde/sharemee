@@ -74,10 +74,12 @@ namespace Shareme.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_ArchiveExtractions_ArchiveId",
+                name: "IX_ArchiveExtractions_Active",
                 schema: "sm",
                 table: "ArchiveExtractions",
-                column: "ArchiveId");
+                column: "ArchiveId",
+                unique: true,
+                filter: "\"State\" IN ('queued', 'running')");
 
             migrationBuilder.CreateIndex(
                 name: "IX_DownloadPackages_ExpiresAt",

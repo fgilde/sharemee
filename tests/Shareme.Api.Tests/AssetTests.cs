@@ -384,6 +384,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         await DerivationsAsync(second.AssetId);
 
         (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Broken", "{nope}"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Shouting", "{Name}"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Caption", "{meta:caption}-{seq}", FileNamingCasings.Lower, IsDefault: true), Ct)).EnsureSuccessStatusCode();
         (await (await Admin.PostAsJsonAsync("/api/v1/file-namings/preview", new FileNamingPreviewRequest("{meta:caption}_{name}", [first.AssetId]), Ct))
             .Content.ReadFromJsonAsync<string[]>(Ct))!.ShouldBe(["Beach_a.png"]);
@@ -420,7 +421,8 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         thumbnails.Count.ShouldBe(2);
         (await anonymous.GetAsync($"/api/v1/downloads/{Guid.NewGuid()}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
-        using var sheet = await reader.PostAsJsonAsync("/api/v1/downloads/contact-sheet", new ContactSheetRequest(FolderId: folder, Title: "Shoot"), Ct);
+        // titles go into ImageMagick literally, '@file' reads nothing
+        using var sheet = await reader.PostAsJsonAsync("/api/v1/downloads/contact-sheet", new ContactSheetRequest(FolderId: folder, Title: "@appsettings.json 100%[w]"), Ct);
         sheet.StatusCode.ShouldBe(HttpStatusCode.OK);
         sheet.Content.Headers.ContentType!.MediaType.ShouldBe("application/pdf");
         System.Text.Encoding.ASCII.GetString((await sheet.Content.ReadAsByteArrayAsync(Ct))[..5]).ShouldBe("%PDF-");
@@ -446,6 +448,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
             Add(".DS_Store", [1, 2, 3]);
             Add("tool.exe", [0x4D, 0x5A]);
             Add("bad.png", [1, 2, 3, 4]);
+            Add(string.Join('/', Enumerable.Repeat("deeper", 40)) + "/x.txt", "x"u8.ToArray());
         }
 
         var archive = await UploadAsync(Admin, "bundle.zip", bundle.ToArray(), folder);
@@ -463,7 +466,7 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
             await Task.Delay(250, Ct);
         }
 
-        done.ShouldSatisfyAllConditions(d => d.State.ShouldBe(ExtractionStates.Completed), d => d.Extracted.ShouldBe(2), d => d.Filtered.ShouldBe(2), d => d.Failed.ShouldBe(2));
+        done.ShouldSatisfyAllConditions(d => d.State.ShouldBe(ExtractionStates.Completed), d => d.Extracted.ShouldBe(2), d => d.Filtered.ShouldBe(2), d => d.Failed.ShouldBe(3));
         done.Problems.ShouldContain(p => p.StartsWith("tool.exe"));
         var children = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{folder}/children", Ct))!.Items;
         var photos = children.Single(c => c.Name == "photos");

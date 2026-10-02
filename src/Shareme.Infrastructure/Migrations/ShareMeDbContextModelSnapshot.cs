@@ -1189,7 +1189,10 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ArchiveId");
+                    b.HasIndex("ArchiveId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ArchiveExtractions_Active")
+                        .HasFilter("\"State\" IN ('queued', 'running')");
 
                     b.ToTable("ArchiveExtractions", "sm");
                 });

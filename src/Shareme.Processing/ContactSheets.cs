@@ -14,6 +14,16 @@ namespace Shareme.Processing;
 /// <summary>A PDF of thumbnails with names, 4 × 5 per page; thumbnails are for readers, so reading the assets is enough.</summary>
 public sealed record CreateContactSheet(ContactSheetRequest Request) : IQuery<Result<BlobDownload>>;
 
+/// <summary>ImageMagick reads a file for text starting with '@' and expands '%' escapes in labels and titles; user text must stay literal.</summary>
+internal static class MagickText
+{
+    public static string Literal(string text)
+    {
+        var escaped = text.Replace("%", "%%", StringComparison.Ordinal);
+        return escaped.StartsWith('@') ? " " + escaped : escaped;
+    }
+}
+
 internal sealed class ContactSheetHandler(CoworkeeDbContext db, IBlobStorage storage, NodeAccess access, TimeProvider clock) : IHandler<CreateContactSheet, Result<BlobDownload>>
 {
     public const int MaxAssets = 200;
@@ -48,7 +58,7 @@ internal sealed class ContactSheetHandler(CoworkeeDbContext db, IBlobStorage sto
             foreach (var asset in chunk)
             {
                 var tile = await TileAsync(asset.CurrentVersionId is { } versionId && thumbnails.TryGetValue(versionId, out var key) ? key : null, cancellationToken);
-                tile.Label = asset.Name.Length > 40 ? asset.Name[..39] + "…" : asset.Name;
+                tile.Label = MagickText.Literal(asset.Name.Length > 40 ? asset.Name[..39] + "…" : asset.Name);
                 tiles.Add(tile);
             }
 
@@ -59,7 +69,7 @@ internal sealed class ContactSheetHandler(CoworkeeDbContext db, IBlobStorage sto
                 BackgroundColor = MagickColors.White,
                 FillColor = MagickColors.Black,
                 FontPointsize = 14,
-                Title = request.Title is { Length: > 0 } title ? title[..Math.Min(title.Length, 100)] : null,
+                Title = request.Title is { Length: > 0 } title ? MagickText.Literal(title[..Math.Min(title.Length, 100)]) : null,
             };
             pages.Add(tiles.Montage(settings));
         }

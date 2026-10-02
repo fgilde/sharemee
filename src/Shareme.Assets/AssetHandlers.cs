@@ -119,7 +119,7 @@ internal sealed class AssetHandlers(CoworkeeDbContext db, IBlobStorage storage, 
             && await db.Set<Asset>().AsNoTracking().SingleOrDefaultAsync(a => a.Id == query.Id, cancellationToken) is { } asset)
         {
             fileName = FileNames.Apply(naming.Format, naming.Casing, new FileNames.Context(
-                Path.GetFileNameWithoutExtension(version.FileName), version.Extension, 1, 1, clock.GetUtcNow(), asset.AssetTypeKey, DownloadKinds.Original, asset.Metadata));
+                FileNames.Stem(version.FileName, version.Extension), version.Extension, 1, 1, clock.GetUtcNow(), asset.AssetTypeKey, DownloadKinds.Original, asset.Metadata));
         }
 
         return new BlobDownload(content, fileName, version.MimeType, version.Sha256, version.CreatedAt);
@@ -216,6 +216,8 @@ public sealed class StorageCleanupJob(CoworkeeDbContext db, IBlobStorage storage
 
         var now = clock.GetUtcNow();
         await db.Set<DownloadPackage>().IgnoreQueryFilters().Where(p => p.ExpiresAt <= now).ExecuteDeleteAsync(cancellationToken);
+        await db.Set<ArchiveExtraction>().IgnoreQueryFilters().Where(e => (e.State == ExtractionStates.Queued || e.State == ExtractionStates.Running) && e.CreatedAt < now.AddDays(-1))
+            .ExecuteUpdateAsync(e => e.SetProperty(x => x.State, ExtractionStates.Failed).SetProperty(x => x.Error, "The extraction did not finish within a day."), cancellationToken);
         while (await db.Set<UploadSession>().IgnoreQueryFilters().Where(s => s.ExpiresAt <= now && !skipped.Contains(s.Id)).OrderBy(s => s.Id).Take(BatchSize).ToListAsync(cancellationToken) is { Count: > 0 } sessions)
         {
             foreach (var session in sessions)

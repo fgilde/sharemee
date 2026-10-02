@@ -52,7 +52,7 @@ internal sealed class ArchiveModelContributor : IModelContributor
             extraction.Property(e => e.State).HasMaxLength(20);
             extraction.Property(e => e.Error).HasMaxLength(1000);
             extraction.Property(e => e.Problems).HasColumnType("jsonb");
-            extraction.HasIndex(e => e.ArchiveId);
+            extraction.HasIndex(e => e.ArchiveId).IsUnique().HasFilter("\"State\" IN ('queued', 'running')").HasDatabaseName("IX_ArchiveExtractions_Active");
         });
 }
 
@@ -71,6 +71,9 @@ public sealed record GetArchiveExtraction(Guid Id) : IQuery<Result<ArchiveExtrac
 internal static class Archives
 {
     public const int MaxEntries = 10_000;
+
+    /// <summary>Node paths hold about a hundred levels; archives get far fewer.</summary>
+    public const int MaxDepth = 32;
 
     public const string MaxTotalSetting = "Shareme:Archives:MaxUnpackedBytes";
 
@@ -118,7 +121,16 @@ internal sealed class ArchiveHandlers(CoworkeeDbContext db, NodeAccess access, I
 
         var extraction = new ArchiveExtraction { ArchiveId = archive.Id, TargetFolderId = target.Id, KeepFolders = command.Request.KeepFolders, CreatedAt = clock.GetUtcNow() };
         db.Add(extraction);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // the partial unique index lets only one run per archive be active
+            return Error.Conflict("archives.running", "This archive is being unpacked already.");
+        }
+
         jobs.Enqueue<ArchiveExtractionJob, Guid>(extraction.Id);
         return Archives.Map(extraction);
     }
@@ -137,11 +149,14 @@ internal sealed class ArchiveHandlers(CoworkeeDbContext db, NodeAccess access, I
 
 /// <summary>
 /// Reads the archive from a temp copy and imports entry by entry: junk is filtered, names are cleaned, zip slip is impossible because
-/// paths only become folder names; the unpacked size is capped (declared sizes are not trusted).
+/// paths only become folder names; depth, entry count and unpacked size are capped (declared sizes are not trusted).
+/// Runs as the user who asked, so folder rights are checked again here.
 /// </summary>
-internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage storage, IConfiguration configuration, TimeProvider clock, ILogger<ArchiveExtractionJob> logger)
+internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage storage, NodeAccess access, IConfiguration configuration, TimeProvider clock, ILogger<ArchiveExtractionJob> logger)
     : IBackgroundJob<Guid>
 {
+    private readonly Dictionary<string, FileType?> fileTypes = [];
+
     public async Task ExecuteAsync(Guid extractionId, CancellationToken cancellationToken)
     {
         if (await db.Set<ArchiveExtraction>().IgnoreQueryFilters().SingleOrDefaultAsync(e => e.Id == extractionId && e.State == ExtractionStates.Queued, cancellationToken) is not { } extraction)
@@ -151,14 +166,19 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
 
         extraction.State = ExtractionStates.Running;
         await db.SaveChangesAsync(cancellationToken);
-        var work = Path.Combine(Path.GetTempPath(), $"shareme-unzip-{extraction.Id:N}");
+        var root = configuration["Shareme:Uploads:TempRoot"] is { Length: > 0 } configured ? configured : Path.GetTempPath();
+        var work = Path.Combine(root, $"shareme-unzip-{extraction.Id:N}");
         Directory.CreateDirectory(work);
         try
         {
-            var archive = await db.Set<Asset>().IgnoreQueryFilters().AsNoTracking().SingleAsync(a => a.Id == extraction.ArchiveId, cancellationToken);
-            var version = await db.Set<AssetVersion>().IgnoreQueryFilters().AsNoTracking().SingleAsync(v => v.Id == archive.CurrentVersionId, cancellationToken);
+            if (await db.Set<Asset>().AsNoTracking().SingleOrDefaultAsync(a => a.Id == extraction.ArchiveId, cancellationToken) is not { CurrentVersionId: { } versionId })
+            {
+                throw new InvalidOperationException("The archive was deleted.");
+            }
+
+            var version = await db.Set<AssetVersion>().AsNoTracking().SingleAsync(v => v.Id == versionId, cancellationToken);
             var copy = Path.Combine(work, "archive.zip");
-            await using (var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken) ?? throw new FileNotFoundException("The archive is not in storage."))
+            await using (var original = await storage.OpenReadAsync(version.BlobKey, cancellationToken) ?? throw new InvalidOperationException("The archive is not in storage."))
             await using (var file = File.Create(copy))
             {
                 await original.CopyToAsync(file, cancellationToken);
@@ -166,14 +186,27 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
 
             await UnpackAsync(extraction, copy, work, cancellationToken);
             extraction.State = ExtractionStates.Completed;
+            await db.SaveChangesAsync(CancellationToken.None);
         }
-        catch (Exception exception) when (exception is InvalidDataException or IOException or InvalidOperationException)
+        catch (Exception exception)
         {
+            // every failure ends the run visibly; a retry would find it no longer queued
             logger.LogWarning(exception, "Archive extraction {ExtractionId} failed.", extractionId);
             db.ChangeTracker.Clear();
-            extraction = await db.Set<ArchiveExtraction>().IgnoreQueryFilters().SingleAsync(e => e.Id == extractionId, CancellationToken.None);
-            extraction.State = ExtractionStates.Failed;
-            extraction.Error = exception is InvalidDataException ? "The archive is damaged or not a zip file." : exception.Message.Length > 1000 ? exception.Message[..1000] : exception.Message;
+            var failed = await db.Set<ArchiveExtraction>().IgnoreQueryFilters().SingleAsync(e => e.Id == extractionId, CancellationToken.None);
+            failed.State = ExtractionStates.Failed;
+            failed.Error = exception switch
+            {
+                InvalidDataException => "The archive is damaged or not a zip file.",
+                OperationCanceledException => "The extraction was interrupted.",
+                InvalidOperationException or IOException => exception.Message.Length > 1000 ? exception.Message[..1000] : exception.Message,
+                _ => "The extraction stopped because of an internal error.",
+            };
+            failed.Extracted = extraction.Extracted;
+            failed.Filtered = extraction.Filtered;
+            failed.Failed = extraction.Failed;
+            failed.Problems = extraction.Problems;
+            await db.SaveChangesAsync(CancellationToken.None);
         }
         finally
         {
@@ -186,17 +219,22 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
                 // the temp folder is cleaned by the system
             }
         }
-
-        await db.SaveChangesAsync(CancellationToken.None);
     }
 
     private async Task UnpackAsync(ArchiveExtraction extraction, string path, string work, CancellationToken cancellationToken)
     {
-        var target = await db.Set<Folder>().IgnoreQueryFilters().SingleAsync(f => f.Id == extraction.TargetFolderId && !f.IsDeleted, cancellationToken);
+        if (await db.Set<Folder>().SingleOrDefaultAsync(f => f.Id == extraction.TargetFolderId, cancellationToken) is not { } target
+            || !await access.CanAsync(NodePermissions.Create, target.Id, cancellationToken))
+        {
+            throw new InvalidOperationException("The target folder is gone or no longer writable for you.");
+        }
+
         var maxTotal = configuration.GetValue(Archives.MaxTotalSetting, Archives.DefaultMaxTotal);
-        var folders = new Dictionary<string, Folder>(StringComparer.OrdinalIgnoreCase) { [string.Empty] = target };
+        var folders = new Dictionary<string, Folder?>(StringComparer.OrdinalIgnoreCase) { [string.Empty] = target };
         long total = 0;
-        using var zip = ZipFile.OpenRead(path);
+
+        // ponytail: the central directory is read before the count is checked; bounded by the archive size, an EOCD pre-check would stop huge ones earlier
+        await using var zip = await ZipArchive.CreateAsync(File.OpenRead(path), ZipArchiveMode.Read, leaveOpen: false, entryNameEncoding: null, cancellationToken);
         if (zip.Entries.Count > Archives.MaxEntries)
         {
             throw new InvalidOperationException($"The archive holds more than {Archives.MaxEntries} entries.");
@@ -217,61 +255,91 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
             }
 
             var segments = entryPath.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(FileNames.Clean).ToList();
-            var fileName = segments[^1];
+            if (segments.Count == 0 || segments.Count > Archives.MaxDepth)
+            {
+                Fail(extraction, entryPath, segments.Count == 0 ? "the entry has no name." : $"folders deeper than {Archives.MaxDepth} levels are not taken.");
+                continue;
+            }
+
             var folder = extraction.KeepFolders ? await FolderAsync(folders, segments[..^1], cancellationToken) : target;
+            if (folder is null)
+            {
+                Fail(extraction, entryPath, "you may not add files to its folder.");
+                continue;
+            }
+
             var temp = Path.Combine(work, "entry");
             try
             {
-                await using (var source = entry.Open())
+                await using (var source = await entry.OpenAsync(cancellationToken))
                 await using (var file = File.Create(temp))
                 {
                     // counts what really comes out, so a zip bomb stops at the cap whatever it declares
                     var buffer = new byte[81920];
+                    long size = 0;
                     int read;
                     while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
                     {
                         total += read;
+                        size += read;
                         if (total > maxTotal)
                         {
                             throw new InvalidOperationException($"The archive unpacks to more than {maxTotal / (1024 * 1024)} MB.");
                         }
 
+                        if (size > Uploads.MaxSize)
+                        {
+                            throw new InvalidDataException();
+                        }
+
                         await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     }
-                }
-
-                if (await ImportAsync(folder, fileName, temp, cancellationToken) is { } problem)
-                {
-                    extraction.Failed++;
-                    Note(extraction, $"{entryPath}: {problem}");
-                }
-                else
-                {
-                    extraction.Extracted++;
                 }
             }
             catch (InvalidDataException)
             {
-                extraction.Failed++;
-                Note(extraction, $"{entryPath}: the entry is damaged.");
+                Fail(extraction, entryPath, "the entry is damaged or too large.");
+                await db.SaveChangesAsync(cancellationToken);
+                continue;
             }
 
-            await db.SaveChangesAsync(cancellationToken);
+            if (await ImportAsync(folder, segments[^1], temp, cancellationToken) is not { } imported)
+            {
+                Fail(extraction, entryPath, problem);
+                await db.SaveChangesAsync(cancellationToken);
+                continue;
+            }
+
+            extraction.Extracted++;
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                await storage.DeleteAsync(imported.Version.BlobKey, CancellationToken.None);
+                throw;
+            }
+
+            // saved files leave the change tracker, so each save only looks at the few new rows
+            db.Entry(imported.Asset).State = EntityState.Detached;
+            db.Entry(imported.Version).State = EntityState.Detached;
         }
     }
 
-    private async Task<Folder> FolderAsync(Dictionary<string, Folder> folders, List<string> segments, CancellationToken cancellationToken)
+    /// <summary>The folder for a path below the target, made where missing; null when an existing one along the way is not writable for the caller.</summary>
+    private async Task<Folder?> FolderAsync(Dictionary<string, Folder?> folders, List<string> segments, CancellationToken cancellationToken)
     {
-        var parent = folders[string.Empty];
+        var parent = folders[string.Empty]!;
         for (var depth = 1; depth <= segments.Count; depth++)
         {
             var key = string.Join('/', segments.Take(depth));
             if (!folders.TryGetValue(key, out var folder))
             {
-                // an existing subfolder of the same name is reused, so unpacking twice fills the same tree
+                // an existing subfolder of the same name is reused, so unpacking twice fills the same tree, but only where the caller may add files
                 var name = segments[depth - 1];
                 var parentId = parent.Id;
-                folder = await db.Set<Folder>().IgnoreQueryFilters().FirstOrDefaultAsync(f => f.ParentId == parentId && f.Name == name && !f.IsDeleted, cancellationToken);
+                folder = await db.Set<Folder>().FirstOrDefaultAsync(f => f.ParentId == parentId && f.Name == name, cancellationToken);
                 if (folder is null)
                 {
                     folder = new Folder { Name = name, NodeTypeId = NodeType.FolderTypeId, TenantId = parent.TenantId };
@@ -279,8 +347,17 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
                     folder.MarkChanged("created");
                     db.Add(folder);
                 }
+                else if (!await access.CanAsync(NodePermissions.Create, folder.Id, cancellationToken))
+                {
+                    folder = null;
+                }
 
                 folders[key] = folder;
+            }
+
+            if (folder is null)
+            {
+                return null;
             }
 
             parent = folder;
@@ -289,21 +366,30 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
         return parent;
     }
 
-    /// <summary>Stores one file as a new asset like an upload would (type and content checked); returns why it was refused.</summary>
-    private async Task<string?> ImportAsync(Folder folder, string fileName, string path, CancellationToken cancellationToken)
+    private string problem = string.Empty;
+
+    /// <summary>Stores one file as a new asset like an upload would (type and content checked); null with <see cref="problem"/> set when it is refused.</summary>
+    private async Task<(Asset Asset, AssetVersion Version)?> ImportAsync(Folder folder, string fileName, string path, CancellationToken cancellationToken)
     {
         var parts = fileName.Split('.').Skip(1).Select(p => p.Trim().ToLowerInvariant()).Where(p => p.Length is > 0 and <= 20).ToList();
         if (await db.Set<FileType>().Where(t => t.ForbiddenForUpload && parts.Contains(t.Extension)).Select(t => t.Extension).FirstOrDefaultAsync(cancellationToken) is { } forbidden)
         {
-            return $"files of type .{forbidden} are not taken.";
+            problem = $"files of type .{forbidden} are not taken.";
+            return null;
         }
 
         var extension = Uploads.Extension(fileName);
-        var fileType = extension is null ? null : await db.Set<FileType>().AsNoTracking().SingleOrDefaultAsync(t => t.Extension == extension, cancellationToken);
+        if (extension is not null && !fileTypes.ContainsKey(extension))
+        {
+            fileTypes[extension] = await db.Set<FileType>().AsNoTracking().SingleOrDefaultAsync(t => t.Extension == extension, cancellationToken);
+        }
+
+        var fileType = extension is null ? null : fileTypes[extension];
         var info = new FileInfo(path);
         if (info.Length == 0)
         {
-            return "the file is empty.";
+            problem = "the file is empty.";
+            return null;
         }
 
         string sha256;
@@ -318,7 +404,8 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
 
         if (fileType is { MagicNumbers.Count: > 0 } && !fileType.MagicNumbers.Any(magic => Convert.ToHexString(head).StartsWith(magic, StringComparison.Ordinal)))
         {
-            return $"the content is not a valid .{extension} file.";
+            problem = $"the content is not a valid .{extension} file.";
+            return null;
         }
 
         var key = BlobKeys.New(folder.TenantId, clock);
@@ -353,15 +440,18 @@ internal sealed class ArchiveExtractionJob(CoworkeeDbContext db, IBlobStorage st
         asset.Publish(new AssetVersionCreated(asset.Id, version.Id));
         db.Add(asset);
         db.Add(version);
-        return null;
+        return (asset, version);
     }
 
-    private static void Note(ArchiveExtraction extraction, string problem)
+    private static void Fail(ArchiveExtraction extraction, string entryPath, string reason)
     {
+        extraction.Failed++;
+
         // the first problems are enough to act on; the counts tell the rest
         if (extraction.Problems.Count < 50)
         {
-            extraction.Problems.Add(problem.Length > 300 ? problem[..300] : problem);
+            var text = $"{entryPath}: {reason}";
+            extraction.Problems.Add(text.Length > 300 ? text[..300] : text);
         }
     }
 }

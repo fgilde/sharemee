@@ -83,6 +83,8 @@ public interface IDownloadsApi
     Task<byte[]> ContactSheetAsync(ContactSheetRequest request, CancellationToken cancellationToken = default);
 
     Task<ArchiveExtractionDto> ExtractAsync(Guid assetId, ExtractArchiveRequest request, CancellationToken cancellationToken = default);
+
+    Task<ArchiveExtractionDto> GetExtractionAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 internal sealed class DownloadsApi(HttpClient http) : ApiClientBase(http), IDownloadsApi
@@ -108,4 +110,6 @@ internal sealed class DownloadsApi(HttpClient http) : ApiClientBase(http), IDown
 
     public Task<ArchiveExtractionDto> ExtractAsync(Guid assetId, ExtractArchiveRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<ArchiveExtractionDto>(HttpMethod.Post, $"api/v1/assets/{assetId}/extract", request, cancellationToken);
+
+    public Task<ArchiveExtractionDto> GetExtractionAsync(Guid id, CancellationToken cancellationToken = default) => GetAsync<ArchiveExtractionDto>($"api/v1/extractions/{id}", cancellationToken);
 }

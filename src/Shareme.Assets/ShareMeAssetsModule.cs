@@ -121,7 +121,7 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
                 return Results.NotFound();
             }
 
-            // the zip writer writes its headers synchronously
+            // ponytail: the async zip writer still writes small headers synchronously on a non-seekable body; the file data goes async
             if (context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpBodyControlFeature>() is { } body)
             {
                 body.AllowSynchronousIO = true;
@@ -131,7 +131,9 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             response.ContentType = "application/zip";
             response.Headers.XContentTypeOptions = "nosniff";
             response.Headers.CacheControl = "private, no-store";
-            response.Headers.ContentDisposition = new System.Net.Mime.ContentDisposition { FileName = package.Name + ".zip" }.ToString();
+            var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+            disposition.SetHttpFileName(package.Name + ".zip");
+            response.Headers.ContentDisposition = disposition.ToString();
             await writer.WriteAsync(package, response.Body, ct);
             return Results.Empty;
         }).AllowAnonymous();
