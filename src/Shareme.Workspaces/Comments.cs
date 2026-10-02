@@ -46,7 +46,7 @@ public sealed record EditComment(Guid CommentId, CommentRequest Request) : IComm
 
 public sealed record DeleteComment(Guid CommentId) : ICommand<Result>;
 
-internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, WorkspaceRoleStore roles, Coworkee.Core.Security.IUserDirectory users, TimeProvider clock)
+internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, Coworkee.Core.Security.IUserDirectory users, TimeProvider clock)
     : IHandler<GetComments, Result<IReadOnlyList<CommentDto>>>,
       IHandler<AddComment, Result<CommentDto>>,
       IHandler<EditComment, Result<CommentDto>>,
@@ -58,7 +58,9 @@ internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser current
 
     public async Task<Result<IReadOnlyList<CommentDto>>> HandleAsync(GetComments query, CancellationToken cancellationToken)
     {
-        var comments = await db.Set<Comment>().AsNoTracking().Where(c => c.NodeId == query.Id).OrderBy(c => c.CreatedAt).Take(500).ToListAsync(cancellationToken);
+        // the newest 500, oldest first
+        var comments = (await db.Set<Comment>().AsNoTracking().Where(c => c.NodeId == query.Id).OrderByDescending(c => c.CreatedAt).Take(500).ToListAsync(cancellationToken))
+            .OrderBy(c => c.CreatedAt).ToList();
         var names = await users.GetDisplayNamesAsync(comments.Select(c => c.AuthorId).Distinct().ToList(), cancellationToken);
         var moderator = await access.CanAsync(NodePermissions.ManagePermissions, query.Id, cancellationToken);
         IReadOnlyList<CommentDto> dtos = comments.Select(c => Map(c, names, moderator)).ToList();
@@ -90,12 +92,17 @@ internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser current
 
     public async Task<Result<CommentDto>> HandleAsync(EditComment command, CancellationToken cancellationToken)
     {
-        if (await EditableAsync(command.CommentId, authorOnly: true, cancellationToken) is not { } comment)
+        if (await EditableAsync(command.CommentId, authorOnly: true, cancellationToken) is not { } comment
+            || await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == comment.NodeId, cancellationToken) is not { } node)
         {
             return NotFound;
         }
 
-        var node = await db.Set<Node>().AsNoTracking().SingleAsync(n => n.Id == comment.NodeId, cancellationToken);
+        if (!await access.CanAsync(NodePermissions.Update, node.Id, cancellationToken))
+        {
+            return Error.Forbidden("auth.forbidden", "You may no longer comment here.");
+        }
+
         if (await ValidateAsync(node, command.Request, cancellationToken) is { } problem)
         {
             return problem;
@@ -138,7 +145,7 @@ internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser current
         return comment.AuthorId == currentUser.UserId || (!authorOnly && await access.CanAsync(NodePermissions.ManagePermissions, comment.NodeId, cancellationToken)) ? comment : null;
     }
 
-    /// <summary>Text length; mentions only of members of the node's workspace (outside workspaces nobody can be mentioned).</summary>
+    /// <summary>Text length; mentions only of people who may read the node.</summary>
     private async Task<Error?> ValidateAsync(Node node, CommentRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Text) || request.Text.Length > MaxLength)
@@ -157,12 +164,8 @@ internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser current
             return Error.Validation("MentionIds", "Mention up to 20 people.");
         }
 
-        var workspaceId = node.PathIds[0];
-        var roleIds = (await roles.KeysAsync(cancellationToken)).Keys.ToList();
-        var members = await db.Set<ResourcePermission>().AsNoTracking()
-            .Where(p => p.ResourceType == NodePermissions.ResourceType && p.ResourceId == workspaceId && p.PrincipalType == PrincipalType.User && roleIds.Contains(p.RoleId))
-            .Select(p => p.PrincipalId).ToListAsync(cancellationToken);
-        return mentions.All(members.Contains) ? null : Error.Validation("MentionIds", "Mention members of the workspace only.");
+        var readers = await access.ReadersAmongAsync(mentions, node.Id, node.TenantId, cancellationToken);
+        return readers.Count == mentions.Count ? null : Error.Validation("MentionIds", "Mention people who may read this only.");
     }
 
     private static List<Guid> Mentions(CommentRequest request) => request.MentionIds?.Distinct().ToList() ?? [];
@@ -173,7 +176,7 @@ internal sealed class CommentHandlers(CoworkeeDbContext db, ICurrentUser current
 }
 
 /// <summary>Tells the people concerned: mentioned members, assignees and new members get a notification of their own; watchers get the node's change events.</summary>
-internal sealed class CollaborationNotifications(CoworkeeDbContext db, ICurrentUser currentUser, INotifier notifier)
+internal sealed class CollaborationNotifications(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, INotifier notifier)
     : IDomainEventHandler<CommentAdded>, IDomainEventHandler<TaskAssigned>, IDomainEventHandler<TaskMoved>
 {
     public async Task HandleAsync(CommentAdded domainEvent, CancellationToken cancellationToken)
@@ -184,7 +187,9 @@ internal sealed class CollaborationNotifications(CoworkeeDbContext db, ICurrentU
         }
 
         var link = WorkspaceLinks.For(node);
-        var mentioned = domainEvent.MentionIds.Where(id => id != currentUser.UserId).ToList();
+
+        // everyone told must still be able to read the node
+        var mentioned = await access.ReadersAmongAsync(domainEvent.MentionIds.Where(id => id != currentUser.UserId), node.Id, node.TenantId, cancellationToken);
         if (mentioned.Count > 0)
         {
             await notifier.NotifyAsync(mentioned, "comment.mention", $"You were mentioned on {Short(node.Name)}", null, link, cancellationToken);
@@ -192,8 +197,10 @@ internal sealed class CollaborationNotifications(CoworkeeDbContext db, ICurrentU
 
         // watchers of the node or anything above it, except the author and those mentioned
         var watched = node.PathIds;
-        var watchers = await db.Set<NodeSubscription>().Where(s => watched.Contains(s.NodeId) && s.UserId != currentUser.UserId && !mentioned.Contains(s.UserId))
-            .Select(s => s.UserId).Distinct().ToListAsync(cancellationToken);
+        var watchers = await access.ReadersAmongAsync(
+            await db.Set<NodeSubscription>().Where(s => watched.Contains(s.NodeId) && s.UserId != currentUser.UserId && !mentioned.Contains(s.UserId))
+                .Select(s => s.UserId).Distinct().ToListAsync(cancellationToken),
+            node.Id, node.TenantId, cancellationToken);
         if (watchers.Count > 0)
         {
             await notifier.NotifyAsync(watchers, "comment", $"New comment on {Short(node.Name)}", null, link, cancellationToken);
@@ -204,8 +211,8 @@ internal sealed class CollaborationNotifications(CoworkeeDbContext db, ICurrentU
 
     public async Task HandleAsync(TaskAssigned domainEvent, CancellationToken cancellationToken)
     {
-        var assigned = domainEvent.UserIds.Where(id => id != currentUser.UserId).ToList();
-        if (assigned.Count == 0 || await db.Set<WorkTask>().AsNoTracking().SingleOrDefaultAsync(t => t.Id == domainEvent.TaskId, cancellationToken) is not { } task)
+        if (await db.Set<WorkTask>().AsNoTracking().SingleOrDefaultAsync(t => t.Id == domainEvent.TaskId, cancellationToken) is not { } task
+            || await access.ReadersAmongAsync(domainEvent.UserIds.Where(id => id != currentUser.UserId), task.Id, task.TenantId, cancellationToken) is not { Count: > 0 } assigned)
         {
             return;
         }
@@ -218,7 +225,7 @@ internal sealed class CollaborationNotifications(CoworkeeDbContext db, ICurrentU
     public async Task HandleAsync(TaskMoved domainEvent, CancellationToken cancellationToken)
     {
         if (await db.Set<WorkTask>().AsNoTracking().SingleOrDefaultAsync(t => t.Id == domainEvent.TaskId, cancellationToken) is not { } task
-            || task.AssigneeIds.Where(id => id != currentUser.UserId).ToList() is not { Count: > 0 } assignees)
+            || await access.ReadersAmongAsync(task.AssigneeIds.Where(id => id != currentUser.UserId), task.Id, task.TenantId, cancellationToken) is not { Count: > 0 } assignees)
         {
             return;
         }

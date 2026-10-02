@@ -51,6 +51,24 @@ internal sealed class NodeAccess(IPermissionChecker permissions)
     public Task<bool> CanAsync(string permission, Guid nodeId, CancellationToken cancellationToken) =>
         permissions.IsGrantedAsync(permission, NodePermissions.ResourceType, nodeId, cancellationToken);
 
+    /// <summary>Those of the users who may read the node now, each checked as themselves; for notifications, which must not name nodes their recipient cannot see.</summary>
+    public async Task<List<Guid>> ReadersAmongAsync(IEnumerable<Guid> userIds, Guid nodeId, Guid? tenantId, CancellationToken cancellationToken)
+    {
+        var readers = new List<Guid>();
+        foreach (var userId in userIds.Distinct())
+        {
+            using (Coworkee.Core.Security.CurrentUserScope.Begin(new Coworkee.Core.Security.ImpersonatedUser(userId, tenantId)))
+            {
+                if (await CanAsync(NodePermissions.Read, nodeId, cancellationToken))
+                {
+                    readers.Add(userId);
+                }
+            }
+        }
+
+        return readers;
+    }
+
     public Task<bool> IsGlobalAsync(string permission, CancellationToken cancellationToken) => permissions.IsGrantedAsync(permission, cancellationToken);
 
     public Task<IReadOnlyCollection<Guid>> GrantedNodesAsync(string permission, CancellationToken cancellationToken) =>

@@ -3,7 +3,7 @@
 @inject IWorkspacesApi Api
 @inject ISnackbar Snackbar
 
-<RealtimeSubscription @key="NodeId" Topic="@($"children:{NodeId}")" OnEvent="_ => LoadAsync()" />
+<RealtimeSubscription @key="NodeId" Topic="@($"children:{NodeId}")" OnEvent="_ => ReloadSoonAsync()" />
 <MudStack Spacing="2" data-testid="comments">
     @foreach (var comment in _comments)
     {
@@ -62,6 +62,22 @@
 
         _loaded = NodeId;
         return LoadAsync();
+    }
+
+    private bool _reloadPending;
+
+    /// <summary>Workspace events (task moves) also arrive here; a burst of them is answered with one reload.</summary>
+    private async Task ReloadSoonAsync()
+    {
+        if (_reloadPending)
+        {
+            return;
+        }
+
+        _reloadPending = true;
+        await Task.Delay(500);
+        _reloadPending = false;
+        await LoadAsync();
     }
 
     private async Task LoadAsync()

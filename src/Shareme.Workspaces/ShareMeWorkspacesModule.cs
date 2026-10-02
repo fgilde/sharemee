@@ -465,7 +465,7 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         if (existing.Count == 0 && command.Request.UserId != currentUser.UserId)
         {
             var name = await db.Set<Workspace>().Where(w => w.Id == command.Id).Select(w => w.Name).SingleAsync(cancellationToken);
-            await notifier.NotifyAsync([command.Request.UserId], "workspace.member", $"You were added to {name}", null, $"/workspaces/{command.Id}", cancellationToken);
+            await notifier.NotifyAsync([command.Request.UserId], "workspace.member", $"You were added to {(name.Length > 200 ? name[..200] + "…" : name)}", null, $"/workspaces/{command.Id}", cancellationToken);
         }
 
         db.Add(new ResourcePermission { ResourceType = NodePermissions.ResourceType, ResourceId = command.Id, PrincipalType = PrincipalType.User, PrincipalId = command.Request.UserId, RoleId = roleId });
@@ -496,6 +496,11 @@ internal sealed class WorkspaceHandlers(CoworkeeDbContext db, ICurrentUser curre
         }
 
         db.RemoveRange(removed);
+
+        // and stop watching it
+        var prefix = await db.Set<Workspace>().Where(w => w.Id == command.Id).Select(w => w.Path).SingleAsync(cancellationToken);
+        var inside = db.Set<Node>().IgnoreQueryFilters([CoworkeeDbContext.SoftDeleteFilter]).Where(n => n.Path.StartsWith(prefix)).Select(n => n.Id);
+        db.RemoveRange(await db.Set<NodeSubscription>().Where(s => s.UserId == command.UserId && inside.Contains(s.NodeId)).ToListAsync(cancellationToken));
         return Result.Success();
     }
 
