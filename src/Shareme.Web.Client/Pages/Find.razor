@@ -1,0 +1,72 @@
+@page "/find"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Knowledge
+@using Shareme.Web.Client.Knowledge
+@inject IPeopleApi Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Find</PageTitle>
+<MudTextField T="string" @bind-Value="_term" Placeholder="Search files, pages, news and people" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+              OnKeyDown="KeyAsync" Immediate="true" Class="mb-4" data-testid="find-term" />
+
+@if (_result is { } result)
+{
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudText Typo="Typo.h6">Content (@result.NodeTotal)</MudText>
+            <NodeList Nodes="result.Nodes" Empty="Nothing found." />
+            @if (result.NodeTotal > result.Nodes.Count)
+            {
+                <MudButton Size="Size.Small" Href="@($"/search?q={Uri.EscapeDataString(Term ?? string.Empty)}")">All results with filters</MudButton>
+            }
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudText Typo="Typo.h6">People</MudText>
+            @foreach (var person in result.People)
+            {
+                <div class="mb-2" data-person="@person.DisplayName">
+                    <b>@person.DisplayName</b>
+                    <MudText Typo="Typo.caption" Class="d-block">@person.Position @person.Department</MudText>
+                    @if (IPeopleApi.MailTo(person.Email) is { } mail) { <MudLink Href="@mail" Typo="Typo.caption">@person.Email</MudLink> }
+                </div>
+            }
+            @if (result.People.Count == 0) { <MudText Typo="Typo.body2">Nobody found.</MudText> }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private GlobalSearchDto? _result;
+    private string? _term;
+
+    [SupplyParameterFromQuery(Name = "q")] public string? Term { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _term = Term;
+        _result = null;
+        if (!string.IsNullOrWhiteSpace(Term))
+        {
+            try
+            {
+                _result = await Api.SearchEverythingAsync(Term.Trim());
+            }
+            catch (ApiException exception)
+            {
+                Snackbar.Add(exception.Message, Severity.Warning);
+            }
+        }
+    }
+
+    private Task KeyAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_term))
+        {
+            Nav.NavigateTo($"/find?q={Uri.EscapeDataString(_term.Trim())}");
+        }
+
+        return Task.CompletedTask;
+    }
+}

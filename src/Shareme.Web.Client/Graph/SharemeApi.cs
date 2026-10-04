@@ -155,6 +155,8 @@ internal sealed class SharemeNavigation : INavigationContributor
         new("Browse", "/browse", MudBlazor.Icons.Material.Outlined.FolderOpen),
         new("Search", "/search", MudBlazor.Icons.Material.Outlined.Search),
         new("Workspaces", "/workspaces", MudBlazor.Icons.Material.Outlined.Workspaces),
+        new("Find", "/find", MudBlazor.Icons.Material.Outlined.TravelExplore),
+        new("People", "/people", MudBlazor.Icons.Material.Outlined.People),
         new("Licenses", "/licenses", MudBlazor.Icons.Material.Outlined.ShoppingCart, Shareme.Contracts.Drm.DrmPermissions.Offers),
         new("Purchases", "/purchases", MudBlazor.Icons.Material.Outlined.Receipt),
         new("My runs", "/jobs", MudBlazor.Icons.Material.Outlined.PlaylistPlay),

@@ -2,6 +2,12 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P7c (people, global search)
+
+- [ ] Profiles and pictures of deactivated users stay; add an erasure step when Coworkee gets user deletion (GDPR).
+- [ ] The content count of the global search comes from the index before access filtering (counts embargoed and unreachable nodes).
+- [ ] `People.View` has to be granted to a role; no default member role carries it yet.
+
 ## From P7b (news, favorites, start page)
 
 - [ ] News edits have no concurrency check (last writer wins); pages use the expected version.

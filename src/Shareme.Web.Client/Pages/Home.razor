@@ -189,7 +189,7 @@
     {
         if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_term))
         {
-            Nav.NavigateTo($"/search?q={Uri.EscapeDataString(_term.Trim())}");
+            Nav.NavigateTo($"/find?q={Uri.EscapeDataString(_term.Trim())}");
         }
 
         return Task.CompletedTask;

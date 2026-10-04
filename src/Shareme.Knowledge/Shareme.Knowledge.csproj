@@ -3,6 +3,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Markdig" />
-    <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
+    <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
+    <ProjectReference Include="..\Shareme.Search\Shareme.Search.csproj" />
   </ItemGroup>
 </Project>

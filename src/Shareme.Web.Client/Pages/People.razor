@@ -1,0 +1,182 @@
+@page "/people"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Microsoft.AspNetCore.Components.Forms
+@using Shareme.Contracts.Knowledge
+@using Shareme.Web.Client.Knowledge
+@inject IPeopleApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>People</PageTitle>
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">People</MudText>
+    <MudSpacer />
+    <MudTextField T="string" @bind-Value="_search" Placeholder="Name, department, place" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                  Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadAsync()" Style="max-width:300px" data-testid="people-search" />
+    <MudToggleIconButton @bind-Toggled="_editing" Icon="@Icons.Material.Outlined.ManageAccounts" ToggledIcon="@Icons.Material.Filled.ManageAccounts" aria-label="My profile" data-testid="edit-profile" />
+</MudStack>
+
+@if (_editing)
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="profile-editor">
+        <MudText Typo="Typo.h6">My profile</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Department" Label="Department" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Position" Label="Position" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Phone" Label="Phone" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Location" Label="Location" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="_profile.About" Label="About me" Lines="3" /></MudItem>
+        </MudGrid>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-profile">Save</MudButton>
+            <MudFileUpload T="IBrowserFile" Accept=".png,.jpg,.jpeg,.webp" FilesChanged="UploadAsync">
+                <CustomContent>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AccountCircle" OnClick="context.OpenFilePickerAsync">Picture</MudButton>
+                </CustomContent>
+            </MudFileUpload>
+            <MudButton OnClick="RemoveAvatarAsync">Remove picture</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+<MudGrid Spacing="2" data-testid="people">
+    @foreach (var person in _people)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3">
+            <MudCard Outlined="true" data-person="@person.DisplayName">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        @if (person.HasAvatar)
+                        {
+                            <MudAvatar><MudImage Src="@IPeopleApi.AvatarUrl(person)" Alt="" /></MudAvatar>
+                        }
+                        else
+                        {
+                            <MudAvatar Color="Color.Primary">@Initials(person.DisplayName)</MudAvatar>
+                        }
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.subtitle1">@person.DisplayName</MudText>
+                        <MudText Typo="Typo.caption">@person.Position @(person.Department is null ? null : $"· {person.Department}")</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    @if (person.Email is { } email) { <div>@if (IPeopleApi.MailTo(email) is { } mail) { <MudLink Href="@mail">@email</MudLink> } else { @email }</div> }
+                    @if (person.Phone is { } phone) { <div>@phone</div> }
+                    @if (person.Location is { } location) { <MudText Typo="Typo.caption">@location</MudText> }
+                    @if (person.About is { } about) { <MudText Typo="Typo.body2" Class="mt-1" Style="white-space:pre-line">@about</MudText> }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    }
+</MudGrid>
+@if (_people.Count > 0 && _people.Count % 50 == 0)
+{
+    <MudButton Class="mt-2" OnClick="MoreAsync">More</MudButton>
+}
+
+@code {
+    private IReadOnlyList<PersonDto> _people = [];
+    private string? _search;
+    private bool _editing;
+    private ProfileForm _profile = new();
+
+    [CascadingParameter] private Task<AuthenticationState>? Auth { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        if (Auth is not null && Guid.TryParse((await Auth).User.FindFirst("sub")?.Value ?? (await Auth).User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var me))
+        {
+            try
+            {
+                var own = await Api.GetAsync(me);
+                _profile = new ProfileForm { Department = own.Department, Position = own.Position, Phone = own.Phone, Location = own.Location, About = own.About };
+            }
+            catch (ApiException)
+            {
+            }
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _people = await Api.FindAsync(_search);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await Api.SaveProfileAsync(new ProfileRequest(_profile.Department, _profile.Position, _profile.Phone, _profile.Location, _profile.About));
+            _editing = false;
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task UploadAsync(IBrowserFile? file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var content = file.OpenReadStream(2L * 1024 * 1024);
+            await Api.SetAvatarAsync(content);
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is ApiException or IOException)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task RemoveAvatarAsync()
+    {
+        try
+        {
+            await Api.SetAvatarAsync(null);
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task MoreAsync()
+    {
+        try
+        {
+            _people = [.. _people, .. await Api.FindAsync(_search, _people.Count)];
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    private sealed class ProfileForm
+    {
+        public string? Department { get; set; }
+        public string? Position { get; set; }
+        public string? Phone { get; set; }
+        public string? Location { get; set; }
+        public string? About { get; set; }
+    }
+}
