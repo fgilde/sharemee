@@ -23,7 +23,7 @@ builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IPeopleApi, Shareme.
 builder.Services.AddHttpClient<Shareme.Web.Client.Assistant.IAssistantApi, Shareme.Web.Client.Assistant.AssistantApi>(client =>
 {
     client.BaseAddress = baseAddress;
-    client.Timeout = TimeSpan.FromMinutes(10);
+    client.Timeout = TimeSpan.FromMinutes(11);
 });
 builder.Services.AddHttpClient<IDataApi, DataApi>(client =>
 {

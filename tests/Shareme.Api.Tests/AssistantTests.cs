@@ -31,6 +31,8 @@ public sealed class AssistantTests(ApiFixture api) : IAsyncLifetime
         var names = (await admin.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).ToList();
         names.ShouldContain("create_folder");
         names.ShouldContain("set_metadata");
+        var tools = (await admin.ListToolsAsync(cancellationToken: Ct)).ToDictionary(t => t.Name, t => t.ProtocolTool.Annotations?.ReadOnlyHint);
+        (tools["list_children"], tools["search"], tools["create_folder"], tools["set_metadata"]).ShouldBe((true, true, false, false));
 
         var root = (await Admin.GetFromJsonAsync<NodeDto>("/api/v1/nodes/root", Ct))!.Id;
         var created = await admin.CallToolAsync("create_folder", new Dictionary<string, object?> { ["parentId"] = root, ["name"] = "Summer 2026" }, cancellationToken: Ct);
@@ -38,7 +40,9 @@ public sealed class AssistantTests(ApiFixture api) : IAsyncLifetime
         var folder = JsonSerializer.Deserialize<NodeDto>(Text(created), JsonSerializerOptions.Web)!;
         folder.Name.ShouldBe("Summer 2026");
 
-        var children = await admin.CallToolAsync("list_children", new Dictionary<string, object?>(), cancellationToken: Ct);
+        var top = await admin.CallToolAsync("list_children", new Dictionary<string, object?>(), cancellationToken: Ct);
+        Text(top).ShouldContain(root.ToString());
+        var children = await admin.CallToolAsync("list_children", new Dictionary<string, object?> { ["id"] = root }, cancellationToken: Ct);
         Text(children).ShouldContain("Summer 2026");
         var set = await admin.CallToolAsync("set_metadata", new Dictionary<string, object?>
         {
@@ -46,12 +50,18 @@ public sealed class AssistantTests(ApiFixture api) : IAsyncLifetime
             ["values"] = new Dictionary<string, object> { ["caption"] = new[] { new { v = "Beach" } } },
         }, cancellationToken: Ct);
         set.IsError.ShouldNotBe(true, Text(set));
+        var empty = await admin.CallToolAsync("set_metadata", new Dictionary<string, object?> { ["id"] = folder.Id }, cancellationToken: Ct);
+        empty.IsError.ShouldBe(true);
+        Text(empty).ShouldContain("Values");
         var metadata = (await Admin.GetFromJsonAsync<NodeMetadataDto>($"/api/v1/nodes/{folder.Id}/metadata", Ct))!;
         metadata.Properties["caption"].Values.Single().V!.Value.GetString().ShouldBe("Beach");
 
         // a user with the assistant but without rights on the tree sees nothing and changes nothing
         var reader = await UserAsync(AiPermissions.Chat);
         await using var outsider = await McpAsync(api.As(reader, _setup.TenantId));
+        var outsiderTools = (await outsider.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).ToList();
+        outsiderTools.ShouldNotContain("find_people");
+        Text(await outsider.CallToolAsync("list_children", new Dictionary<string, object?>(), cancellationToken: Ct)).ShouldNotContain("Summer 2026");
         var denied = await outsider.CallToolAsync("create_folder", new Dictionary<string, object?> { ["parentId"] = folder.Id, ["name"] = "Sneaky" }, cancellationToken: Ct);
         denied.IsError.ShouldBe(true);
         (await outsider.CallToolAsync("get_item", new Dictionary<string, object?> { ["id"] = folder.Id }, cancellationToken: Ct)).IsError.ShouldBe(true);

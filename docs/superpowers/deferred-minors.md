@@ -310,3 +310,7 @@ See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 o
 - MCP ohne OAuth-Discovery (protected resource metadata); Clients brauchen ein Bearer-Token der Shareme-API.
 - Kein Test für die Mandantentrennung der Audit-Liste (Abfrage filtert per TenantId, Testfixture setzt DB je Setup zurück).
 - Schreib-Tools laufen im Chat nur in der ersten Runde nach einer User-Nachricht; Text früherer Assistent-Antworten kann noch eingeschleusten Inhalt zitieren.
+- `GetNode`/`GetNodeMetadata` wenden das News-Embargo nicht an (wer die id kennt, sieht Name und Metadaten; über API wie Assistent). Folgefix in `NodeQueryHandlers.GetNode`: News vor PublishAt ohne Update-Recht als NotFound.
+- `SetNodeMetadata`-Referenzprüfung verrät, ob eine Knoten-id existiert.
+- Navigationseintrag "Assistant" auch sichtbar, wenn die KI global aus ist; Audit-Seite zeigt User-GUID statt Name, kein Kanal-Filter.
+- Spec P8b: Links auf gefundene/angelegte Knoten im Chat und Tool für Lizenzangebote fehlen noch.
