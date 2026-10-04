@@ -18,12 +18,10 @@ public sealed partial class SignInFlowTests
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>(
             [$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true", $"--Shareme:SetupToken={SetupToken}"], ct);
-        await using var app = await appHost.BuildAsync(ct);
+        var app = await appHost.BuildAsync(ct);
+        await using var stop = AppHostDiagnostics.Guard(app);
         await app.StartAsync(ct);
-        foreach (var resource in new[] { "shareme-web", "shareme-auth", "shareme-api" })
-        {
-            await app.ResourceNotifications.WaitForResourceHealthyAsync(resource, ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
-        }
+        await AppHostDiagnostics.WaitHealthyAsync(app, ["shareme-web", "shareme-auth", "shareme-api"], ct);
 
         var webBase = app.GetEndpoint("shareme-web", "https");
         var cookies = new CookieContainer();

@@ -12,10 +12,11 @@ public sealed class AppHostTests
     {
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true"], ct);
-        await using var app = await appHost.BuildAsync(ct);
+        var app = await appHost.BuildAsync(ct);
+        await using var stop = AppHostDiagnostics.Guard(app);
         await app.StartAsync(ct);
 
-        await app.ResourceNotifications.WaitForResourceHealthyAsync("shareme-api", ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
+        await AppHostDiagnostics.WaitHealthyAsync(app, ["shareme-api"], ct);
         using var client = app.CreateHttpClient("shareme-api");
         var info = await client.GetFromJsonAsync<JsonElement>("/api/v1/system/info", ct);
 
@@ -27,10 +28,10 @@ public sealed class AppHostTests
     {
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true"], ct);
-        await using var app = await appHost.BuildAsync(ct);
+        var app = await appHost.BuildAsync(ct);
+        await using var stop = AppHostDiagnostics.Guard(app);
         await app.StartAsync(ct);
-        await app.ResourceNotifications.WaitForResourceHealthyAsync("shareme-web", ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
-        await app.ResourceNotifications.WaitForResourceHealthyAsync("shareme-auth", ct).WaitAsync(TimeSpan.FromMinutes(5), ct);
+        await AppHostDiagnostics.WaitHealthyAsync(app, ["shareme-web", "shareme-auth"], ct);
 
         using var web = app.CreateHttpClient("shareme-web");
         (await web.GetAsync("/", ct)).StatusCode.ShouldBe(System.Net.HttpStatusCode.OK);
