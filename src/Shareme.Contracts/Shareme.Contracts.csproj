@@ -1,4 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Sharemee.Contracts</PackageId>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
   <ItemGroup>
     <CoworkeePackage Include="Coworkee.Contracts" />
   </ItemGroup>
