@@ -1,0 +1,124 @@
+@page "/licenses"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Drm
+@using Shareme.Contracts.Metadata
+@using Shareme.Web.Client.Drm
+@using Shareme.Web.Client.Metadata
+@inject IDrmApi Api
+@inject IMetadataApi Metadata
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Licenses</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Licenses</MudText>
+
+<MudStack Row="true" AlignItems="AlignItems.End" Class="mb-4">
+    <MudTextField @bind-Value="_term" Label="Search" Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => SearchAsync()" Style="max-width:260px" />
+    <MudSelect T="string" Value="_target" ValueChanged="TargetChanged" Label="For" Style="max-width:240px" data-testid="offer-target">
+        @foreach (var context in _contexts)
+        {
+            <MudSelectItem Value="@("c:" + context.Key)">@context.Name</MudSelectItem>
+        }
+        @foreach (var group in _groups)
+        {
+            <MudSelectItem Value="@("g:" + group.Id)">@group.Name (group)</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField @bind-Value="_rights" Label="Rights (comma separated)" Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => SearchAsync()" Style="max-width:260px" />
+</MudStack>
+
+<MudGrid Spacing="2" data-testid="offers">
+    @foreach (var offer in _offers)
+    {
+        <MudItem xs="12" sm="6" md="4">
+            <MudCard Outlined="true" data-offer="@offer.Name">
+                @if (offer.PreviewAssetId is { } preview)
+                {
+                    <MudCardMedia Image="@($"api/v1/assets/{preview}/derivations/thumbnail")" Height="140" />
+                }
+                <MudCardContent>
+                    <MudText Typo="Typo.h6">@offer.Name</MudText>
+                    <MudText Typo="Typo.body2">@offer.Description</MudText>
+                    <MudText Typo="Typo.caption">@string.Join(", ", offer.Rights) · @offer.AssetCount files · @offer.PurchaseDays days</MudText>
+                    <MudText Typo="Typo.subtitle1" Class="mt-2">@Format(offer.Prices)</MudText>
+                    @foreach (var alternative in offer.Alternatives)
+                    {
+                        <MudText Typo="Typo.caption">Also as @alternative.GroupName: @Format(alternative.Prices)</MudText>
+                    }
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_target is null || offer.Prices.Count == 0" OnClick="() => BuyAsync(offer)" data-testid="buy">Buy</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private IReadOnlyList<UserContextDto> _contexts = [];
+    private IReadOnlyList<ContextGroupDto> _groups = [];
+    private IReadOnlyList<LicenseOfferDto> _offers = [];
+    private string? _term, _rights, _target;
+
+    [SupplyParameterFromQuery(Name = "asset")] public Guid? AssetId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _contexts = await Metadata.GetContextsAsync();
+            _groups = await Api.GetGroupsAsync();
+        }
+        catch (ApiException)
+        {
+        }
+
+        await SearchAsync();
+    }
+
+    private Task TargetChanged(string? target)
+    {
+        _target = target;
+        return SearchAsync();
+    }
+
+    private (string? Context, Guid? Group) Target() => _target switch
+    {
+        ['c', ':', .. var key] => (key, null),
+        ['g', ':', .. var id] => (null, Guid.Parse(id)),
+        _ => (null, null),
+    };
+
+    private async Task SearchAsync()
+    {
+        var (context, group) = Target();
+        try
+        {
+            var rights = (_rights ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            _offers = await Api.SearchOffersAsync(new OfferSearchRequest(_term, context, group, rights.Length == 0 ? null : rights, AssetId: AssetId));
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not see license offers." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task BuyAsync(LicenseOfferDto offer)
+    {
+        var (context, group) = Target();
+        try
+        {
+            var purchase = await Api.PurchaseAsync(new PurchaseRequest(offer.LicenseId, context, group));
+            Snackbar.Add($"Bought {purchase.LicenseName}, order {purchase.OrderId}.", Severity.Success);
+            Nav.NavigateTo("/purchases");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    internal static string Format(IReadOnlyList<PriceDto> prices) =>
+        prices.Count == 0 ? "No price" : string.Join(" · ", prices.Select(p => $"{p.Amount:N2} {p.Currency}"));
+}

@@ -1,0 +1,45 @@
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Drm
+@inject IDrmApi Api
+
+<div data-testid="asset-licenses">
+    @if (_licenses.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No license covers this file.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>License</th><th>Rights</th><th>Valid</th></tr></thead>
+            <tbody>
+                @foreach (var license in _licenses)
+                {
+                    <tr data-license="@license.Name">
+                        <td>@license.Name</td>
+                        <td>@string.Join(", ", license.Rights)</td>
+                        <td>@license.ValidFrom – @license.ValidUntil</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudButton Class="mt-2" Size="Size.Small" Href="@($"/licenses?asset={AssetId}")" StartIcon="@Icons.Material.Outlined.ShoppingCart">Offers for this file</MudButton>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<LicenseDto> _licenses = [];
+
+    [Parameter, EditorRequired] public Guid AssetId { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            _licenses = await Api.GetAssetLicensesAsync(AssetId);
+        }
+        catch (ApiException)
+        {
+            _licenses = [];
+        }
+    }
+}

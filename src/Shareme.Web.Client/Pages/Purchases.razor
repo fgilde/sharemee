@@ -1,0 +1,44 @@
+@page "/purchases"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Drm
+@using Shareme.Web.Client.Drm
+@inject IDrmApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Purchases</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Purchases</MudText>
+
+<MudSimpleTable Dense="true" Hover="true" data-testid="purchases">
+    <thead><tr><th>Order</th><th>License</th><th>For</th><th>From</th><th>Until</th><th>Files</th><th>Price</th></tr></thead>
+    <tbody>
+        @foreach (var purchase in _purchases)
+        {
+            <tr data-order="@purchase.OrderId">
+                <td>@purchase.OrderId</td>
+                <td>@purchase.LicenseName</td>
+                <td>@(purchase.ContextKey ?? "group")</td>
+                <td>@purchase.StartsOn</td>
+                <td>@purchase.EndsOn</td>
+                <td>@purchase.AssetIds.Count</td>
+                <td>@Licenses.Format(purchase.Prices)</td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    private IReadOnlyList<PurchaseDto> _purchases = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _purchases = await Api.GetPurchasesAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+}

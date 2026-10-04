@@ -12,6 +12,7 @@
     <Project Path="src/Shareme.Search/Shareme.Search.csproj" />
     <Project Path="src/Shareme.Workspaces/Shareme.Workspaces.csproj" />
     <Project Path="src/Shareme.Automation/Shareme.Automation.csproj" />
+    <Project Path="src/Shareme.Drm/Shareme.Drm.csproj" />
     <Project Path="src/Shareme.Processing.Host/Shareme.Processing.Host.csproj" />
     <Project Path="src/Shareme.Infrastructure/Shareme.Infrastructure.csproj" />
     <Project Path="src/Shareme.Migrations/Shareme.Migrations.csproj" />
