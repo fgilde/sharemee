@@ -14,7 +14,12 @@
     {
         try
         {
-            _on = (await Api.GetFavoritesAsync()).Any(f => f.Id == NodeId);
+            var asked = NodeId;
+            var on = await Api.IsFavoriteAsync(asked);
+            if (asked == NodeId)
+            {
+                _on = on;
+            }
         }
         catch (ApiException)
         {

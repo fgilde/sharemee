@@ -115,7 +115,7 @@
             _widgets = [.. (await Api.GetLayoutAsync()).Widgets];
             await LoadWidgetsAsync();
         }
-        catch (ApiException exception)
+        catch (Exception exception) when (exception is ApiException or HttpRequestException or System.Text.Json.JsonException)
         {
             Snackbar.Add(exception.Message, Severity.Warning);
         }
@@ -123,13 +123,15 @@
 
     private async Task LoadWidgetsAsync()
     {
-        // only what the layout shows is fetched
-        var loads = new List<Task>();
-        if (_widgets.Contains(HomeWidgets.News)) loads.Add(Task.Run(async () => _news = await Api.GetFeedAsync()));
-        if (_widgets.Contains(HomeWidgets.Favorites)) loads.Add(Task.Run(async () => _favorites = await Api.GetFavoritesAsync()));
-        if (_widgets.Contains(HomeWidgets.Recent)) loads.Add(Task.Run(async () => _recent = await Api.GetRecentAsync()));
-        if (_widgets.Contains(HomeWidgets.Tasks) || _widgets.Contains(HomeWidgets.Due)) loads.Add(Task.Run(async () => _tasks = await Api.GetTasksAsync()));
-        await Task.WhenAll(loads);
+        // only what the layout shows is fetched, all at once
+        var news = _widgets.Contains(HomeWidgets.News) ? Api.GetFeedAsync() : null;
+        var favorites = _widgets.Contains(HomeWidgets.Favorites) ? Api.GetFavoritesAsync() : null;
+        var recent = _widgets.Contains(HomeWidgets.Recent) ? Api.GetRecentAsync() : null;
+        var tasks = _widgets.Contains(HomeWidgets.Tasks) || _widgets.Contains(HomeWidgets.Due) ? Api.GetTasksAsync() : null;
+        _news = news is null ? [] : await news;
+        _favorites = favorites is null ? [] : await favorites;
+        _recent = recent is null ? [] : await recent;
+        _tasks = tasks is null ? [] : await tasks;
     }
 
     private static string Title(string widget) => widget switch
@@ -171,9 +173,16 @@
 
     private async Task ResetAsync()
     {
-        _widgets = [.. (await Api.SaveLayoutAsync(null)).Widgets];
-        _customizing = false;
-        await LoadWidgetsAsync();
+        try
+        {
+            _widgets = [.. (await Api.SaveLayoutAsync(null)).Widgets];
+            _customizing = false;
+            await LoadWidgetsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
     }
 
     private Task SearchKeyAsync(KeyboardEventArgs args)

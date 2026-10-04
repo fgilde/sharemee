@@ -2,6 +2,14 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P7b (news, favorites, start page)
+
+- [ ] News edits have no concurrency check (last writer wins); pages use the expected version.
+- [ ] "Recently changed" sorts the last 90 days without an expression index on COALESCE(ModifiedAt, CreatedAt).
+- [ ] Search totals still count embargoed news (the hits are filtered after the query).
+- [ ] The "default for everyone" button shows to non-admins (they get a 403).
+- [ ] Concurrent first saves of a start page layout hit the unique index.
+
 ## From P7a (pages)
 
 - [ ] No Content-Security-Policy yet (shareme and coworkee); add one with `script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'` and an `img-src` list once the E2E suite covers MudBlazor/MudEx styles and scripts under it.

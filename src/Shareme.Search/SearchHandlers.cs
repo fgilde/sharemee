@@ -335,7 +335,19 @@ internal sealed class SearchHandlers(
     private async Task<List<Node>> VisibleAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
         var nodes = (await (await access.VisibleAsync(db.Set<Node>().AsNoTracking().Where(n => ids.Contains(n.Id)), cancellationToken)).ToListAsync(cancellationToken)).ToDictionary(n => n.Id);
-        var ordered = ids.Where(nodes.ContainsKey).Select(id => nodes[id]).ToList();
+        var now = DateTimeOffset.UtcNow;
+        var ordered = new List<Node>();
+        foreach (var node in ids.Where(nodes.ContainsKey).Select(id => nodes[id]))
+        {
+            // news before and after their time are for their authors only
+            if (node is News news && !(news.PublishAt <= now && (news.ExpiresAt is null || news.ExpiresAt > now)) && !await access.CanAsync(NodePermissions.Update, node.Id, cancellationToken))
+            {
+                continue;
+            }
+
+            ordered.Add(node);
+        }
+
         if (ordered.Count == 0 || await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
         {
             return ordered;

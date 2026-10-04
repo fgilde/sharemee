@@ -48,6 +48,20 @@ public sealed class IntranetTests(ApiFixture api) : IAsyncLifetime
         var stranger = api.As(user, _setup.TenantId);
         (await stranger.GetFromJsonAsync<NewsSummaryDto[]>("/api/v1/news", Ct))!.ShouldBeEmpty();
         (await stranger.GetAsync($"/api/v1/news/{pinned.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        // times from browsers come with their offset; embargoed news stay with their authors
+        var offset = new DateTimeOffset(DateTime.UtcNow.AddDays(1).Ticks, TimeSpan.Zero).ToOffset(TimeSpan.FromHours(2));
+        var embargoed = await NewsAsync(new NewsRequest(_folder, "Merger", "Secret until tomorrow.", offset));
+        embargoed.PublishAt.Offset.ShouldBe(TimeSpan.Zero);
+        var reader = (await (await Admin.PostAsJsonAsync("/api/v1/identity/roles", new RoleRequest("Reader " + Guid.NewGuid().ToString("N")[..6], null), Ct)).Content.ReadFromJsonAsync<Guid>(Ct))!;
+        (await Admin.PutAsJsonAsync($"/api/v1/identity/permissions/grants/Role/{reader}", new NameListRequest([NodePermissions.Read]), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PostAsJsonAsync($"/api/v1/identity/resource-permissions/{NodePermissions.ResourceType}/{_folder}", new GrantResourcePermissionRequest(PrincipalType.User, user, reader), Ct))
+            .EnsureSuccessStatusCode();
+        (await stranger.GetFromJsonAsync<NewsSummaryDto[]>("/api/v1/news", Ct))!.Select(n => n.Title).ShouldBe(["Canteen menu", "Office closed Friday"]);
+        (await stranger.GetAsync($"/api/v1/news/{embargoed.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var visible = await stranger.GetFromJsonAsync<System.Text.Json.JsonElement>($"/api/v1/nodes/{_folder}/children", Ct);
+        visible.GetProperty("items").EnumerateArray().Select(c => c.GetProperty("name").GetString()).ShouldNotContain("Merger");
+        (await Admin.GetAsync($"/api/v1/news/{embargoed.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]

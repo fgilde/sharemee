@@ -540,9 +540,10 @@ else
     {
         try
         {
-            var news = await Intranet.CreateNewsAsync(new Shareme.Contracts.Knowledge.NewsRequest(_detail!.Node.Id, _newName!.Trim(), string.Empty));
+            // a draft: it goes live when its author publishes it
+            var news = await Intranet.CreateNewsAsync(new Shareme.Contracts.Knowledge.NewsRequest(_detail!.Node.Id, _newName!.Trim(), string.Empty, DateTimeOffset.UtcNow.AddYears(100)));
             _newName = null;
-            Nav.NavigateTo($"/news/{news.Id}");
+            Nav.NavigateTo($"/news/{news.Id}?edit=true");
         }
         catch (ApiException exception)
         {

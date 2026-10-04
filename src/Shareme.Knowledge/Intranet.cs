@@ -50,6 +50,7 @@ internal static class IntranetEndpoints
 
         var favorites = app.MapGroup("/api/v1/favorites").WithTags("Favorites").RequireAuthorization();
         favorites.MapGet("/", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetFavorites(), ct).ToHttpResult());
+        favorites.MapGet("/{nodeId:guid}", (Guid nodeId, IDispatcher d, CancellationToken ct) => d.SendAsync(new IsFavorite(nodeId), ct).ToHttpResult());
         favorites.MapPut("/{nodeId:guid}", (Guid nodeId, IDispatcher d, CancellationToken ct) => d.SendAsync(new SetFavorite(nodeId, true), ct).ToHttpResult());
         favorites.MapDelete("/{nodeId:guid}", (Guid nodeId, IDispatcher d, CancellationToken ct) => d.SendAsync(new SetFavorite(nodeId, false), ct).ToHttpResult());
 
@@ -58,6 +59,7 @@ internal static class IntranetEndpoints
         home.MapPut("/layout", (HomeLayoutRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveHomeLayout(body, false), ct).ToHttpResult());
         home.MapDelete("/layout", (IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveHomeLayout(null, false), ct).ToHttpResult());
         home.MapPut("/layout/default", (HomeLayoutRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveHomeLayout(body, true), ct).ToHttpResult());
+        home.MapDelete("/layout/default", (IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveHomeLayout(null, true), ct).ToHttpResult());
         home.MapGet("/recent", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetRecentNodes(), ct).ToHttpResult());
         home.MapGet("/tasks", (IDispatcher d, CancellationToken ct) => d.SendAsync(new GetMyTasks(), ct).ToHttpResult());
     }
@@ -83,6 +85,8 @@ public sealed record GetFavorites : IQuery<Result<IReadOnlyList<NodeDto>>>;
 
 public sealed record SetFavorite(Guid NodeId, bool On) : PageRequestBase(NodeId, NodePermissions.Read), ICommand<Result>;
 
+public sealed record IsFavorite(Guid NodeId) : IQuery<Result<bool>>;
+
 public sealed record GetHomeLayout : IQuery<Result<HomeLayoutDto>>;
 
 /// <summary>Null widgets go back to the default; <see cref="ForTenant"/> sets the default (admins).</summary>
@@ -94,6 +98,7 @@ public sealed record GetMyTasks : IQuery<Result<IReadOnlyList<HomeTaskDto>>>;
 
 internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, NodeMapper mapper, ICurrentUser currentUser, TimeProvider clock)
     : IHandler<CreateNews, Result<NewsDto>>,
+      IHandler<IsFavorite, Result<bool>>,
       IHandler<GetNews, Result<NewsDto>>,
       IHandler<UpdateNews, Result<NewsDto>>,
       IHandler<GetNewsFeed, Result<IReadOnlyList<NewsSummaryDto>>>,
@@ -105,6 +110,7 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
       IHandler<GetMyTasks, Result<IReadOnlyList<HomeTaskDto>>>
 {
     private const int Scan = 300;
+    private const int MaxPages = 10;
     private const int MaxFavorites = 500;
     private static readonly Error NotFound = Error.NotFound("news.not_found", "The news item does not exist.");
 
@@ -123,7 +129,12 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
             return Error.Validation("ParentId", "News live in folders and open workspaces.");
         }
 
-        var news = new News { NodeTypeId = NodeType.NewsTypeId, Name = r.Title.Trim(), PublishAt = r.PublishAt ?? clock.GetUtcNow(), ExpiresAt = r.ExpiresAt, Pinned = r.Pinned };
+        // the database keeps UTC; offsets from browsers are converted here
+        var news = new News
+        {
+            NodeTypeId = NodeType.NewsTypeId, Name = r.Title.Trim(), PublishAt = (r.PublishAt ?? clock.GetUtcNow()).ToUniversalTime(), ExpiresAt = r.ExpiresAt?.ToUniversalTime(), Pinned = r.Pinned,
+            SortIndex = await db.Set<Node>().Where(n => n.ParentId == parent.Id).Select(n => (int?)n.SortIndex).MaxAsync(cancellationToken) + 1 ?? 0,
+        };
         news.PlaceUnder(parent);
         var content = new NodeContent { NodeId = news.Id };
         Write(content, r.Markdown);
@@ -133,10 +144,22 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
         return await MapAsync(news, content, cancellationToken);
     }
 
-    public async Task<Result<NewsDto>> HandleAsync(GetNews query, CancellationToken cancellationToken) =>
-        await db.Set<News>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == query.Id, cancellationToken) is { } news
-            ? await MapAsync(news, await db.Set<NodeContent>().AsNoTracking().SingleOrDefaultAsync(c => c.NodeId == news.Id, cancellationToken) ?? new NodeContent { NodeId = news.Id }, cancellationToken)
-            : NotFound;
+    public async Task<Result<NewsDto>> HandleAsync(GetNews query, CancellationToken cancellationToken)
+    {
+        // before and after its time a news item is for its authors only
+        if (await db.Set<News>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == query.Id, cancellationToken) is not { } news
+            || (!IsShown(news, clock.GetUtcNow()) && !await access.CanAsync(NodePermissions.Update, news.Id, cancellationToken)))
+        {
+            return NotFound;
+        }
+
+        return await MapAsync(news, await db.Set<NodeContent>().AsNoTracking().SingleOrDefaultAsync(c => c.NodeId == news.Id, cancellationToken) ?? new NodeContent { NodeId = news.Id }, cancellationToken);
+    }
+
+    public async Task<Result<bool>> HandleAsync(IsFavorite query, CancellationToken cancellationToken) =>
+        await db.Set<Favorite>().AnyAsync(f => f.UserId == Me && f.NodeId == query.NodeId, cancellationToken);
+
+    internal static bool IsShown(News news, DateTimeOffset now) => news.PublishAt <= now && (news.ExpiresAt is null || news.ExpiresAt > now);
 
     public async Task<Result<NewsDto>> HandleAsync(UpdateNews command, CancellationToken cancellationToken)
     {
@@ -152,7 +175,7 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
         }
 
         var content = await db.Set<NodeContent>().SingleOrDefaultAsync(c => c.NodeId == news.Id, cancellationToken) ?? db.Add(new NodeContent { NodeId = news.Id }).Entity;
-        (news.Name, news.PublishAt, news.ExpiresAt, news.Pinned) = (r.Title.Trim(), r.PublishAt, r.ExpiresAt, r.Pinned);
+        (news.Name, news.PublishAt, news.ExpiresAt, news.Pinned) = (r.Title.Trim(), r.PublishAt.ToUniversalTime(), r.ExpiresAt?.ToUniversalTime(), r.Pinned);
         Write(content, r.Markdown);
         news.MarkChanged("content changed");
         await db.SaveChangesAsync(cancellationToken);
@@ -163,10 +186,10 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
     {
         var now = clock.GetUtcNow();
         var take = Math.Clamp(query.Take, 1, 50);
-        var candidates = await (await access.VisibleAsync(db.Set<News>().AsNoTracking(), cancellationToken))
+        var published = (await access.VisibleAsync(db.Set<News>().AsNoTracking(), cancellationToken))
             .Where(n => n.PublishAt <= now && (n.ExpiresAt == null || n.ExpiresAt > now))
-            .OrderByDescending(n => n.Pinned).ThenByDescending(n => n.PublishAt).Take(Scan).ToListAsync(cancellationToken);
-        var shown = await ReadableAsync(candidates, take, cancellationToken);
+            .OrderByDescending(n => n.Pinned).ThenByDescending(n => n.PublishAt).ThenBy(n => n.Id);
+        var shown = await FirstReadableAsync(published, take, cancellationToken);
         var ids = shown.Select(n => n.Id).ToList();
         var texts = await db.Set<NodeContent>().AsNoTracking().Where(c => ids.Contains(c.NodeId)).ToDictionaryAsync(c => c.NodeId, c => c.Text, cancellationToken);
         IReadOnlyList<NewsSummaryDto> feed = shown.Select(n => new NewsSummaryDto(n.Id, n.Name, Teaser(texts.GetValueOrDefault(n.Id) ?? string.Empty), n.PublishAt, n.Pinned)).ToList();
@@ -188,12 +211,26 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
         var existing = await db.Set<Favorite>().SingleOrDefaultAsync(f => f.UserId == Me && f.NodeId == command.NodeId, cancellationToken);
         if (command.On && existing is null)
         {
+            if (!await db.Set<Node>().AnyAsync(n => n.Id == command.NodeId, cancellationToken))
+            {
+                return Error.NotFound("nodes.not_found", "The node does not exist.");
+            }
+
             if (await db.Set<Favorite>().CountAsync(f => f.UserId == Me, cancellationToken) >= MaxFavorites)
             {
                 return Error.Validation("NodeId", $"Up to {MaxFavorites} favorites.");
             }
 
             db.Add(new Favorite { UserId = Me, NodeId = command.NodeId, CreatedAt = clock.GetUtcNow() });
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                // marked at the same moment by another request: it is a favorite either way
+                db.ChangeTracker.Clear();
+            }
         }
         else if (!command.On && existing is not null)
         {
@@ -218,10 +255,22 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
             return Error.Forbidden("home.forbidden", "Only administrators set the default start page.");
         }
 
+        if (command.Request is { Widgets: null })
+        {
+            return Error.Validation("Widgets", "Name the widgets.");
+        }
+
         var widgets = command.Request?.Widgets.Where(w => w is not null).Distinct().ToList();
         if (widgets is not null && widgets.Any(w => !HomeWidgets.All.Contains(w)))
         {
             return Error.Validation("Widgets", $"Known widgets: {string.Join(", ", HomeWidgets.All)}.");
+        }
+
+        // a personal layout equal to the default is no personal layout: later default changes reach that user
+        if (!command.ForTenant && widgets is not null
+            && widgets.SequenceEqual((await db.Set<HomeLayout>().AsNoTracking().Where(l => l.UserId == null).Select(l => l.Widgets).FirstOrDefaultAsync(cancellationToken)) ?? [.. HomeWidgets.All]))
+        {
+            widgets = null;
         }
 
         Guid? owner = command.ForTenant ? null : Me;
@@ -245,24 +294,55 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
 
     public async Task<Result<IReadOnlyList<NodeDto>>> HandleAsync(GetRecentNodes query, CancellationToken cancellationToken)
     {
-        var candidates = await (await access.VisibleAsync(db.Set<Node>().AsNoTracking().Where(n => !(n is WorkTask) && !(n is Workspace)), cancellationToken))
-            .OrderByDescending(n => n.ModifiedAt ?? n.CreatedAt).Take(Scan).ToListAsync(cancellationToken);
-        return Result<IReadOnlyList<NodeDto>>.Success(await mapper.MapAsync(await ReadableAsync(candidates, 10, cancellationToken), cancellationToken));
+        // ponytail: sorts the tenant's last 90 days without an expression index; add one on COALESCE(ModifiedAt, CreatedAt) when tenants grow
+        var now = clock.GetUtcNow();
+        var since = now.AddDays(-90);
+        var recent = (await access.VisibleAsync(db.Set<Node>().AsNoTracking().Where(n => !(n is WorkTask) && !(n is Workspace)
+                && (n.ModifiedAt ?? n.CreatedAt) >= since
+                && (!(n is News) || (((News)n).PublishAt <= now && (((News)n).ExpiresAt == null || ((News)n).ExpiresAt > now)))), cancellationToken))
+            .OrderByDescending(n => n.ModifiedAt ?? n.CreatedAt).ThenBy(n => n.Id);
+        return Result<IReadOnlyList<NodeDto>>.Success(await mapper.MapAsync(await FirstReadableAsync(recent, 10, cancellationToken), cancellationToken));
     }
 
     public async Task<Result<IReadOnlyList<HomeTaskDto>>> HandleAsync(GetMyTasks query, CancellationToken cancellationToken)
     {
         var me = Me;
-        var tasks = await (await access.VisibleAsync(db.Set<WorkTask>().AsNoTracking().Where(t => t.CompletedAt == null && t.AssigneeIds.Contains(me)), cancellationToken))
-            .OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate).Take(Scan).ToListAsync(cancellationToken);
-        var readable = await ReadableAsync(tasks, 50, cancellationToken);
+        var open = db.Set<Workspace>().Where(w => !w.IsTemplate && w.FinalizedAt == null).Select(w => w.Id);
+        var tasks = (await access.VisibleAsync(db.Set<WorkTask>().AsNoTracking().Where(t => t.CompletedAt == null && t.AssigneeIds.Contains(me) && open.Contains(t.ParentId!.Value)), cancellationToken))
+            .OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate).ThenBy(t => t.Id);
+        var readable = await FirstReadableAsync(tasks, 50, cancellationToken);
         var workspaceIds = readable.Select(t => t.ParentId).OfType<Guid>().Distinct().ToList();
         var names = await db.Set<Workspace>().AsNoTracking().Where(w => workspaceIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Name, cancellationToken);
         IReadOnlyList<HomeTaskDto> list = readable.Select(t => new HomeTaskDto(t.Id, t.ParentId ?? Guid.Empty, names.GetValueOrDefault(t.ParentId ?? Guid.Empty, string.Empty), t.Name, t.DueDate)).ToList();
         return Result<IReadOnlyList<HomeTaskDto>>.Success(list);
     }
 
-    /// <summary>The first nodes of the list the user may read, in order.</summary>
+    /// <summary>The first nodes of the ordered query the user may read: pages of candidates checked against the grants in memory, until enough are found.</summary>
+    private async Task<List<T>> FirstReadableAsync<T>(IQueryable<T> ordered, int take, CancellationToken cancellationToken)
+        where T : Node
+    {
+        if (await access.IsGlobalAsync(NodePermissions.Read, cancellationToken))
+        {
+            return await ordered.Take(take).ToListAsync(cancellationToken);
+        }
+
+        var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
+        var readable = new List<T>();
+        for (var page = 0; page < MaxPages && readable.Count < take; page++)
+        {
+            var candidates = await ordered.Skip(page * Scan).Take(Scan).ToListAsync(cancellationToken);
+            var pathIds = candidates.SelectMany(n => n.PathIds).Distinct().ToList();
+            var interrupted = (await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id) && n.InterruptInheritance).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
+            readable.AddRange(candidates.Where(n => NodeAccess.Readable(n.PathIds, granted, interrupted)[^1]));
+            if (candidates.Count < Scan)
+            {
+                break;
+            }
+        }
+
+        return readable.Take(take).ToList();
+    }
+
     private async Task<List<T>> ReadableAsync<T>(IReadOnlyList<T> nodes, int take, CancellationToken cancellationToken)
         where T : Node
     {
@@ -271,21 +351,10 @@ internal sealed class IntranetHandlers(CoworkeeDbContext db, NodeAccess access, 
             return nodes.Take(take).ToList();
         }
 
-        var readable = new List<T>();
-        foreach (var node in nodes)
-        {
-            if (readable.Count >= take)
-            {
-                break;
-            }
-
-            if (await access.CanAsync(NodePermissions.Read, node.Id, cancellationToken))
-            {
-                readable.Add(node);
-            }
-        }
-
-        return readable;
+        var granted = (await access.GrantedNodesAsync(NodePermissions.Read, cancellationToken)).ToHashSet();
+        var pathIds = nodes.SelectMany(n => n.PathIds).Distinct().ToList();
+        var interrupted = (await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id) && n.InterruptInheritance).Select(n => n.Id).ToListAsync(cancellationToken)).ToHashSet();
+        return nodes.Where(n => NodeAccess.Readable(n.PathIds, granted, interrupted)[^1]).Take(take).ToList();
     }
 
     private static Error? Invalid(string? title, string? markdown, DateTimeOffset publishAt, DateTimeOffset? expiresAt) =>

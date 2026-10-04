@@ -34,9 +34,10 @@
         <MudPaper Outlined="true" Class="pa-4">
             <MudTextField @bind-Value="_title" Label="Title" />
             <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="14" Variant="Variant.Outlined" Class="mt-2" />
-            <MudStack Row="true" Class="mt-2">
-                <MudDatePicker @bind-Date="_publish" Label="Published from" />
-                <MudDatePicker @bind-Date="_expires" Label="Shown until (optional)" Clearable="true" />
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
+                <MudTextField T="DateTime?" @bind-Value="_publish" Label="Published from" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" data-testid="news-publish" />
+                <MudButton Size="Size.Small" OnClick="() => _publish = DateTime.Now">Now</MudButton>
+                <MudTextField T="DateTime?" @bind-Value="_expires" Label="Shown until (optional)" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" Clearable="true" />
                 <MudCheckBox @bind-Value="_pinned" Label="Pinned" />
             </MudStack>
             <MudStack Row="true" Class="mt-2">
@@ -59,12 +60,18 @@
 
     [Parameter] public Guid Id { get; set; }
 
+    [SupplyParameterFromQuery(Name = "edit")] public bool OpenEditor { get; set; }
+
     protected override async Task OnParametersSetAsync()
     {
         _editing = false;
         try
         {
             _news = await Api.GetNewsAsync(Id);
+            if (OpenEditor && _news.CanEdit)
+            {
+                Edit();
+            }
         }
         catch (ApiException exception)
         {
@@ -75,12 +82,15 @@
     private void Edit() =>
         (_title, _markdown, _publish, _expires, _pinned, _editing) = (_news!.Title, _news.Markdown, _news.PublishAt.LocalDateTime, _news.ExpiresAt?.LocalDateTime, _news.Pinned, true);
 
+    /// <summary>A local date and time of the browser as UTC.</summary>
+    private static DateTimeOffset Utc(DateTime local) => new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime();
+
     private async Task SaveAsync()
     {
         try
         {
             _news = await Api.UpdateNewsAsync(Id, new NewsUpdateRequest(_title ?? string.Empty, _markdown ?? string.Empty,
-                _publish is { } publish ? new DateTimeOffset(publish) : DateTimeOffset.UtcNow, _expires is { } expires ? new DateTimeOffset(expires) : null, _pinned));
+                _publish is { } publish ? Utc(publish) : DateTimeOffset.UtcNow, _expires is { } expires ? Utc(expires) : null, _pinned));
             _editing = false;
         }
         catch (ApiException exception)

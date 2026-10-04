@@ -18,6 +18,8 @@ public interface IIntranetApi
 
     Task SetFavoriteAsync(Guid nodeId, bool on, CancellationToken cancellationToken = default);
 
+    Task<bool> IsFavoriteAsync(Guid nodeId, CancellationToken cancellationToken = default);
+
     Task<HomeLayoutDto> GetLayoutAsync(CancellationToken cancellationToken = default);
 
     Task<HomeLayoutDto> SaveLayoutAsync(IReadOnlyList<string>? widgets, bool forTenant = false, CancellationToken cancellationToken = default);
@@ -38,6 +40,8 @@ internal sealed class IntranetApi(HttpClient http) : ApiClientBase(http), IIntra
     public Task<NewsDto> UpdateNewsAsync(Guid id, NewsUpdateRequest request, CancellationToken cancellationToken = default) => SendAsync<NewsDto>(HttpMethod.Put, $"api/v1/news/{id}", request, cancellationToken);
 
     public async Task<IReadOnlyList<NodeDto>> GetFavoritesAsync(CancellationToken cancellationToken = default) => await GetAsync<NodeDto[]>("api/v1/favorites", cancellationToken);
+
+    public Task<bool> IsFavoriteAsync(Guid nodeId, CancellationToken cancellationToken = default) => GetAsync<bool>($"api/v1/favorites/{nodeId}", cancellationToken);
 
     public Task SetFavoriteAsync(Guid nodeId, bool on, CancellationToken cancellationToken = default) => SendAsync(on ? HttpMethod.Put : HttpMethod.Delete, $"api/v1/favorites/{nodeId}", null, cancellationToken);
 
