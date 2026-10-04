@@ -56,7 +56,8 @@ public sealed class DrmTests(ApiFixture api) : IAsyncLifetime
         var purchase = (await response.Content.ReadFromJsonAsync<PurchaseDto>(Ct))!;
         purchase.OrderId.ShouldMatch(@"^P-\d{8}-[A-Z2-9]{6}$");
         purchase.Prices.ShouldBe(dach.Prices);
-        (purchase.EndsOn.DayNumber - purchase.StartsOn.DayNumber).ShouldBe(30);
+        (purchase.EndsOn.DayNumber - purchase.StartsOn.DayNumber).ShouldBe(29);
+        purchase.TargetName.ShouldBe("DACH");
         purchase.AssetIds.ShouldBe(assets, ignoreOrder: true);
         (await Admin.GetFromJsonAsync<PurchaseDto[]>("/api/v1/drm/purchases", Ct))!.Single().Id.ShouldBe(purchase.Id);
 
@@ -96,6 +97,18 @@ public sealed class DrmTests(ApiFixture api) : IAsyncLifetime
         (offer.AssetCount, offer.PreviewAssetId).ShouldBe((0, null));
         (await member.PostAsJsonAsync("/api/v1/drm/purchases", new PurchaseRequest(license.Id, ContextKey: "us"), Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await member.GetFromJsonAsync<PurchaseDto[]>("/api/v1/drm/purchases", Ct))!.ShouldHaveSingleItem().AssetIds.ShouldBeEmpty();
+
+        // managers without the offer right still see the groups they price
+        var manager = (await (await Admin.PostAsJsonAsync("/api/v1/identity/roles", new RoleRequest("Licensing " + Guid.NewGuid().ToString("N")[..6], null), Ct)).Content.ReadFromJsonAsync<Guid>(Ct))!;
+        (await Admin.PutAsJsonAsync($"/api/v1/identity/permissions/grants/Role/{manager}", new NameListRequest([DrmPermissions.Manage]), Ct)).EnsureSuccessStatusCode();
+        (await Admin.PutAsJsonAsync($"/api/v1/identity/users/{user.Id}/roles", new IdListRequest([manager]), Ct)).EnsureSuccessStatusCode();
+        (await member.GetFromJsonAsync<ContextGroupDto[]>("/api/v1/drm/context-groups", Ct))!.ShouldHaveSingleItem();
+
+        // an owner who cannot be paid takes the price away instead of being left out of it
+        var studio = owners.Single();
+        (await Admin.PutAsJsonAsync($"/api/v1/drm/rights-owners/{studio.Id}", new RightsOwnerRequest(studio.Name, studio.Kind, studio.BillingContactId, IsActive: false), Ct)).EnsureSuccessStatusCode();
+        (await OffersAsync(new OfferSearchRequest(ContextKey: "dach"))).Single().Prices.ShouldBeEmpty();
+        (await Admin.PostAsJsonAsync("/api/v1/drm/purchases", new PurchaseRequest(license.Id, ContextKey: "dach"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     private async Task<(LicenseDto License, List<Guid> Assets)> LicenseAsync()

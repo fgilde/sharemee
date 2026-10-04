@@ -383,12 +383,14 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         var redBytes = red.ToByteArray(ImageMagick.MagickFormat.Png);
         var first = await UploadAsync(Admin, "a.png", redBytes, folder);
         var second = await UploadAsync(Admin, "b.png", redBytes, day);
+
+        // processing writes the asset too; metadata goes in once it is done, not racing it
+        await DerivationsAsync(first.AssetId);
+        await DerivationsAsync(second.AssetId);
         (await Admin.PutAsJsonAsync($"/api/v1/nodes/{first.AssetId}/metadata", new Dictionary<string, List<MetadataValue>>
         {
             ["caption"] = [new(V: JsonSerializer.SerializeToElement("Beach"))],
         }, Ct)).EnsureSuccessStatusCode();
-        await DerivationsAsync(first.AssetId);
-        await DerivationsAsync(second.AssetId);
 
         (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Broken", "{nope}"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await Admin.PostAsJsonAsync("/api/v1/file-namings", new FileNamingRequest("Shouting", "{Name}"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);

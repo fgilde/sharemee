@@ -2993,6 +2993,10 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date");
 
+                    b.Property<string>("TargetName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 

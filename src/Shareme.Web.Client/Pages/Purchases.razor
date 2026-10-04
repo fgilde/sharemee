@@ -17,7 +17,7 @@
             <tr data-order="@purchase.OrderId">
                 <td>@purchase.OrderId</td>
                 <td>@purchase.LicenseName</td>
-                <td>@(purchase.ContextKey ?? "group")</td>
+                <td>@(purchase.TargetName ?? purchase.ContextKey)</td>
                 <td>@purchase.StartsOn</td>
                 <td>@purchase.EndsOn</td>
                 <td>@purchase.AssetIds.Count</td>

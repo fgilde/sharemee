@@ -28,7 +28,7 @@ public sealed class LicensesTests : BunitContext
         AddAuthorization().SetAuthorized("Ada");
         _api.GetGroupsAsync(default).ReturnsForAnyArgs([]);
         _api.SearchOffersAsync(default!, default).ReturnsForAnyArgs([_offer]);
-        _api.PurchaseAsync(default!, default).ReturnsForAnyArgs(new PurchaseDto(Guid.CreateVersion7(), "P-20261004-ABCDEF", _offer.LicenseId, _offer.Name, "dach", null, Guid.Empty,
+        _api.PurchaseAsync(default!, default).ReturnsForAnyArgs(new PurchaseDto(Guid.CreateVersion7(), "P-20261004-ABCDEF", _offer.LicenseId, _offer.Name, "dach", null, "DACH", Guid.Empty,
             new DateOnly(2026, 10, 4), new DateOnly(2026, 11, 3), _offer.Prices, [], DateTimeOffset.UtcNow));
     }
 

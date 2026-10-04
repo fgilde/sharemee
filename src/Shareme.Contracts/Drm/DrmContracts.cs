@@ -74,5 +74,5 @@ public sealed record LicenseOfferDto(
 public sealed record PurchaseRequest(Guid LicenseId, string? ContextKey = null, Guid? GroupId = null);
 
 public sealed record PurchaseDto(
-    Guid Id, string OrderId, Guid LicenseId, string LicenseName, string? ContextKey, Guid? GroupId, Guid BuyerId, DateOnly StartsOn, DateOnly EndsOn, IReadOnlyList<PriceDto> Prices,
+    Guid Id, string OrderId, Guid LicenseId, string LicenseName, string? ContextKey, Guid? GroupId, string? TargetName, Guid BuyerId, DateOnly StartsOn, DateOnly EndsOn, IReadOnlyList<PriceDto> Prices,
     IReadOnlyList<Guid> AssetIds, DateTimeOffset CreatedAt);

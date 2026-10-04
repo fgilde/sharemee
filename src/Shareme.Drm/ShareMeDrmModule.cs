@@ -28,6 +28,7 @@ public sealed class ShareMeDrmModule : CoworkeeModule, IWebModule
         context.Services.AddSingleton<IPermissionDefinitionContributor, DrmPermissionDefinitions>();
         context.Services.AddSingleton<IMailTemplateContributor, DrmMailTemplates>();
         context.Services.AddScoped<Offers>();
+        context.Services.AddScoped<Shareme.Graph.INodePurgeListener, LicenseAssetPurgeListener>();
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -63,7 +64,7 @@ public sealed class ShareMeDrmModule : CoworkeeModule, IWebModule
         drm.MapGet("/licenses/{id:guid}/buyouts", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetBuyouts(id), ct).ToHttpResult());
         drm.MapPost("/licenses/{id:guid}/buyouts", (Guid id, BuyoutRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveBuyout(id, null, body), ct).ToHttpResult());
         drm.MapPut("/licenses/{id:guid}/buyouts/{buyoutId:guid}", (Guid id, Guid buyoutId, BuyoutRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SaveBuyout(id, buyoutId, body), ct).ToHttpResult());
-        drm.MapDelete("/licenses/{id:guid}/buyouts/{buyoutId:guid}", (Guid id, Guid buyoutId, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteDrmObject(DrmObjects.Buyout, buyoutId), ct).ToHttpResult());
+        drm.MapDelete("/licenses/{id:guid}/buyouts/{buyoutId:guid}", (Guid id, Guid buyoutId, IDispatcher d, CancellationToken ct) => d.SendAsync(new DeleteDrmObject(DrmObjects.Buyout, buyoutId, id), ct).ToHttpResult());
         drm.MapGet("/assets/{assetId:guid}/licenses", (Guid assetId, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetAssetLicenses(assetId), ct).ToHttpResult());
 
         drm.MapPost("/offers/search", (OfferSearchRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new SearchOffers(body), ct).ToHttpResult());
@@ -192,6 +193,9 @@ public sealed class Purchase : AuditedEntity, IMultiTenant
 
     public Guid? GroupId { get; set; }
 
+    /// <summary>The context or group name at the time of purchase.</summary>
+    public string? TargetName { get; set; }
+
     public Guid BuyerId { get; set; }
 
     public DateOnly StartsOn { get; set; }
@@ -203,6 +207,13 @@ public sealed class Purchase : AuditedEntity, IMultiTenant
     public List<Guid> AssetIds { get; set; } = [];
 
     public Guid TenantId { get; set; }
+}
+
+/// <summary>Purged assets leave the licenses they were in.</summary>
+internal sealed class LicenseAssetPurgeListener(CoworkeeDbContext db) : Shareme.Graph.INodePurgeListener
+{
+    public Task OnPurgingAsync(IQueryable<Guid> nodeIds, CancellationToken cancellationToken) =>
+        db.Set<LicenseAsset>().Where(a => nodeIds.Contains(a.AssetId)).ExecuteDeleteAsync(cancellationToken);
 }
 
 internal sealed class DrmModelContributor : IModelContributor
@@ -270,6 +281,7 @@ internal sealed class DrmModelContributor : IModelContributor
             e.Property(x => x.OrderId).HasMaxLength(40);
             e.Property(x => x.LicenseName).HasMaxLength(200);
             e.Property(x => x.ContextKey).HasMaxLength(100);
+            e.Property(x => x.TargetName).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.OrderId }).IsUnique();
             e.HasIndex(x => new { x.BuyerId, x.CreatedAt });
             Json(e.Property(x => x.Prices));

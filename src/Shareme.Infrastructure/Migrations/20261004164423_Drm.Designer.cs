@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261004163046_Drm")]
+    [Migration("20261004164423_Drm")]
     partial class Drm
     {
         /// <inheritdoc />
@@ -2995,6 +2995,10 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date");
+
+                    b.Property<string>("TargetName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");

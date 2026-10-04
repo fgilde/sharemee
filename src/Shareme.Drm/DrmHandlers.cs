@@ -8,6 +8,7 @@ using Coworkee.Infrastructure.Persistence;
 using Coworkee.Mailing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Shareme.Assets;
 using Shareme.Contracts.Drm;
 using Shareme.Contracts.Graph;
@@ -38,8 +39,7 @@ public sealed record GetRightsOwners : IQuery<Result<IReadOnlyList<RightsOwnerDt
 [RequiresPermission(DrmPermissions.Manage)]
 public sealed record SaveRightsOwner(Guid? Id, RightsOwnerRequest Request) : ICommand<Result<RightsOwnerDto>>;
 
-/// <summary>Groups are offered as alternatives to buyers, so those who see offers may list them.</summary>
-[RequiresPermission(DrmPermissions.Offers)]
+/// <summary>Groups are offered as alternatives to buyers and managed with price lists: for those who see offers or manage licensing.</summary>
 public sealed record GetContextGroups : IQuery<Result<IReadOnlyList<ContextGroupDto>>>;
 
 [RequiresPermission(DrmPermissions.Manage)]
@@ -70,7 +70,7 @@ public sealed record GetBuyouts(Guid LicenseId) : IQuery<Result<IReadOnlyList<Bu
 public sealed record SaveBuyout(Guid LicenseId, Guid? Id, BuyoutRequest Request) : ICommand<Result<BuyoutDto>>;
 
 [RequiresPermission(DrmPermissions.Manage)]
-public sealed record DeleteDrmObject(string Kind, Guid Id) : ICommand<Result>;
+public sealed record DeleteDrmObject(string Kind, Guid Id, Guid? LicenseId = null) : ICommand<Result>;
 
 /// <summary>The active licenses of an asset, for everyone who can read it.</summary>
 public sealed record GetAssetLicenses(Guid AssetId) : IQuery<Result<IReadOnlyList<LicenseDto>>>, IResourceRequest
@@ -140,7 +140,7 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
 
         contact ??= db.Add(new BillingContact { Name = string.Empty, Email = string.Empty }).Entity;
         (contact.Name, contact.Email, contact.Address, contact.Iban, contact.Bic, contact.IsActive) =
-            (r.Name.Trim(), r.Email!.Trim(), Trim(r.Address), Trim(r.Iban)?.Replace(" ", string.Empty).ToUpperInvariant(), Trim(r.Bic)?.ToUpperInvariant(), r.IsActive);
+            (Clean(r.Name), r.Email!.Trim(), Trim(r.Address), Trim(r.Iban)?.Replace(" ", string.Empty).ToUpperInvariant(), Trim(r.Bic)?.ToUpperInvariant(), r.IsActive);
         return Map(contact);
     }
 
@@ -170,12 +170,17 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
         }
 
         owner ??= db.Add(new RightsOwner { Name = string.Empty }).Entity;
-        (owner.Name, owner.Kind, owner.BillingContactId, owner.Address, owner.IsActive) = (r.Name.Trim(), Trim(r.Kind), r.BillingContactId, Trim(r.Address), r.IsActive);
+        (owner.Name, owner.Kind, owner.BillingContactId, owner.Address, owner.IsActive) = (Clean(r.Name), Trim(r.Kind), r.BillingContactId, Trim(r.Address), r.IsActive);
         return Map(owner);
     }
 
     public async Task<Result<IReadOnlyList<ContextGroupDto>>> HandleAsync(GetContextGroups query, CancellationToken cancellationToken)
     {
+        if (!await access.IsGlobalAsync(DrmPermissions.Offers, cancellationToken) && !await access.IsGlobalAsync(DrmPermissions.Manage, cancellationToken))
+        {
+            return Error.Forbidden("drm.forbidden", "You may not see context groups.");
+        }
+
         IReadOnlyList<ContextGroupDto> list = (await db.Set<ContextGroup>().AsNoTracking().OrderBy(g => g.Name).ToListAsync(cancellationToken)).Select(Map).ToList();
         return Result<IReadOnlyList<ContextGroupDto>>.Success(list);
     }
@@ -184,7 +189,7 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
     {
         var r = command.Request;
         var known = (await catalog.ContextsAsync(cancellationToken)).Select(c => c.Key).ToHashSet();
-        if (string.IsNullOrWhiteSpace(r.Name) || TooLong(r.Name, 200) || r.ContextKeys is not { Count: > 0 } keys || keys.Any(k => !known.Contains(k)))
+        if (string.IsNullOrWhiteSpace(r.Name) || TooLong(r.Name, 200) || r.ContextKeys is not { Count: > 0 } keys || keys.Any(k => k is null || !known.Contains(k)))
         {
             return Error.Validation("ContextKeys", "A name and one or more known contexts are required.");
         }
@@ -196,7 +201,7 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
         }
 
         group ??= db.Add(new ContextGroup { Name = string.Empty }).Entity;
-        (group.Name, group.ContextKeys) = (r.Name.Trim(), keys.Distinct().ToList());
+        (group.Name, group.ContextKeys) = (Clean(r.Name), keys.Distinct().ToList());
         return Map(group);
     }
 
@@ -210,6 +215,11 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
     {
         var r = command.Request;
         var entries = r.Entries?.ToList() ?? [];
+        if (entries.Any(e => e is null))
+        {
+            return Error.Validation("Entries", "Entries must not be empty.");
+        }
+
         var known = (await catalog.ContextsAsync(cancellationToken)).Select(c => c.Key).ToHashSet();
         var groups = await db.Set<ContextGroup>().Select(g => g.Id).ToListAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(r.Name) || TooLong(r.Name, 200) || TooLong(r.Description, 2000) || entries.Count > 500
@@ -227,7 +237,7 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
         }
 
         list ??= db.Add(new PriceList { Name = string.Empty }).Entity;
-        (list.Name, list.Description, list.IsActive, list.Entries) = (r.Name.Trim(), Trim(r.Description), r.IsActive, entries);
+        (list.Name, list.Description, list.IsActive, list.Entries) = (Clean(r.Name), Trim(r.Description), r.IsActive, entries);
         return Map(list);
     }
 
@@ -242,7 +252,7 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
     public async Task<Result<LicenseDto>> HandleAsync(SaveLicense command, CancellationToken cancellationToken)
     {
         var r = command.Request;
-        var rights = r.Rights?.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct().ToList() ?? [];
+        var rights = r.Rights?.Where(x => x is not null).Select(x => x.Trim().ToLowerInvariant()).Where(x => x.Length > 0).Distinct().ToList() ?? [];
         if (string.IsNullOrWhiteSpace(r.Name) || TooLong(r.Name, 200) || TooLong(r.Description, 4000) || rights.Count > 50 || rights.Any(x => x.Length > 100)
             || !LicenseStatuses.All.Contains(r.Status) || r.PurchaseDays is < 1 or > 36500 || (r.ValidFrom is { } from && r.ValidUntil is { } until && until < from))
         {
@@ -257,7 +267,7 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
 
         license ??= db.Add(new License { Name = string.Empty }).Entity;
         (license.Name, license.Description, license.Rights, license.ValidFrom, license.ValidUntil, license.PurchaseDays, license.Status) =
-            (r.Name.Trim(), Trim(r.Description), rights, r.ValidFrom, r.ValidUntil, r.PurchaseDays, r.Status);
+            (Clean(r.Name), Trim(r.Description), rights, r.ValidFrom, r.ValidUntil, r.PurchaseDays, r.Status);
         var count = command.Id is { } existing ? await db.Set<LicenseAsset>().CountAsync(a => a.LicenseId == existing, cancellationToken) : 0;
         return Map(license, count);
     }
@@ -289,11 +299,16 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
         }
 
         var ids = command.AssetIds.Distinct().ToList();
-        var assets = await db.Set<Asset>().AsNoTracking().Where(a => ids.Contains(a.Id)).ToListAsync(cancellationToken);
-        var readable = (await AssetSelection.WithPermissionAsync(db, access, assets, NodePermissions.Read, cancellationToken)).Select(a => a.Id).ToHashSet();
-        if (readable.Count != ids.Count)
+
+        // only what one can see goes in; anything comes out, also files that are gone or out of reach now
+        if (command.Add)
         {
-            return Error.Validation("AssetIds", "Some of the assets do not exist or are not visible to you.");
+            var assets = await db.Set<Asset>().AsNoTracking().Where(a => ids.Contains(a.Id)).ToListAsync(cancellationToken);
+            var readable = (await AssetSelection.WithPermissionAsync(db, access, assets, NodePermissions.Read, cancellationToken)).Select(a => a.Id).ToHashSet();
+            if (readable.Count != ids.Count)
+            {
+                return Error.Validation("AssetIds", "Some of the assets do not exist or are not visible to you.");
+            }
         }
 
         var present = await db.Set<LicenseAsset>().Where(a => a.LicenseId == license.Id && ids.Contains(a.AssetId)).ToListAsync(cancellationToken);
@@ -381,6 +396,11 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
             return Error.Conflict("drm.in_use", "Other licensing data still refers to it.");
         }
 
+        if (entity is Buyout buyout && command.LicenseId is { } licenseId && buyout.LicenseId != licenseId)
+        {
+            return NotFound(command.Kind);
+        }
+
         db.Remove(entity);
         return Result.Success();
     }
@@ -388,12 +408,16 @@ internal sealed class MasterDataHandlers(CoworkeeDbContext db, MetadataCatalog c
     public async Task<Result<IReadOnlyList<LicenseDto>>> HandleAsync(GetAssetLicenses query, CancellationToken cancellationToken)
     {
         var ids = await db.Set<LicenseAsset>().Where(a => a.AssetId == query.AssetId).Select(a => a.LicenseId).ToListAsync(cancellationToken);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         IReadOnlyList<LicenseDto> list = (await db.Set<License>().AsNoTracking().Where(l => ids.Contains(l.Id) && l.Status == LicenseStatuses.Active).OrderBy(l => l.Name).ToListAsync(cancellationToken))
-            .Select(l => Map(l, 0)).ToList();
+            .Where(l => l.IsValidOn(today)).Select(l => Map(l, 0)).ToList();
         return Result<IReadOnlyList<LicenseDto>>.Success(list);
     }
 
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>Names go into mail subjects: no control characters.</summary>
+    internal static string Clean(string value) => new string(value.Where(c => !char.IsControl(c)).ToArray()).Trim();
 
     internal static BillingContactDto Map(BillingContact c) => new(c.Id, c.Name, c.Email, c.Address, c.Iban, c.Bic, c.IsActive);
 
@@ -441,17 +465,22 @@ internal sealed class Offers(CoworkeeDbContext db, MetadataCatalog catalog, Node
         var buyouts = (await db.Set<Buyout>().AsNoTracking().Where(b => ids.Contains(b.LicenseId)).ToListAsync(cancellationToken)).Where(b => b.IsValidOn(day)).ToList();
         var priceListIds = buyouts.Select(b => b.PriceListId).Distinct().ToList();
         var priceLists = await db.Set<PriceList>().AsNoTracking().Where(p => priceListIds.Contains(p.Id) && p.IsActive).ToDictionaryAsync(p => p.Id, cancellationToken);
+        var ownerIds = buyouts.Select(b => b.RightsOwnerId).Distinct().ToList();
+        var activeOwners = (await db.Set<RightsOwner>().Where(o => ownerIds.Contains(o.Id) && o.IsActive).Select(o => o.Id).ToListAsync(cancellationToken)).ToHashSet();
         var groups = await db.Set<ContextGroup>().AsNoTracking().ToListAsync(cancellationToken);
-        var licensed = await db.Set<LicenseAsset>().Where(a => ids.Contains(a.LicenseId)).Select(a => new { a.LicenseId, a.AssetId }).ToListAsync(cancellationToken);
-        var assetIds = licensed.Select(a => a.AssetId).Distinct().ToList();
-        var assets = await db.Set<Asset>().AsNoTracking().Where(a => assetIds.Contains(a.Id)).OrderBy(a => a.Name).ToListAsync(cancellationToken);
-
-        // ponytail: one access pass over all licensed assets of the page; per license counts when pages get large
-        var readable = (await AssetSelection.WithPermissionAsync(db, access, assets, NodePermissions.Read, cancellationToken)).Select(a => a.Id).ToList();
+        // ponytail: counts look at up to MaxAssetsPerPage licensed files of the page; per license counts in SQL when licenses get that large
+        var licensed = await db.Set<LicenseAsset>().Where(a => ids.Contains(a.LicenseId)).OrderBy(a => a.AssetId).Take(MaxAssetsPerPage).Select(a => new { a.LicenseId, a.AssetId }).ToListAsync(cancellationToken);
+        var readable = await ReadableAsync(licensed.Select(a => a.AssetId).Distinct().ToList(), cancellationToken);
         var offers = new List<LicenseOfferDto>();
         foreach (var license in licenses)
         {
-            var own = buyouts.Where(b => b.LicenseId == license.Id && priceLists.ContainsKey(b.PriceListId)).ToList();
+            // an owner whose price list or account is inactive cannot be paid, so the license has no price until that is fixed
+            var own = buyouts.Where(b => b.LicenseId == license.Id).ToList();
+            if (own.Any(b => !priceLists.ContainsKey(b.PriceListId) || !activeOwners.Contains(b.RightsOwnerId)))
+            {
+                own = [];
+            }
+
             var inLicense = licensed.Where(a => a.LicenseId == license.Id).Select(a => a.AssetId).ToHashSet();
             var visible = readable.Where(inLicense.Contains).ToList();
             var alternatives = contextKey is null
@@ -464,10 +493,21 @@ internal sealed class Offers(CoworkeeDbContext db, MetadataCatalog catalog, Node
         return offers;
     }
 
+    public const int MaxAssetsPerPage = 20_000;
+
+    public Task<IReadOnlyList<Shareme.Contracts.Metadata.UserContextDto>> ContextsAsync(CancellationToken cancellationToken) => catalog.ContextsAsync(cancellationToken);
+
+    /// <summary>The readable ones among the assets, by name, with a current version.</summary>
+    public async Task<List<Guid>> ReadableAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+    {
+        var assets = await db.Set<Asset>().AsNoTracking().Where(a => ids.Contains(a.Id) && a.CurrentVersionId != null).OrderBy(a => a.Name).ToListAsync(cancellationToken);
+        return (await AssetSelection.WithPermissionAsync(db, access, assets, NodePermissions.Read, cancellationToken)).Select(a => a.Id).ToList();
+    }
+
     /// <summary>Basis × (1 + fee) × percentage of the context (or group), summed per currency.</summary>
     internal static List<PriceDto> Prices(List<Buyout> buyouts, IReadOnlyDictionary<Guid, PriceList> priceLists, string? contextKey, ContextGroup? group, List<ContextGroup> groups) =>
         buyouts.GroupBy(b => b.Currency)
-            .Select(c => new PriceDto(c.Key, decimal.Round(c.Sum(b => b.Basis * (1 + b.FeePercentage / 100) * Percentage(priceLists[b.PriceListId], contextKey, group, groups) / 100), 2)))
+            .Select(c => new PriceDto(c.Key, decimal.Round(c.Sum(b => b.Basis * (1 + b.FeePercentage / 100) * Percentage(priceLists[b.PriceListId], contextKey, group, groups) / 100), 2, MidpointRounding.AwayFromZero)))
             .OrderBy(p => p.Currency)
             .ToList();
 
@@ -495,7 +535,8 @@ internal sealed class Offers(CoworkeeDbContext db, MetadataCatalog catalog, Node
 }
 
 internal sealed class OfferHandlers(
-    CoworkeeDbContext db, Offers offers, NodeAccess access, ICurrentUser currentUser, IUserDirectory users, IMailSender mails, IConfiguration configuration, TimeProvider clock)
+    CoworkeeDbContext db, Offers offers, NodeAccess access, ICurrentUser currentUser, IUserDirectory users, IMailSender mails, IConfiguration configuration, TimeProvider clock,
+    Microsoft.Extensions.Logging.ILogger<OfferHandlers> logger)
     : IHandler<SearchOffers, Result<IReadOnlyList<LicenseOfferDto>>>,
       IHandler<CreatePurchase, Result<PurchaseDto>>,
       IHandler<GetPurchases, Result<IReadOnlyList<PurchaseDto>>>,
@@ -508,7 +549,13 @@ internal sealed class OfferHandlers(
         var r = query.Request;
         if (r.Take is < 1 or > 100 || r.Skip < 0 || r.Term is { Length: > 200 })
         {
-            return Error.Validation("Take", "Take 1 to 100 offers.");
+            return Error.Validation("Take", "Take 1 to 100 offers with a search term of up to 200 characters.");
+        }
+
+        // which licenses hold an asset is only told about assets one can read
+        if (r.AssetId is { } asked && !await access.CanAsync(NodePermissions.Read, asked, cancellationToken))
+        {
+            return Result<IReadOnlyList<LicenseOfferDto>>.Success([]);
         }
 
         var target = await offers.TargetAsync(r.ContextKey, r.GroupId, cancellationToken);
@@ -521,7 +568,7 @@ internal sealed class OfferHandlers(
         var licenses = db.Set<License>().AsNoTracking().Where(l => l.Status == LicenseStatuses.Active && (l.ValidFrom == null || l.ValidFrom <= day) && (l.ValidUntil == null || day <= l.ValidUntil));
         if (!string.IsNullOrWhiteSpace(r.Term))
         {
-            var term = "%" + r.Term.Trim() + "%";
+            var term = "%" + r.Term.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
             licenses = licenses.Where(l => EF.Functions.ILike(l.Name, term) || (l.Description != null && EF.Functions.ILike(l.Description, term)));
         }
 
@@ -533,7 +580,8 @@ internal sealed class OfferHandlers(
         var page = await licenses.OrderBy(l => l.Name).ToListAsync(cancellationToken);
         if (r.Rights is { Count: > 0 } rights)
         {
-            page = page.Where(l => rights.All(l.Rights.Contains)).ToList();
+            var wanted = rights.Where(x => x is not null).Select(x => x.Trim().ToLowerInvariant()).ToList();
+            page = page.Where(l => wanted.All(l.Rights.Contains)).ToList();
         }
 
         IReadOnlyList<LicenseOfferDto> result = await offers.ForAsync(page.Skip(r.Skip).Take(r.Take).ToList(), target.Value.Context, target.Value.Group, day, cancellationToken);
@@ -567,35 +615,75 @@ internal sealed class OfferHandlers(
             return Error.Validation("LicenseId", "The license has no price for now.");
         }
 
+        // readable files first, then the cap, which is reported instead of cutting silently
         var ids = await db.Set<LicenseAsset>().Where(a => a.LicenseId == license.Id).Select(a => a.AssetId).ToListAsync(cancellationToken);
-        var assets = await db.Set<Asset>().AsNoTracking().Where(a => ids.Contains(a.Id)).OrderBy(a => a.Name).Take(MaxPurchasedAssets).ToListAsync(cancellationToken);
-        var included = (await AssetSelection.WithPermissionAsync(db, access, assets, NodePermissions.Read, cancellationToken)).Select(a => a.Id).ToList();
-        var ends = today.AddDays(license.PurchaseDays);
-        var purchase = new Purchase
+        var included = await offers.ReadableAsync(ids, cancellationToken);
+        if (included.Count > MaxPurchasedAssets)
         {
-            OrderId = $"P-{today:yyyyMMdd}-{RandomNumberGenerator.GetString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6)}",
-            LicenseId = license.Id, LicenseName = license.Name, ContextKey = target.Value.Context, GroupId = target.Value.Group?.Id, BuyerId = currentUser.UserId ?? Guid.Empty,
-            StartsOn = today, EndsOn = license.ValidUntil is { } until && until < ends ? until : ends, Prices = [.. offer.Prices], AssetIds = included,
-        };
-        db.Add(purchase);
-        await db.SaveChangesAsync(cancellationToken);
-        await NotifyAsync(purchase, target.Value.Group?.Name ?? target.Value.Context!, cancellationToken);
+            return Error.Validation("LicenseId", $"The license covers more than {MaxPurchasedAssets} of your files; ask the administration to split it.");
+        }
+
+        // the last day counts, so the purchase lasts exactly its number of days
+        var ends = today.AddDays(license.PurchaseDays - 1);
+        var targetName = target.Value.Group?.Name
+            ?? (await offers.ContextsAsync(cancellationToken)).FirstOrDefault(c => c.Key == target.Value.Context)?.Name ?? target.Value.Context;
+        Purchase purchase = null!;
+        for (var attempt = 0; ; attempt++)
+        {
+            purchase = new Purchase
+            {
+                OrderId = $"P-{today:yyyyMMdd}-{RandomNumberGenerator.GetString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6)}",
+                LicenseId = license.Id, LicenseName = license.Name, ContextKey = target.Value.Context, GroupId = target.Value.Group?.Id, TargetName = targetName,
+                BuyerId = currentUser.UserId ?? Guid.Empty, StartsOn = today, EndsOn = license.ValidUntil is { } until && until < ends ? until : ends, Prices = [.. offer.Prices],
+                AssetIds = included,
+            };
+            db.Add(purchase);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                break;
+            }
+            catch (DbUpdateException) when (attempt < 3)
+            {
+                // an order number taken already: draw another one
+                db.Entry(purchase).State = EntityState.Detached;
+            }
+        }
+
+        try
+        {
+            await NotifyAsync(purchase, targetName ?? string.Empty, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // the purchase stands; a mail problem must not make the buyer buy again
+            logger.LogWarning(exception, "The mails of purchase {OrderId} could not be queued.", purchase.OrderId);
+        }
+
         return Map(purchase);
     }
 
     public async Task<Result<IReadOnlyList<PurchaseDto>>> HandleAsync(GetPurchases query, CancellationToken cancellationToken)
     {
         var all = await access.IsGlobalAsync(DrmPermissions.Purchases, cancellationToken);
-        IReadOnlyList<PurchaseDto> list = (await db.Set<Purchase>().AsNoTracking().Where(p => all || p.BuyerId == currentUser.UserId).OrderByDescending(p => p.CreatedAt).Take(500)
-            .ToListAsync(cancellationToken)).Select(Map).ToList();
-        return Result<IReadOnlyList<PurchaseDto>>.Success(list);
+        var list = new List<PurchaseDto>();
+        foreach (var purchase in await db.Set<Purchase>().AsNoTracking().Where(p => all || p.BuyerId == currentUser.UserId).OrderByDescending(p => p.CreatedAt).Take(500).ToListAsync(cancellationToken))
+        {
+            list.Add(await ForViewerAsync(purchase, cancellationToken));
+        }
+
+        return list;
     }
+
+    /// <summary>Others' purchases show only the files the viewer can read.</summary>
+    private async Task<PurchaseDto> ForViewerAsync(Purchase purchase, CancellationToken cancellationToken) =>
+        purchase.BuyerId == currentUser.UserId ? Map(purchase) : Map(purchase) with { AssetIds = await offers.ReadableAsync(purchase.AssetIds, cancellationToken) };
 
     public async Task<Result<PurchaseDto>> HandleAsync(GetPurchase query, CancellationToken cancellationToken)
     {
         var all = await access.IsGlobalAsync(DrmPermissions.Purchases, cancellationToken);
         return await db.Set<Purchase>().AsNoTracking().SingleOrDefaultAsync(p => p.Id == query.Id && (all || p.BuyerId == currentUser.UserId), cancellationToken) is { } purchase
-            ? Map(purchase)
+            ? await ForViewerAsync(purchase, cancellationToken)
             : Error.NotFound("drm.purchase_not_found", "The purchase does not exist.");
     }
 
@@ -623,19 +711,20 @@ internal sealed class OfferHandlers(
         var ownerIds = (await db.Set<Buyout>().AsNoTracking().Where(b => b.LicenseId == purchase.LicenseId).ToListAsync(cancellationToken)).Where(b => b.IsValidOn(today)).Select(b => b.RightsOwnerId).Distinct().ToList();
         var contacts = await (from owner in db.Set<RightsOwner>().AsNoTracking()
                               join contact in db.Set<BillingContact>() on owner.BillingContactId equals contact.Id
-                              where ownerIds.Contains(owner.Id) && contact.IsActive
+                              where ownerIds.Contains(owner.Id) && owner.IsActive && contact.IsActive
                               select new { contact.Email, owner.Name }).ToListAsync(cancellationToken);
         foreach (var contact in contacts.DistinctBy(c => c.Email))
         {
             await mails.QueueAsync(contact.Email, DrmMails.BillingContact, model with { owner = contact.Name }, null, cancellationToken);
         }
 
-        foreach (var admin in (configuration["Shareme:Drm:PurchaseEmails"] ?? string.Empty).Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var admin in (configuration["Shareme:Drm:PurchaseEmails"] ?? string.Empty).Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                     .Where(a => System.Net.Mail.MailAddress.TryCreate(a, out _)))
         {
             await mails.QueueAsync(admin, DrmMails.Admin, model, null, cancellationToken);
         }
     }
 
     private static PurchaseDto Map(Purchase p) =>
-        new(p.Id, p.OrderId, p.LicenseId, p.LicenseName, p.ContextKey, p.GroupId, p.BuyerId, p.StartsOn, p.EndsOn, p.Prices, p.AssetIds, p.CreatedAt);
+        new(p.Id, p.OrderId, p.LicenseId, p.LicenseName, p.ContextKey, p.GroupId, p.TargetName, p.BuyerId, p.StartsOn, p.EndsOn, p.Prices, p.AssetIds, p.CreatedAt);
 }

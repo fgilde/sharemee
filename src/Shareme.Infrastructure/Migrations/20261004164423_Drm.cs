@@ -109,6 +109,7 @@ namespace Shareme.Infrastructure.Migrations
                     LicenseName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     ContextKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     GroupId = table.Column<Guid>(type: "uuid", nullable: true),
+                    TargetName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     BuyerId = table.Column<Guid>(type: "uuid", nullable: false),
                     StartsOn = table.Column<DateOnly>(type: "date", nullable: false),
                     EndsOn = table.Column<DateOnly>(type: "date", nullable: false),
