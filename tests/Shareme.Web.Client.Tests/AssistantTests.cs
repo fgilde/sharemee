@@ -1,0 +1,59 @@
+using Bunit;
+using Coworkee.Contracts.Ai;
+using Microsoft.Extensions.DependencyInjection;
+using MudBlazor.Services;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using Shareme.Web.Client.Assistant;
+using Shareme.Web.Client.Pages;
+
+namespace Shareme.Web.Client.Tests;
+
+public sealed class AssistantTests : BunitContext
+{
+    private readonly IAssistantApi _api = Substitute.For<IAssistantApi>();
+
+    public AssistantTests()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.AddMudServices();
+        Services.AddSingleton(_api);
+        AddAuthorization().SetAuthorized("Ada");
+    }
+
+    [Fact]
+    public async Task Sends_the_conversation_and_shows_answer_and_tool_calls_as_plain_text()
+    {
+        _api.ChatAsync(default!, default).ReturnsForAnyArgs(new ChatResponseDto("<b>Created</b> the folder.", "end_turn",
+            [new AiToolCallDto(Guid.CreateVersion7(), "create_folder", AiChannels.Chat, "{}", true, null, 12, DateTimeOffset.UtcNow, null)]));
+        var page = Render<Shareme.Web.Client.Pages.Assistant>();
+
+        page.Find("textarea").Change("Create Summer");
+        await page.Find("[data-testid='send']").ClickAsync(new());
+
+        page.WaitForAssertion(() => page.Find("[data-role='assistant']").TextContent.ShouldContain("<b>Created</b> the folder."));
+        page.FindAll("[data-role='assistant'] b").ShouldBeEmpty();
+        page.Find("[data-tool='create_folder']").ShouldNotBeNull();
+        await _api.Received(1).ChatAsync(Arg.Is<IReadOnlyList<ChatMessageDto>>(m => m.Count == 1 && m[0].Role == "user" && m[0].Text == "Create Summer"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Keeps_the_history_within_the_api_limits_and_recovers_from_network_errors()
+    {
+        _api.ChatAsync(default!, default).ReturnsForAnyArgs(new ChatResponseDto(new string('x', 30_000), "end_turn", []));
+        var page = Render<Shareme.Web.Client.Pages.Assistant>();
+        for (var i = 0; i < 6; i++)
+        {
+            page.Find("textarea").Change($"question {i}");
+            await page.Find("[data-testid='send']").ClickAsync(new());
+        }
+
+        await _api.DidNotReceive().ChatAsync(Arg.Is<IReadOnlyList<ChatMessageDto>>(m => m.Any(x => x.Text.Length > 20_000) || m.Sum(x => x.Text.Length) > 100_000 || m[0].Role != "user"), Arg.Any<CancellationToken>());
+
+        _api.ChatAsync(default!, default).ThrowsAsyncForAnyArgs(new HttpRequestException("gone"));
+        page.Find("textarea").Change("lost?");
+        await page.Find("[data-testid='send']").ClickAsync(new());
+        page.WaitForAssertion(() => page.Find("textarea").GetAttribute("value").ShouldBe("lost?"));
+        page.FindAll("[data-role='user']").Count.ShouldBe(6);
+    }
+}
