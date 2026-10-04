@@ -42,6 +42,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        Environment.SetEnvironmentVariable("Coworkee__Storage__FileSystem__Root", null);
         await _sql.DisposeAsync();
         Directory.Delete(_blobs, recursive: true);
     }
@@ -72,16 +73,18 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         (await Admin.PostAsJsonAsync("/api/v1/metadata/languages", new DataLanguageDto("de", "Deutsch", true), Ct)).EnsureSuccessStatusCode();
         var plan = await SharedienImport.RunAsync(Options(write: false), Ct);
         plan.Written.ShouldBeEmpty();
-        plan.Mapped["nodes"].ShouldBe(9);
+        plan.Mapped["nodes"].ShouldBe(10);
         (await Admin.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
         var run = await SharedienImport.RunAsync(Options(write: true), Ct);
 
-        run.Written["nodes"].ShouldBe(9);
+        run.Written["nodes"].ShouldBe(10);
         run.Problems.Select(p => (p.Code, p.Table, p.SourceId)).ShouldBe(
             [("multi_parent", "MAM.Edge", 106), ("invalid_value", "MAM.PropertyValue", 9), ("user_merged", "Admin.User", 2),
-                ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2), ("checksum_mismatch", "MAM.AssetVersion", 21)], ignoreOrder: true);
+                ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2), ("checksum_mismatch", "MAM.AssetVersion", 21), ("missing_blob", "MAM.AssetVersion", 59),
+                ("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", 1)], ignoreOrder: true);
         run.Written["files"].ShouldBe(2);
+        run.Skipped["workspace containers"].ShouldBe(1);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
         languages.Select(l => l.Code).ShouldBe(["en", "de"], ignoreOrder: true);
         languages.Count(l => l.IsDefault).ShouldBe(1);
@@ -94,12 +97,17 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         top.Select(n => n.Name).ShouldBe(["Marketing", "Widget"], ignoreOrder: true);
         top.Single(n => n.Name == "Marketing").Id.ShouldBe(TopFolder);
         var sub = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{TopFolder}/children", Ct))!.Items.Single();
-        var asset = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{sub.Id}/children", Ct))!.Items.Single();
+        var asset = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{sub.Id}/children", Ct))!.Items.Single(n => n.Name == "photo.jpg");
         asset.Name.ShouldBe("photo.jpg");
         var file = (await Admin.GetFromJsonAsync<Shareme.Contracts.Assets.AssetDto>($"/api/v1/assets/{asset.Id}", Ct))!;
         file.Versions.Select(v => v.Number).ShouldBe([2, 1]);
         (file.CurrentVersion!.FileName, file.CurrentVersion.Size).ShouldBe(("photo.jpg", (long)NewFile.Length));
         file.Status.ShouldBe("ready");
+
+        // the original sits in the API's storage: it downloads, and renditions are planned for the current version only
+        var link = await (await Admin.PostAsync($"/api/v1/assets/{asset.Id}/download-link", null, Ct)).Content.ReadFromJsonAsync<Shareme.Contracts.Assets.DownloadLinkDto>(Ct);
+        (await Admin.GetByteArrayAsync(link!.Url, Ct)).ShouldBe(NewFile);
+        (await Admin.GetFromJsonAsync<Shareme.Contracts.Assets.AssetDto>($"/api/v1/assets/{SourceIds.Derived(_setup.TenantId, "MAM.Node", 58)}", Ct))!.Status.ShouldBe("failed");
 
         var metadata = (await Admin.GetFromJsonAsync<NodeMetadataDto>($"/api/v1/nodes/{asset.Id}/metadata", Ct))!;
         metadata.Properties["caption"].Values.Select(v => (v.Lang, v.V!.Value.GetString())).ShouldBe([("en", "Hello"), ("de", "Hallo")], ignoreOrder: true);
@@ -141,6 +149,11 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Workspaces.WorkflowState>()), Ct);
             var todo = states.Single(st => st.IsDefault);
             (todo.Name, task.StateId, todo.AllowedTargets.Single()).ShouldBe(("To do", (Guid?)todo.Id, states.Single(st => !st.IsDefault).Id));
+            states.Single(st => !st.IsDefault).IsDone.ShouldBeTrue(); // nothing leads out of it
+            nodes.OfType<Shareme.Graph.Workspace>().ShouldHaveSingleItem(); // the container stays out
+            var derivations = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.Derivation>()), Ct);
+            derivations.Select(d => d.VersionId).Distinct().ShouldBe([SourceIds.Derived(_setup.TenantId, "MAM.Node", 22)]);
         }
 
         (await reader.GetAsync($"/api/v1/nodes/{workspaceId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK); // owner through the workspace role
@@ -260,20 +273,20 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.EdgeType (EdgeTypeId, Identifier, EdgeSemantic, TranslationIdentifier, IsDirected, IsSystem) values
             (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, null, 1, 0), (5, 'Transition', 9, null, 1, 1);
         insert MAM.Node (NodeId, Identifier, NodeTypeId, TenantId) values
-            (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7), (53, 'todo', 7, 7), (54, 'done', 7, 7), (55, 'brief', 8, 7), (56, 'draft', 2, 7), (57, 'remark', 9, 7);
-        insert MAM.Workspace (WorkspaceNodeId, TranslationIdentifier, WorkspaceType) values (50, 'ws1', 2);
-        insert MAM.State (StateNodeId, SequenceNr, TranslationIdentifier, IsDefault) values (53, 1, 'st1', 1), (54, 2, null, 0);
+            (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7), (53, 'todo', 7, 7), (54, 'done', 7, 7), (55, 'brief', 8, 7), (56, 'draft', 2, 7), (57, 'remark', 9, 7), (58, 'lost-file', 2, 7), (59, 'lost-v1', 3, 7), (61, 'container', 5, 7), (62, 'container-state', 7, 7);
+        insert MAM.Workspace (WorkspaceNodeId, TranslationIdentifier, WorkspaceType) values (50, 'ws1', 2), (61, null, 2);
+        insert MAM.State (StateNodeId, SequenceNr, TranslationIdentifier, IsDefault) values (53, 1, 'st1', 1), (54, 2, null, 0), (62, 1, null, 1);
         insert MAM.Task (NodeId, Name, AssignedUserId, Status) values (55, 'Brief', 1, 0);
         insert MAM.Comment (NodeId, Text, CreatedBy) values (57, 'Looks good', 'grace');
         insert MAM.Category (CategoryNodeId, TranslationIdentifier) values (10, 'cat1'), (11, null), (40, null), (51, null), (52, null);
         insert MAM.CustomNode (NodeId, TranslationIdentifier) values (30, 'cn1');
-        insert MAM.AssetSet (AssetSetNodeId, AssetSetStatus) values (20, 1), (56, 1);
-        insert MAM.AssetVersion (AssetVersionNodeId, OriginalFilename, Version) values (21, 'old.jpg', 1), (22, 'photo.jpg', 2);
+        insert MAM.AssetSet (AssetSetNodeId, AssetSetStatus) values (20, 1), (56, 1), (58, 1);
+        insert MAM.AssetVersion (AssetVersionNodeId, OriginalFilename, Version) values (21, 'old.jpg', 1), (22, 'photo.jpg', 2), (59, 'gone.jpg', 1);
         insert MAM.DerivationType (DerivationTypeId, Identifier) values (1, 'Original'), (2, 'Thumbnail');
         insert MAM.AssetDerivation (AssetVersionId, DerivationTypeId, DataId, FileHash) values
-            (1, 1, 'aaaa0000old', 'not-the-md5'), (2, 1, 'bbbb1111new', '__MD5__'), (2, 2, 'cccc2222thumb', null);
+            (1, 1, 'aaaa0000old', 'not-the-md5'), (2, 1, 'bbbb1111new', '__MD5__'), (2, 2, 'cccc2222thumb', null), (3, 1, 'dddd3333missing', null);
         insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1), (109, 'e109', 50, 53, 1), (110, 'e110', 50, 54, 1), (111, 'e111', 53, 55, 1), (112, 'e112', 55, 56, 1),
-            (113, 'e113', 55, 57, 1), (114, 'e114', 53, 54, 5);
+            (113, 'e113', 55, 57, 1), (114, 'e114', 53, 54, 5), (115, 'e115', 11, 58, 1), (116, 'e116', 58, 59, 2), (117, 'e117', 61, 62, 1), (118, 'e118', 62, 50, 1);
         insert MAM.PropertyGroup (PropertyGroupId, Identifier) values (1, 'general');
         insert MAM.PropertyDefinition (PropertyDefinitionId, Identifier, PropertyGroupId, TranslationIdentifier, ValueType, HasListValues, IsLanguageDependant, IsSystemProperty) values
             (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0), (7, 'claim', 1, null, 0, 0, 0, 0);

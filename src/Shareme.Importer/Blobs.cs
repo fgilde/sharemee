@@ -19,7 +19,7 @@ public sealed class FileSystemBlobs(string root) : ISourceBlobs
 {
     public Task<Stream?> OpenAsync(string dataId, CancellationToken cancellationToken)
     {
-        if (dataId.Length < 4 || dataId.IndexOfAny(['/', '\\', '.']) >= 0)
+        if (dataId.Length < 4 || !dataId.All(c => char.IsAsciiLetterOrDigit(c) || c == '-'))
         {
             return Task.FromResult<Stream?>(null);
         }
@@ -36,8 +36,14 @@ public sealed class AzureBlobs(string connectionString, string container) : ISou
 
     public async Task<Stream?> OpenAsync(string dataId, CancellationToken cancellationToken)
     {
-        var blob = _container.GetBlobClient(dataId);
-        return await blob.ExistsAsync(cancellationToken) ? await blob.OpenReadAsync(cancellationToken: cancellationToken) : null;
+        try
+        {
+            return await _container.GetBlobClient(dataId).OpenReadAsync(cancellationToken: cancellationToken);
+        }
+        catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+        {
+            return null;
+        }
     }
 }
 
@@ -56,55 +62,88 @@ public sealed class BlobCopier(ISourceBlobs source, IBlobStorage target, IReadOn
         var versions = new List<AssetVersion>();
         foreach (var candidate in candidates.Where(c => !existing.Contains(c.VersionId)))
         {
-            await using var content = await source.OpenAsync(candidate.DataId, cancellationToken);
-            if (content is null)
+            // one unreadable file must not stop hours of copying: retry once, then report it and go on
+            for (var attempt = 1; ; attempt++)
             {
-                report.Problem("missing_blob", "MAM.AssetVersion", candidate.VersionNodeId);
-                if (candidate.IsCurrent)
+                try
                 {
-                    candidate.Asset.Status = AssetStatuses.Failed;
+                    if (await CopyOneAsync(candidate, tenantId, cancellationToken) is { } version)
+                    {
+                        versions.Add(version);
+                    }
+
+                    break;
                 }
+                catch (Exception exception) when (exception is not OperationCanceledException && attempt < 2)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    report.Problem("blob_read_failed", "MAM.AssetVersion", candidate.VersionNodeId);
+                    if (candidate.IsCurrent)
+                    {
+                        candidate.Asset.Status = AssetStatuses.Failed;
+                    }
 
-                continue;
-            }
-
-            var extension = Path.GetExtension(candidate.FileName) is { Length: > 1 and <= 21 } dotted ? dotted[1..].ToLowerInvariant() : null; // as uploads do
-            var type = extension is not null && fileTypes.TryGetValue(extension, out var known) ? known : ("application/octet-stream", AssetTypeKeys.Other);
-            var key = BlobKeys.New(tenantId, TimeProvider.System);
-            using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
-            await using var hashing = new HashingStream(content, sha256, md5);
-            await target.PutAsync(key, hashing, type.Item1, cancellationToken);
-            if (candidate.Md5 is { Length: > 0 } expected && Convert.ToBase64String(md5.GetHashAndReset()) != expected)
-            {
-                report.Problem("checksum_mismatch", "MAM.AssetVersion", candidate.VersionNodeId); // kept: the source said what it said
-            }
-
-            var version = new AssetVersion
-            {
-                AssetId = candidate.Asset.Id,
-                Number = candidate.Number,
-                FileName = candidate.FileName,
-                Extension = extension,
-                MimeType = type.Item1,
-                Size = hashing.Length,
-                Sha256 = Convert.ToHexStringLower(sha256.GetHashAndReset()),
-                BlobKey = key,
-                TenantId = tenantId,
-                CreatedAt = candidate.CreatedAt,
-            };
-            Ids.Set(version, candidate.VersionId);
-            versions.Add(version);
-            if (candidate.IsCurrent)
-            {
-                candidate.Asset.CurrentVersionId = version.Id;
-                candidate.Asset.AssetTypeKey = type.Item2;
-                candidate.Asset.Status = candidate.Asset.Status == AssetStatuses.Duplicate ? AssetStatuses.Duplicate : AssetStatuses.Ready;
+                    break;
+                }
             }
         }
 
         report.Written["files"] = versions.Count;
         return versions;
+    }
+
+    private async Task<AssetVersion?> CopyOneAsync(VersionCandidate candidate, Guid tenantId, CancellationToken cancellationToken)
+    {
+        await using var content = await source.OpenAsync(candidate.DataId, cancellationToken);
+        if (content is null)
+        {
+            report.Problem("missing_blob", "MAM.AssetVersion", candidate.VersionNodeId);
+            if (candidate.IsCurrent)
+            {
+                candidate.Asset.Status = AssetStatuses.Failed;
+            }
+
+            return null;
+        }
+
+        var extension = Path.GetExtension(candidate.FileName) is { Length: > 1 and <= 21 } dotted ? dotted[1..].ToLowerInvariant() : null; // as uploads do
+        var type = extension is not null && fileTypes.TryGetValue(extension, out var known) ? known : ("application/octet-stream", AssetTypeKeys.Other);
+        // the key follows the version: a re-run after a failed write overwrites instead of copying everything again
+        var key = $"{tenantId:N}/import/{candidate.VersionId:N}";
+        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
+        await using var hashing = new HashingStream(content, sha256, md5);
+        await target.PutAsync(key, hashing, type.Item1, cancellationToken);
+        if (candidate.Md5 is { Length: > 0 } expected && Convert.ToBase64String(md5.GetHashAndReset()) != expected)
+        {
+            report.Problem("checksum_mismatch", "MAM.AssetVersion", candidate.VersionNodeId); // kept: the source said what it said
+        }
+
+        var version = new AssetVersion
+        {
+            AssetId = candidate.Asset.Id,
+            Number = candidate.Number,
+            FileName = candidate.FileName,
+            Extension = extension,
+            MimeType = type.Item1,
+            Size = hashing.BytesRead,
+            Sha256 = Convert.ToHexStringLower(sha256.GetHashAndReset()),
+            BlobKey = key,
+            TenantId = tenantId,
+            CreatedAt = candidate.CreatedAt,
+        };
+        Ids.Set(version, candidate.VersionId);
+        if (candidate.IsCurrent)
+        {
+            candidate.Asset.CurrentVersionId = version.Id;
+            candidate.Asset.AssetTypeKey = type.Item2;
+            candidate.Asset.Status = candidate.Asset.Status == AssetStatuses.Duplicate ? AssetStatuses.Duplicate : AssetStatuses.Ready;
+        }
+
+        return version;
     }
 
     /// <summary>Hashes what passes through and counts it, without buffering the file.</summary>
@@ -116,7 +155,9 @@ public sealed class BlobCopier(ISourceBlobs source, IBlobStorage target, IReadOn
 
         public override bool CanWrite => false;
 
-        public override long Length => _read;
+        public long BytesRead => _read;
+
+        public override long Length => throw new NotSupportedException();
 
         public override long Position { get => _read; set => throw new NotSupportedException(); }
 

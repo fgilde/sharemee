@@ -69,27 +69,60 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
     }
 
     /// <summary>
-    /// Asks the running Shareme for renditions of the new versions: the events go through the normal outbox, which the
-    /// API processes as usual.
+    /// Plans the renditions of every current version that has none yet and hands them to the running Shareme through the
+    /// normal outbox. Only <c>DerivationsRequested</c> goes out, so no automation rule runs for old files. Safe to repeat:
+    /// a run after a failed request picks up what is missing.
     /// </summary>
-    public async Task RequestRenditionsAsync(IReadOnlyList<Shareme.Assets.AssetVersion> versions, CancellationToken cancellationToken)
+    public async Task<int> RequestRenditionsAsync(CancellationToken cancellationToken)
     {
-        foreach (var chunk in versions.Chunk(Batch))
+        using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenantId));
+        List<(Guid Asset, Guid Version)> pending;
+        await using (var scope = _services.CreateAsyncScope())
         {
-            using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenantId));
+            var db = scope.ServiceProvider.GetRequiredService<ShareMeDbContext>();
+            pending = (await db.Set<Shareme.Graph.Asset>().Where(a => a.CurrentVersionId != null && !db.Set<Shareme.Assets.Derivation>().Any(d => d.VersionId == a.CurrentVersionId))
+                .Select(a => new { a.Id, Version = a.CurrentVersionId!.Value }).ToListAsync(cancellationToken)).Select(a => (a.Id, a.Version)).ToList();
+        }
+
+        var requested = 0;
+        foreach (var chunk in pending.Chunk(200))
+        {
             await using var scope = _services.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<ShareMeDbContext>();
-            var assets = chunk.Select(v => v.AssetId).ToList();
-            foreach (var asset in await db.Set<Shareme.Graph.Asset>().Where(a => assets.Contains(a.Id)).ToListAsync(cancellationToken))
+            var assetIds = chunk.Select(c => c.Asset).ToList();
+            var versionIds = chunk.Select(c => c.Version).ToList();
+            var assets = await db.Set<Shareme.Graph.Asset>().Where(a => assetIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, cancellationToken);
+            var mimeTypes = await db.Set<Shareme.Assets.AssetVersion>().Where(v => versionIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id, v => v.MimeType, cancellationToken);
+            foreach (var (assetId, versionId) in chunk)
             {
-                foreach (var version in chunk.Where(v => v.AssetId == asset.Id))
+                var kinds = await Shareme.Processing.RenditionPlan.KindsAsync(db, tenantId, mimeTypes[versionId], assets[assetId].AssetTypeKey, cancellationToken);
+                if (kinds.Count == 0)
                 {
-                    asset.Publish(new Shareme.Assets.AssetVersionCreated(asset.Id, version.Id));
+                    continue;
                 }
+
+                db.AddRange(kinds.Select(kind => new Shareme.Assets.Derivation { VersionId = versionId, AssetId = assetId, Kind = kind, PlannedAt = DateTimeOffset.UtcNow }));
+                assets[assetId].Publish(new Shareme.Assets.DerivationsRequested(assetId, versionId));
+                requested++;
             }
 
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        return requested;
+    }
+
+    /// <summary>Nodes of the plan that are already in the target.</summary>
+    public async Task<HashSet<Guid>> ExistingNodesAsync(IEnumerable<Guid> nodeIds, CancellationToken cancellationToken)
+    {
+        await using var db = CreateContext();
+        var existing = new HashSet<Guid>();
+        foreach (var chunk in nodeIds.Chunk(Batch))
+        {
+            existing.UnionWith(await db.Set<Shareme.Graph.Node>().IgnoreQueryFilters().Where(n => chunk.Contains(n.Id)).Select(n => n.Id).ToListAsync(cancellationToken));
+        }
+
+        return existing;
     }
 
     public async Task<MapTarget> TargetAsync(CancellationToken cancellationToken)
@@ -239,12 +272,14 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
 
     private static ServiceProvider Build(string connectionString)
     {
+        // the target storage and everything else are configured like Shareme itself, through environment variables
         var configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
             .AddInMemoryCollection([new($"ConnectionStrings:{ShareMeInfrastructureModule.ConnectionStringName}", connectionString)])
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddConfiguration(configuration).AddEnvironmentVariables().Build());
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddCoworkeeModules<ShareMeDatabaseModule>(configuration);
         return services.BuildServiceProvider();
     }

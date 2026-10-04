@@ -79,6 +79,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
     private string? _defaultContext;
 
+    // the catalog's single context when a tenant has none of its own
+    private const string VirtualDefaultContext = "default";
+
     private Guid Scope => target.TenantId;
 
     public ImportPlan Map()
@@ -124,7 +127,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var comments = MapComments(nodeOf, identity);
         var versions = MapVersions(nodeOf);
         MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
-            [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
+            target.KeysOf(KeyKinds.UserContext).Count + contexts.Count == 0 ? [VirtualDefaultContext] : [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf);
 
         report.Mapped["languages"] = languages.Count;
@@ -213,6 +216,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 }
 
                 continue;
+            }
+
+            if (identity.NodeRoleIds.ContainsKey(row.RoleId))
+            {
+                report.Problem("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", row.Id); // members through node assignments stay unrestricted
             }
 
             if (role == target.AdminRoleId)
@@ -483,45 +491,63 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             }
         }
 
+        _firstParent = firstParent;
+        long Through(long parent) => states.Contains(parent) ? firstParent.GetValueOrDefault(parent, -1) : parent;
+
+        // Sharedien hangs every workspace under a state of one system workspace: workspaces are roots here, the container stays out
+        foreach (var (child, from) in firstParent)
+        {
+            if (nodes.TryGetValue(child, out var node) && node is Shareme.Graph.Workspace
+                && nodes.TryGetValue(Through(from), out var container) && container is Shareme.Graph.Workspace)
+            {
+                _containers.Add(Through(from));
+            }
+        }
+
+        foreach (var container in _containers)
+        {
+            report.Skip("workspace containers");
+            nodes.Remove(container);
+        }
+
         var identifiers = source.Nodes.ToDictionary(n => n.Id, n => n.Identifier);
-        stateIds = Work.States.Where(st => firstParent.TryGetValue(st.NodeId, out var w) && nodes.ContainsKey(w))
+        stateIds = Work.States.Where(st => firstParent.TryGetValue(st.NodeId, out var w) && nodes.TryGetValue(w, out var owner) && owner is Shareme.Graph.Workspace)
             .ToDictionary(st => st.NodeId, st => SourceIds.For(Scope, "MAM.State", st.NodeId, identifiers.GetValueOrDefault(st.NodeId)));
         taskLinks = [];
         var parentOf = new Dictionary<long, long>();
         var deferred = new HashSet<long>();
+        var lostParent = new HashSet<long>();
         foreach (var (child, from) in firstParent)
         {
-            if (!nodes.TryGetValue(child, out var node))
+            if (!nodes.TryGetValue(child, out var node) || node is Shareme.Graph.Workspace)
             {
                 continue;
             }
 
-            var parent = from;
-            if (states.Contains(parent))
+            if (node is WorkTask task && states.Contains(from) && stateIds.TryGetValue(from, out var stateId))
             {
-                if (node is WorkTask task && stateIds.TryGetValue(parent, out var stateId))
-                {
-                    task.StateId = stateId;
-                }
-
-                parent = firstParent.GetValueOrDefault(parent, -1);
+                task.StateId = stateId;
             }
 
+            var parent = Through(from);
             if (nodes.TryGetValue(parent, out var parentNode) && parentNode is WorkTask)
             {
                 // files of a task live in its workspace and stay linked to the task
                 taskLinks.Add((parent, child));
-                parent = firstParent.GetValueOrDefault(parent, -1);
-                parent = states.Contains(parent) ? firstParent.GetValueOrDefault(parent, -1) : parent;
+                parent = Through(firstParent.GetValueOrDefault(parent, -1));
             }
 
-            if (nodes.ContainsKey(parent))
+            if (nodes.TryGetValue(parent, out var resolved) && resolved is not WorkTask)
             {
                 parentOf[child] = parent;
             }
-            else if (sourceNodes.Contains(parent))
+            else if (sourceNodes.Contains(parent) && !nodes.ContainsKey(parent))
             {
                 deferred.Add(child);
+            }
+            else
+            {
+                lostParent.Add(child); // a state or task without its own parent: it would end up under the root
             }
         }
 
@@ -533,7 +559,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var children = parentOf.ToLookup(p => p.Value, p => p.Key);
         var placed = new List<Node>();
         var queue = new Queue<(long Id, Node? Parent)>(nodes
-            .Where(n => !parentOf.ContainsKey(n.Key) && !deferred.Contains(n.Key))
+            .Where(n => !parentOf.ContainsKey(n.Key) && !deferred.Contains(n.Key) && !lostParent.Contains(n.Key) && n.Value is not WorkTask)
             .Select(n => (n.Key, n.Value is Shareme.Graph.Workspace ? null : (Node?)target.Root)));
         while (queue.TryDequeue(out var item))
         {
@@ -556,38 +582,50 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 top = parent;
             }
 
-            report.Problem(deferred.Contains(top) ? "deferred_parent" : "cycle", "MAM.Node", lost);
+            report.Problem(deferred.Contains(top) ? "deferred_parent" : lostParent.Contains(top) || nodes[top] is WorkTask ? "lost_parent" : "cycle", "MAM.Node", lost);
             nodes.Remove(lost);
         }
 
         foreach (var (sourceId, node) in nodes)
         {
-            if (node is Shareme.Graph.Workspace workspace && workspaces[sourceId].FinalizationNodeId is { } folder && nodes.TryGetValue(folder, out var finalization))
+            if (node is Shareme.Graph.Workspace workspace && workspaces[sourceId].FinalizationNodeId is { } folder && nodes.TryGetValue(folder, out var finalization) && finalization is Folder)
             {
                 workspace.FinalizationFolderId = finalization.Id;
+            }
+        }
+
+        // Shareme takes tasks only in collaboration workspaces
+        foreach (var workspace in nodes.Values.OfType<WorkTask>().Select(t => nodes.Values.FirstOrDefault(w => w.Id == t.ParentId)).OfType<Shareme.Graph.Workspace>().Distinct())
+        {
+            if (workspace.WorkspaceKind != "collaboration")
+            {
+                report.Problem("workspace_with_tasks_now_collaboration", "MAM.Node", nodes.First(n => n.Value == workspace).Key);
+                workspace.WorkspaceKind = "collaboration";
             }
         }
 
         return placed;
     }
 
+    private Dictionary<long, long> _firstParent = [];
+    private readonly HashSet<long> _containers = [];
+
     private List<Shareme.Workspaces.WorkflowState> MapStates(Dictionary<long, Node> nodeOf, Dictionary<long, Guid> stateIds)
     {
-        var parent = source.Edges.Where(e => SemanticOf(e) == ParentChild).GroupBy(e => e.ToNodeId).ToDictionary(g => g.Key, g => g.MinBy(e => e.Id)!.FromNodeId);
         var transitions = source.Edges.Where(e => SemanticOf(e) == Transition).ToLookup(e => e.FromNodeId, e => e.ToNodeId);
         var result = new List<Shareme.Workspaces.WorkflowState>();
         foreach (var row in Work.States)
         {
-            if (!stateIds.TryGetValue(row.NodeId, out var id) || !nodeOf.TryGetValue(parent[row.NodeId], out var workspace))
+            if (!stateIds.TryGetValue(row.NodeId, out var id) || !nodeOf.TryGetValue(_firstParent[row.NodeId], out var workspace))
             {
-                report.Skip("states of workspaces not imported");
+                report.Skip(_containers.Contains(_firstParent.GetValueOrDefault(row.NodeId, -1)) ? "states of workspace containers" : "states of workspaces not imported");
                 continue;
             }
 
             var state = new Shareme.Workspaces.WorkflowState
             {
                 WorkspaceId = workspace.Id,
-                Name = Name(row.TranslationIdentifier, "State"),
+                Name = Cap(Name(row.TranslationIdentifier, "State"), 100),
                 SortIndex = row.SequenceNr,
                 IsDefault = row.IsDefault,
                 TenantId = target.TenantId,
@@ -595,6 +633,31 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             };
             Ids.Set(state, id);
             result.Add(state);
+        }
+
+        foreach (var board in result.GroupBy(s => s.WorkspaceId))
+        {
+            // exactly one column where new tasks start: the source default, else the first
+            var start = board.Where(s => s.IsDefault).OrderBy(s => s.SortIndex).FirstOrDefault() ?? board.MinBy(s => s.SortIndex)!;
+            foreach (var state in board)
+            {
+                state.IsDefault = state == start;
+            }
+
+            // with a workflow, a state nothing leads out of is where tasks end
+            if (board.Any(s => s.AllowedTargets.Count > 0))
+            {
+                foreach (var state in board.Where(s => s.AllowedTargets.Count == 0))
+                {
+                    state.IsDone = true;
+                }
+            }
+        }
+
+        var surviving = result.Select(s => s.Id).ToHashSet();
+        foreach (var task in nodeOf.Values.OfType<WorkTask>().Where(t => t.StateId is { } state && !surviving.Contains(state)))
+        {
+            task.StateId = null;
         }
 
         return result;
@@ -624,7 +687,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
                 result.Add(new VersionCandidate(
                     version.VersionNodeId, asset, SourceIds.For(Scope, "MAM.Node", version.VersionNodeId, identifiers.GetValueOrDefault(version.VersionNodeId)),
-                    version.Version, Cap(version.OriginalFilename is { Length: > 0 } name ? name : asset.Name, 400), original.DataId!, original.FileHash,
+                    version.Version, Cap(version.OriginalFilename is { Length: > 0 } name ? name : asset.Name, 255), original.DataId!, original.FileHash,
                     Utc(version.Created), version.Version == current));
             }
         }
@@ -639,6 +702,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var result = new List<Shareme.Workspaces.Comment>();
         foreach (var row in Work.Comments)
         {
+            if (row.Text is { Length: > 8000 })
+            {
+                report.Problem("comment_shortened", "MAM.Comment", row.NodeId);
+            }
+
             if (!parent.TryGetValue(row.NodeId, out var on) || !nodeOf.TryGetValue(on, out var node))
             {
                 report.Skip("comments of nodes not imported");
@@ -655,7 +723,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             {
                 NodeId = node.Id,
                 AuthorId = authorId,
-                Text = Cap(row.Text, 4000),
+                Text = Cap(row.Text, 8000),
                 TenantId = target.TenantId,
                 CreatedAt = row.CreatedAt is { } at ? Utc(at) : DateTimeOffset.UtcNow,
                 CreatedBy = authorId,
@@ -744,7 +812,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             }
 
             // Sharedien lets a value without context stand for every context; Shareme names one: the default
-            ctx = definition.HasContext ? ctx ?? _defaultContext : null;
+            ctx = definition.HasContext ? ctx ?? _defaultContext ?? VirtualDefaultContext : null;
 
             var values = collected.TryGetValue((owner, row.DefinitionId), out var list) ? list : collected[(owner, row.DefinitionId)] = [];
             if (row.ListValueId is { } listValue)

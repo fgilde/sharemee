@@ -139,7 +139,7 @@ internal sealed class RerenderHandler(CoworkeeDbContext db, IBackgroundJobs jobs
     }
 }
 
-internal static class RenditionPlan
+public static class RenditionPlan
 {
     /// <summary>The system renditions of the file type and the organisation's default types for the asset type.</summary>
     public static async Task<IReadOnlyList<string>> KindsAsync(CoworkeeDbContext db, Guid tenantId, string mimeType, string assetTypeKey, CancellationToken cancellationToken)

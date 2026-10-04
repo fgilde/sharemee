@@ -125,12 +125,37 @@ public static class SharedienImport
             return report;
         }
 
-        var versions = options.Blobs is { } blobs
-            ? await new BlobCopier(blobs, writer.Storage, await writer.FileTypesAsync(cancellationToken), report)
-                .CopyAsync(plan.Versions, await writer.ExistingVersionsAsync(plan.Versions.Select(v => v.VersionId), cancellationToken), options.Tenant, cancellationToken)
-            : [];
+        List<Shareme.Assets.AssetVersion> versions = [];
+        if (options.Blobs is { } blobs)
+        {
+            // the writer only inserts: files can only come together with their assets, never for assets of an earlier run
+            var existingAssets = await writer.ExistingNodesAsync(plan.Versions.Select(v => v.Asset.Id).Distinct(), cancellationToken);
+            var existingVersions = await writer.ExistingVersionsAsync(plan.Versions.Select(v => v.VersionId), cancellationToken);
+            foreach (var asset in plan.Versions.GroupBy(v => v.Asset.Id).Where(g => existingAssets.Contains(g.Key) && !g.Any(v => existingVersions.Contains(v.VersionId))))
+            {
+                report.Problem("asset_imported_without_files", "MAM.AssetVersion", asset.First().VersionNodeId);
+            }
+
+            versions = await new BlobCopier(blobs, writer.Storage, await writer.FileTypesAsync(cancellationToken), report)
+                .CopyAsync([.. plan.Versions.Where(v => !existingAssets.Contains(v.Asset.Id))], existingVersions, options.Tenant, cancellationToken);
+        }
+
+        if (report.Problems.Count > options.MaxProblems)
+        {
+            throw new InvalidOperationException($"{report.Problems.Count} problems exceed --max-problems {options.MaxProblems} after copying files; nothing was written (copied files are overwritten by the next run).");
+        }
+
         await writer.WriteAsync(plan, versions, report, cancellationToken);
-        await writer.RequestRenditionsAsync(versions, cancellationToken);
+        try
+        {
+            report.Written["rendition requests"] = await writer.RequestRenditionsAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // the import is committed; the next run requests what is still missing
+            report.Problem("renditions_not_requested", "import", 0);
+        }
+
         return report;
     }
 
