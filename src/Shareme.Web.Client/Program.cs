@@ -16,6 +16,7 @@ builder.Services.AddHttpClient<IMetadataApi, MetadataApi>(client => client.BaseA
 builder.Services.AddHttpClient<IRulesApi, RulesApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<IAiApi, AiApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<IRestrictionsApi, RestrictionsApi>(client => client.BaseAddress = baseAddress);
+builder.Services.AddHttpClient<Shareme.Web.Client.Drm.IDrmApi, Shareme.Web.Client.Drm.DrmApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<IDataApi, DataApi>(client =>
 {
     client.BaseAddress = baseAddress;

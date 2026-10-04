@@ -14,6 +14,7 @@
 @inject MudBlazor.Extensions.Services.MudExFileService Files
 @inject Shareme.Web.Client.Metadata.IDataApi Data
 @inject Shareme.Web.Client.Metadata.IAiApi Ai
+@inject Shareme.Web.Client.Drm.IDrmApi Drm
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
 
@@ -89,6 +90,12 @@ else if (_detail is not null)
             <MudText Typo="Typo.body2">@_selected.Count selected</MudText>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.DriveFileMove" OnClick="() => _moving = _children.Where(c => _selected.Contains(c.Id)).ToList()">Move</MudButton>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(SelectedAssets))" Disabled="SelectedAssets.Count == 0" data-testid="download-selected">Download</MudButton>
+            <MudMenu Size="Size.Small" Label="Add to license" StartIcon="@Icons.Material.Outlined.Gavel" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadLicensesAsync() : Task.CompletedTask" data-testid="add-to-license">
+                @foreach (var license in _licenses)
+                {
+                    <MudMenuItem OnClick="() => AddToLicenseAsync(license.Id)">@license.Name</MudMenuItem>
+                }
+            </MudMenu>
             <MudMenu Size="Size.Small" Label="Add to collection" StartIcon="@Icons.Material.Outlined.CollectionsBookmark" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadCollectionsAsync() : Task.CompletedTask" data-testid="add-to-collection">
                 @foreach (var collection in _collections)
                 {
@@ -246,6 +253,32 @@ else
     private bool _massEdit;
     private bool? _importDryRun;
     private IReadOnlyList<Shareme.Contracts.Automation.ExtractionDefinitionDto> _extractions = [];
+    private IReadOnlyList<Shareme.Contracts.Drm.LicenseDto> _licenses = [];
+
+    private async Task LoadLicensesAsync()
+    {
+        try
+        {
+            _licenses = await Drm.GetLicensesAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not manage licenses." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task AddToLicenseAsync(Guid license)
+    {
+        try
+        {
+            var updated = await Drm.AddAssetsAsync(license, SelectedAssets);
+            Snackbar.Add($"{updated.Name} now covers {updated.AssetCount} files.", Severity.Success);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
 
     private async Task LoadExtractionsAsync()
     {

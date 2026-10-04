@@ -3,6 +3,7 @@
     <InternalsVisibleTo Include="Shareme.Search" />
     <InternalsVisibleTo Include="Shareme.Assets" />
     <InternalsVisibleTo Include="Shareme.Automation" />
+    <InternalsVisibleTo Include="Shareme.Drm" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Graph\Shareme.Graph.csproj" />
   </ItemGroup>

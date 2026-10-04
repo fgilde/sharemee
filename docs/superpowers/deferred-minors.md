@@ -2,6 +2,15 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P6 (licensing)
+
+- [ ] "Today" for license periods and purchases is UTC; use a tenant time zone.
+- [ ] Offers searched for another day show that day's prices, a purchase always prices today.
+- [ ] Offer counts look at up to 20 000 licensed files per page; count per license in SQL for bigger licenses.
+- [ ] Overlapping buyouts of the same owner, license and currency add up; no overlap check.
+- [ ] IBAN and BIC are not validated; buyers may pick any context (as in Sharedien).
+- [ ] Concurrent adds of the same file to a license end in a 500 from the unique index.
+
 ## From P5d (restrictions, runs overview)
 
 - [ ] Restrictions follow tenant wide roles (direct and through groups), not roles granted on single folders or workspaces.

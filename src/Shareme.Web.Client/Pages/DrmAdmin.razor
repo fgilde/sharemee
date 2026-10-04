@@ -1,0 +1,307 @@
+@page "/admin/drm"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Drm
+@using Shareme.Web.Client.Drm
+@inject IDrmApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Licensing</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Licensing</MudText>
+
+<MudTabs Outlined="true">
+    <MudTabPanel Text="Licenses">
+        <MudSimpleTable Dense="true" Hover="true" data-testid="licenses">
+            <thead><tr><th>Name</th><th>Status</th><th>Rights</th><th>Period</th><th>Days</th><th>Files</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var license in _licenses)
+                {
+                    <tr data-license="@license.Name">
+                        <td>@license.Name</td>
+                        <td>@license.Status</td>
+                        <td>@string.Join(", ", license.Rights)</td>
+                        <td>@license.ValidFrom – @license.ValidUntil</td>
+                        <td>@license.PurchaseDays</td>
+                        <td>@license.AssetCount</td>
+                        <td style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => EditLicenseAsync(license)" />
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(License, license.Id))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudPaper Outlined="true" Class="pa-4 mt-4">
+            <MudText Typo="Typo.h6">@(_licenseId is null ? "New license" : "Edit license")</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_license.Name" Label="Name" data-testid="license-name" /></MudItem>
+                <MudItem xs="12" sm="8"><MudTextField @bind-Value="_license.Description" Label="Description" /></MudItem>
+                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_license.Rights" Label="Rights (comma separated)" /></MudItem>
+                <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="_license.From" Label="Valid from" /></MudItem>
+                <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="_license.Until" Label="Valid until" /></MudItem>
+                <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_license.Days" Label="Purchase days" Min="1" /></MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudSelect T="string" @bind-Value="_license.Status" Label="Status">
+                        @foreach (var status in LicenseStatuses.All)
+                        {
+                            <MudSelectItem Value="@status">@status</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+            <MudStack Row="true" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveLicenseAsync" data-testid="save-license">Save</MudButton>
+                @if (_licenseId is not null)
+                {
+                    <MudButton OnClick="() => { _licenseId = null; _license = new(); _buyouts = []; }">Cancel</MudButton>
+                }
+            </MudStack>
+
+            @if (_licenseId is { } licenseId)
+            {
+                <MudText Typo="Typo.subtitle1" Class="mt-4">Buyouts</MudText>
+                <MudText Typo="Typo.body2">Price = basis × (1 + fee %) × the percentage of the price list for the context or group. Files are added from the selection in Browse.</MudText>
+                <MudSimpleTable Dense="true" data-testid="buyouts">
+                    <thead><tr><th>Rights owner</th><th>Price list</th><th>Basis</th><th>Fee</th><th>Valid</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var buyout in _buyouts)
+                        {
+                            <tr>
+                                <td>@_owners.FirstOrDefault(o => o.Id == buyout.RightsOwnerId)?.Name</td>
+                                <td>@_priceLists.FirstOrDefault(p => p.Id == buyout.PriceListId)?.Name</td>
+                                <td>@buyout.Basis.ToString("N2") @buyout.Currency</td>
+                                <td>@buyout.FeePercentage %</td>
+                                <td>@buyout.ValidFrom – @buyout.ValidUntil</td>
+                                <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete buyout" OnClick="() => RunAsync(() => Api.DeleteBuyoutAsync(licenseId, buyout.Id))" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <MudGrid Class="mt-2">
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="Guid?" @bind-Value="_buyout.OwnerId" Label="Rights owner">
+                            @foreach (var owner in _owners)
+                            {
+                                <MudSelectItem T="Guid?" Value="owner.Id">@owner.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="Guid?" @bind-Value="_buyout.PriceListId" Label="Price list">
+                            @foreach (var list in _priceLists)
+                            {
+                                <MudSelectItem T="Guid?" Value="list.Id">@list.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="4" sm="2"><MudNumericField @bind-Value="_buyout.Basis" Label="Basis" Min="0" /></MudItem>
+                    <MudItem xs="4" sm="1"><MudTextField @bind-Value="_buyout.Currency" Label="Currency" MaxLength="3" /></MudItem>
+                    <MudItem xs="4" sm="1"><MudNumericField @bind-Value="_buyout.Fee" Label="Fee %" Min="0" /></MudItem>
+                    <MudItem xs="12" sm="2"><MudButton Variant="Variant.Outlined" OnClick="() => AddBuyoutAsync(licenseId)" Disabled="_buyout.OwnerId is null || _buyout.PriceListId is null">Add buyout</MudButton></MudItem>
+                </MudGrid>
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Rights owners">
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Name</th><th>Kind</th><th>Billing contact</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var owner in _owners)
+                {
+                    <tr>
+                        <td>@owner.Name</td>
+                        <td>@owner.Kind</td>
+                        <td>@_contacts.FirstOrDefault(c => c.Id == owner.BillingContactId)?.Name</td>
+                        <td>@(owner.IsActive ? "yes" : "no")</td>
+                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Owners, owner.Id))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
+            <MudTextField @bind-Value="_ownerName" Label="Name" />
+            <MudTextField @bind-Value="_ownerKind" Label="Kind" />
+            <MudSelect T="Guid?" @bind-Value="_ownerContact" Label="Billing contact" Clearable="true">
+                @foreach (var contact in _contacts)
+                {
+                    <MudSelectItem T="Guid?" Value="contact.Id">@contact.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Outlined" OnClick="() => RunAsync(() => Api.SaveOwnerAsync(null, new RightsOwnerRequest(_ownerName ?? string.Empty, _ownerKind, _ownerContact)))">Add</MudButton>
+        </MudStack>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Billing contacts">
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Name</th><th>E-mail</th><th>IBAN</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var contact in _contacts)
+                {
+                    <tr>
+                        <td>@contact.Name</td>
+                        <td>@contact.Email</td>
+                        <td>@contact.Iban</td>
+                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Contacts, contact.Id))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
+            <MudTextField @bind-Value="_contactName" Label="Name" />
+            <MudTextField @bind-Value="_contactEmail" Label="E-mail" />
+            <MudTextField @bind-Value="_contactIban" Label="IBAN" />
+            <MudButton Variant="Variant.Outlined" OnClick="() => RunAsync(() => Api.SaveContactAsync(null, new BillingContactRequest(_contactName ?? string.Empty, _contactEmail ?? string.Empty, Iban: _contactIban)))">Add</MudButton>
+        </MudStack>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Price lists">
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Name</th><th>Percentages</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var list in _priceLists)
+                {
+                    <tr>
+                        <td>@list.Name</td>
+                        <td>@string.Join(", ", list.Entries.Select(e => $"{e.ContextKey ?? _groups.FirstOrDefault(g => g.Id == e.GroupId)?.Name} {e.Percentage} %"))</td>
+                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(PriceLists, list.Id))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
+            <MudTextField @bind-Value="_priceListName" Label="Name" />
+            <MudTextField @bind-Value="_priceListEntries" Label="Percentages (context=120, group name=80; one per line)" Lines="3" />
+            <MudButton Variant="Variant.Outlined" OnClick="AddPriceListAsync">Add</MudButton>
+        </MudStack>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Context groups">
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Name</th><th>Contexts</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var group in _groups)
+                {
+                    <tr>
+                        <td>@group.Name</td>
+                        <td>@string.Join(", ", group.ContextKeys)</td>
+                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Groups, group.Id))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
+            <MudTextField @bind-Value="_groupName" Label="Name" />
+            <MudTextField @bind-Value="_groupContexts" Label="Context keys (comma separated)" />
+            <MudButton Variant="Variant.Outlined" OnClick="() => RunAsync(() => Api.SaveGroupAsync(null, new ContextGroupRequest(_groupName ?? string.Empty, Split(_groupContexts))))">Add</MudButton>
+        </MudStack>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private const string License = "licenses", Owners = "rights-owners", Contacts = "billing-contacts", PriceLists = "price-lists", Groups = "context-groups";
+    private IReadOnlyList<LicenseDto> _licenses = [];
+    private IReadOnlyList<RightsOwnerDto> _owners = [];
+    private IReadOnlyList<BillingContactDto> _contacts = [];
+    private IReadOnlyList<PriceListDto> _priceLists = [];
+    private IReadOnlyList<ContextGroupDto> _groups = [];
+    private IReadOnlyList<BuyoutDto> _buyouts = [];
+    private Guid? _licenseId, _ownerContact;
+    private LicenseForm _license = new();
+    private BuyoutForm _buyout = new();
+    private string? _ownerName, _ownerKind, _contactName, _contactEmail, _contactIban, _priceListName, _priceListEntries, _groupName, _groupContexts;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _licenses = await Api.GetLicensesAsync();
+            _owners = await Api.GetOwnersAsync();
+            _contacts = await Api.GetContactsAsync();
+            _priceLists = await Api.GetPriceListsAsync();
+            _groups = await Api.GetGroupsAsync();
+            _buyouts = _licenseId is { } id ? await Api.GetBuyoutsAsync(id) : [];
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Status == 403 ? "You may not manage licenses." : exception.Message, Severity.Warning);
+        }
+    }
+
+    private static IReadOnlyList<string> Split(string? text) => (text ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private async Task EditLicenseAsync(LicenseDto license)
+    {
+        _licenseId = license.Id;
+        _license = new LicenseForm
+        {
+            Name = license.Name, Description = license.Description, Rights = string.Join(", ", license.Rights), Days = license.PurchaseDays, Status = license.Status,
+            From = license.ValidFrom?.ToDateTime(TimeOnly.MinValue), Until = license.ValidUntil?.ToDateTime(TimeOnly.MinValue),
+        };
+        await LoadAsync();
+    }
+
+    private Task SaveLicenseAsync() => RunAsync(async () =>
+    {
+        var saved = await Api.SaveLicenseAsync(_licenseId, new LicenseRequest(_license.Name ?? string.Empty, _license.Description, Split(_license.Rights),
+            _license.From is { } from ? DateOnly.FromDateTime(from) : null, _license.Until is { } until ? DateOnly.FromDateTime(until) : null, _license.Days, _license.Status));
+        _licenseId = saved.Id;
+    });
+
+    private Task AddBuyoutAsync(Guid licenseId) => RunAsync(async () =>
+    {
+        await Api.SaveBuyoutAsync(licenseId, null, new BuyoutRequest(_buyout.OwnerId!.Value, _buyout.PriceListId!.Value, _buyout.Currency, _buyout.Basis, _buyout.Fee));
+        _buyout = new();
+    });
+
+    /// <summary>Lines like "dach=120" for a context key or "Europe=80" for a group name.</summary>
+    private Task AddPriceListAsync() => RunAsync(async () =>
+    {
+        var entries = new List<PriceListEntry>();
+        foreach (var line in (_priceListEntries ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2 && decimal.TryParse(parts[1], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var percentage))
+            {
+                entries.Add(_groups.FirstOrDefault(g => g.Name == parts[0]) is { } group ? new PriceListEntry(null, group.Id, percentage) : new PriceListEntry(parts[0], null, percentage));
+            }
+        }
+
+        await Api.SavePriceListAsync(null, new PriceListRequest(_priceListName ?? string.Empty, Entries: entries));
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private sealed class LicenseForm
+    {
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? Rights { get; set; }
+        public DateTime? From { get; set; }
+        public DateTime? Until { get; set; }
+        public int Days { get; set; } = 365;
+        public string Status { get; set; } = LicenseStatuses.Draft;
+    }
+
+    private sealed class BuyoutForm
+    {
+        public Guid? OwnerId { get; set; }
+        public Guid? PriceListId { get; set; }
+        public decimal Basis { get; set; }
+        public string Currency { get; set; } = "EUR";
+        public decimal Fee { get; set; }
+    }
+}

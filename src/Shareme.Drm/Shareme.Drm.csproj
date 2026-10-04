@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <CoworkeePackage Include="Coworkee.Mailing" />
+    <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
+  </ItemGroup>
+</Project>
