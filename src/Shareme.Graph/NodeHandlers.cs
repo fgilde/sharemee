@@ -112,7 +112,8 @@ internal sealed class NodeMapper(CoworkeeDbContext db)
         _typeKeys ??= await db.Set<NodeType>().AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Key, cancellationToken);
 }
 
-internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, NodeMapper mapper)
+internal sealed class NodeQueryHandlers(
+    CoworkeeDbContext db, ICurrentUser currentUser, NodeAccess access, NodeMapper mapper, Coworkee.Application.Authorization.IPermissionChecker permissions, TimeProvider clock)
     : IHandler<EnsureRoot, Result<NodeDto>>,
       IHandler<GetEntryPoints, Result<IReadOnlyList<NodeDto>>>,
       IHandler<GetNode, Result<NodeDetailDto>>,
@@ -157,7 +158,7 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
     public async Task<Result<NodeDetailDto>> HandleAsync(GetNode query, CancellationToken cancellationToken)
     {
         var node = await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == query.Id, cancellationToken);
-        if (node is null)
+        if (node is null || await NewsEmbargo.IsHiddenAsync(node, permissions, clock, cancellationToken))
         {
             return NodeErrors.NotFound;
         }

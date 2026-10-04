@@ -198,6 +198,16 @@ public sealed class Page : Node
 }
 
 /// <summary>Intranet news, shown from <see cref="PublishAt"/> until <see cref="ExpiresAt"/>.</summary>
+/// <summary>News before its publication or after its expiry are seen only by those who may edit them.</summary>
+public static class NewsEmbargo
+{
+    public static bool IsShown(News news, DateTimeOffset now) => news.PublishAt <= now && (news.ExpiresAt is null || news.ExpiresAt > now);
+
+    public static async Task<bool> IsHiddenAsync(Node node, Coworkee.Application.Authorization.IPermissionChecker permissions, TimeProvider clock, CancellationToken cancellationToken) =>
+        node is News news && !IsShown(news, clock.GetUtcNow())
+        && !await permissions.IsGrantedAsync(Shareme.Contracts.Graph.NodePermissions.Update, Shareme.Contracts.Graph.NodePermissions.ResourceType, node.Id, cancellationToken);
+}
+
 public sealed class News : Node
 {
     public override NodeSemantic Semantic => NodeSemantic.News;
