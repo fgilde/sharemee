@@ -61,12 +61,14 @@ public static class MetadataRules
     }
 }
 
-internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog, Restrictions restrictions)
+internal sealed class NodeMetadataHandlers(
+    CoworkeeDbContext db, MetadataCatalog catalog, Restrictions restrictions, Coworkee.Application.Authorization.IPermissionChecker permissions, TimeProvider clock)
     : IHandler<GetNodeMetadata, Result<NodeMetadataDto>>, IHandler<SetNodeMetadata, Result>
 {
     public async Task<Result<NodeMetadataDto>> HandleAsync(GetNodeMetadata query, CancellationToken cancellationToken)
     {
-        if (await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == query.Id, cancellationToken) is not { } node)
+        if (await db.Set<Node>().AsNoTracking().SingleOrDefaultAsync(n => n.Id == query.Id, cancellationToken) is not { } node
+            || await NewsEmbargo.IsHiddenAsync(node, permissions, clock, cancellationToken))
         {
             return Error.NotFound("nodes.not_found", "The node does not exist.");
         }

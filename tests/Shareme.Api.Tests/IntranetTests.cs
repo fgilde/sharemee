@@ -59,6 +59,9 @@ public sealed class IntranetTests(ApiFixture api) : IAsyncLifetime
             .EnsureSuccessStatusCode();
         (await stranger.GetFromJsonAsync<NewsSummaryDto[]>("/api/v1/news", Ct))!.Select(n => n.Title).ShouldBe(["Canteen menu", "Office closed Friday"]);
         (await stranger.GetAsync($"/api/v1/news/{embargoed.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await stranger.GetAsync($"/api/v1/nodes/{embargoed.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await stranger.GetAsync($"/api/v1/nodes/{embargoed.Id}/metadata", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await Admin.GetAsync($"/api/v1/nodes/{embargoed.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var visible = await stranger.GetFromJsonAsync<System.Text.Json.JsonElement>($"/api/v1/nodes/{_folder}/children", Ct);
         visible.GetProperty("items").EnumerateArray().Select(c => c.GetProperty("name").GetString()).ShouldNotContain("Merger");
         (await Admin.GetAsync($"/api/v1/news/{embargoed.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
