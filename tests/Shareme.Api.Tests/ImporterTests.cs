@@ -154,6 +154,22 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
             var derivations = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.Derivation>()), Ct);
             derivations.Select(d => d.VersionId).Distinct().ShouldBe([SourceIds.Derived(_setup.TenantId, "MAM.Node", 22)]);
+
+            // licensing: the license with its rights and period covers the photo; the buyout prices it through the partners' group
+            var license = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.License>()), Ct);
+            (license.Name, license.Rights.Single(), license.Status, license.ValidUntil).ShouldBe(("Editorial", "print", "active", (DateOnly?)new DateOnly(2026, 12, 31)));
+            (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.LicenseAsset>()), Ct)).AssetId.ShouldBe(asset.Id);
+            var buyout = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.Buyout>()), Ct);
+            (buyout.Currency, buyout.Basis, buyout.FeePercentage, buyout.LicenseId).ShouldBe(("EUR", 100m, 10m, license.Id));
+            var priceList = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.PriceList>()), Ct);
+            priceList.Entries.Single().Percentage.ShouldBe(50m);
+            var owner = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.RightsOwner>()), Ct);
+            owner.BillingContactId.ShouldNotBeNull();
         }
 
         (await reader.GetAsync($"/api/v1/nodes/{workspaceId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK); // owner through the workspace role
@@ -230,6 +246,16 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table MAM.AssetSet (AssetSetId bigint identity primary key, AssetSetNodeId bigint not null, AssetSetStatus int not null);
         create table MAM.AssetVersion (AssetVersionId bigint identity primary key, AssetVersionNodeId bigint not null, Created datetime2 not null default getutcdate(), OriginalFilename nvarchar(850) null, Version int not null);
         create table MAM.Edge (EdgeId bigint primary key, Identifier nvarchar(200) not null, FromNodeId bigint not null, ToNodeId bigint not null, EdgeTypeId bigint not null);
+        create table MAM.BillingContact (BillingContactId bigint primary key, NodeId bigint not null, Name nvarchar(200) not null, EmailAddress nvarchar(200) null, Status int not null);
+        create table MAM.RightsOwner (RightsOwnerId bigint primary key, NodeId bigint not null, Name nvarchar(200) not null, BillingContactId bigint null, Status int not null);
+        create table MAM.License (LicenseId bigint primary key, NodeId bigint not null, TranslationIdentifier nvarchar(80) null, Status int not null, PeriodStart datetime2 null, PeriodEnd datetime2 null);
+        create table MAM.UserContextGroup (UserContextGroupId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null);
+        create table MAM.UserContextGroupUserContext (UserContextGroupUserContext bigint identity primary key, UserContextGroupId bigint not null, UserContextId bigint not null);
+        create table MAM.PriceList (PriceListId bigint primary key, Identifier nvarchar(200) not null, Name nvarchar(200) not null, Description nvarchar(max) null, Status int not null);
+        create table MAM.PriceListUserContext (PriceListUserContextId bigint identity primary key, PriceListId bigint not null, UserContextId bigint null, UserContextGroupId bigint null, Percentage decimal(18,0) not null);
+        create table MAM.Currency (CurrencyId bigint primary key, ShortName nvarchar(200) not null);
+        create table MAM.Buyout (BuyoutId bigint primary key, Identifier nvarchar(200) not null, RightsOwnerId bigint not null, PriceListId bigint not null, LicenseId bigint not null, CurrencyId bigint null,
+            Basis decimal(18,0) not null, AdditionalFeePercentage decimal(18,0) not null, FromDate datetime2 null, ToDate datetime2 null);
         create table MAM.DerivationType (DerivationTypeId bigint primary key, Identifier nvarchar(200) not null, IsSystem bit not null default 1, IsDeleted bit not null default 0);
         create table MAM.AssetDerivation (AssetDerivationId bigint identity primary key, AssetVersionId bigint not null, DerivationTypeId bigint not null, DataId nvarchar(200) null, FileSize bigint null, FileHash nvarchar(850) null);
         create table MAM.Workspace (WorkspaceId bigint identity primary key, WorkspaceNodeId bigint not null, TranslationIdentifier nvarchar(80) null, IsTemplate bit not null default 0,
@@ -267,13 +293,22 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.Language (LanguageId, Identifier, IsDefaultLanguage) values (1, 'en-US', 1), (2, 'de-DE', 0);
         insert MAM.Translation (TranslationIdentifier, FieldName, LanguageId, TranslatedValue) values
             ('cat1', 'Name', 1, 'Marketing'), ('cat1', 'Name', 2, 'Vertrieb'), ('cn1', 'Name', 1, 'Widget'), ('nt1', 'Name', 1, 'Product'),
-            ('pd2', 'Name', 1, 'Category'), ('ws1', 'Name', 1, 'Campaign'), ('st1', 'Name', 1, 'To do'), ('lv1', 'Name', 1, 'Beach'), ('pv1', 'TextValue', 1, 'Hello'), ('pv1', 'TextValue', 2, 'Hallo');
+            ('pd2', 'Name', 1, 'Category'), ('li1', 'Name', 1, 'Editorial'), ('ws1', 'Name', 1, 'Campaign'), ('st1', 'Name', 1, 'To do'), ('lv1', 'Name', 1, 'Beach'), ('pv1', 'TextValue', 1, 'Hello'), ('pv1', 'TextValue', 2, 'Hallo');
         insert MAM.NodeType (NodeTypeId, Identifier, NodeSemantic, TranslationIdentifier, IsSystem) values
-            (1, 'Category', 1, null, 1), (2, 'AssetSet', 2, null, 1), (3, 'Version', 3, null, 1), (4, 'product', 1000, 'nt1', 0), (5, 'Workspace', 4, null, 1), (6, 'License', 10, null, 1), (7, 'State', 7, null, 1), (8, 'Task', 5, null, 1), (9, 'Comment', 6, null, 1);
+            (1, 'Category', 1, null, 1), (2, 'AssetSet', 2, null, 1), (3, 'Version', 3, null, 1), (4, 'product', 1000, 'nt1', 0), (5, 'Workspace', 4, null, 1), (6, 'License', 10, null, 1), (7, 'State', 7, null, 1), (8, 'Task', 5, null, 1), (9, 'Comment', 6, null, 1), (10, 'BillingContact', 8, null, 1), (11, 'RightsOwner', 9, null, 1), (12, 'License', 10, null, 1);
         insert MAM.EdgeType (EdgeTypeId, Identifier, EdgeSemantic, TranslationIdentifier, IsDirected, IsSystem) values
-            (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, null, 1, 0), (5, 'Transition', 9, null, 1, 1);
+            (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, null, 1, 0), (5, 'Transition', 9, null, 1, 1), (6, 'LicenseDrm', 10, null, 1, 1);
         insert MAM.Node (NodeId, Identifier, NodeTypeId, TenantId) values
-            (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7), (53, 'todo', 7, 7), (54, 'done', 7, 7), (55, 'brief', 8, 7), (56, 'draft', 2, 7), (57, 'remark', 9, 7), (58, 'lost-file', 2, 7), (59, 'lost-v1', 3, 7), (61, 'container', 5, 7), (62, 'container-state', 7, 7);
+            (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7), (53, 'todo', 7, 7), (54, 'done', 7, 7), (55, 'brief', 8, 7), (56, 'draft', 2, 7), (57, 'remark', 9, 7), (58, 'lost-file', 2, 7), (59, 'lost-v1', 3, 7), (61, 'container', 5, 7), (62, 'container-state', 7, 7), (70, 'billing', 10, 7), (71, 'owner', 11, 7), (72, 'licence', 12, 7);
+        insert MAM.BillingContact values (1, 70, 'Accounts', 'billing@owner.test', 1);
+        insert MAM.RightsOwner values (1, 71, 'Photo agency', 1, 1);
+        insert MAM.License values (1, 72, 'li1', 1, '2026-01-01', '2026-12-31');
+        insert MAM.UserContextGroup values (1, 'partners', null);
+        insert MAM.UserContextGroupUserContext (UserContextGroupId, UserContextId) values (1, 1);
+        insert MAM.PriceList values (1, 'standard', 'Standard', null, 1);
+        insert MAM.PriceListUserContext (PriceListId, UserContextGroupId, Percentage) values (1, 1, 50);
+        insert MAM.Currency values (1, 'eur');
+        insert MAM.Buyout values (1, 'bo1', 1, 1, 1, 1, 100, 10, null, null);
         insert MAM.Workspace (WorkspaceNodeId, TranslationIdentifier, WorkspaceType) values (50, 'ws1', 2), (61, null, 2);
         insert MAM.State (StateNodeId, SequenceNr, TranslationIdentifier, IsDefault) values (53, 1, 'st1', 1), (54, 2, null, 0), (62, 1, null, 1);
         insert MAM.Task (NodeId, Name, AssignedUserId, Status) values (55, 'Brief', 1, 0);
@@ -286,16 +321,17 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.AssetDerivation (AssetVersionId, DerivationTypeId, DataId, FileHash) values
             (1, 1, 'aaaa0000old', 'not-the-md5'), (2, 1, 'bbbb1111new', '__MD5__'), (2, 2, 'cccc2222thumb', null), (3, 1, 'dddd3333missing', null);
         insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1), (109, 'e109', 50, 53, 1), (110, 'e110', 50, 54, 1), (111, 'e111', 53, 55, 1), (112, 'e112', 55, 56, 1),
-            (113, 'e113', 55, 57, 1), (114, 'e114', 53, 54, 5), (115, 'e115', 11, 58, 1), (116, 'e116', 58, 59, 2), (117, 'e117', 61, 62, 1), (118, 'e118', 62, 50, 1);
+            (113, 'e113', 55, 57, 1), (114, 'e114', 53, 54, 5), (115, 'e115', 11, 58, 1), (116, 'e116', 58, 59, 2), (117, 'e117', 61, 62, 1), (118, 'e118', 62, 50, 1), (119, 'e119', 72, 20, 6);
         insert MAM.PropertyGroup (PropertyGroupId, Identifier) values (1, 'general');
         insert MAM.PropertyDefinition (PropertyDefinitionId, Identifier, PropertyGroupId, TranslationIdentifier, ValueType, HasListValues, IsLanguageDependant, IsSystemProperty) values
-            (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0), (7, 'claim', 1, null, 0, 0, 0, 0);
+            (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0), (7, 'claim', 1, null, 0, 0, 0, 0), (8, 'license_rights', null, null, 0, 1, 0, 1);
         update MAM.PropertyDefinition set HasUserContext = 1 where PropertyDefinitionId = 7;
         insert MAM.PropertyDefinitionNodeType (PropertyDefinitionId, NodeTypeId) values (1, 2), (2, 2), (3, 2), (3, 1), (5, 3), (6, 6), (7, 3);
-        insert MAM.PropertyListValue (PropertyListValueId, Identifier, PropertyDefinitionId, SortKey, TranslationIdentifier) values (1, 'beach', 2, 1, 'lv1');
-        insert MAM.Property values (1, 22, 1, 0), (2, 22, 2, 0), (3, 22, 3, 0), (4, 21, 3, 0), (5, 10, 3, 0), (6, 22, 4, 0), (7, 22, 5, 0), (8, 22, 7, 0);
+        insert MAM.PropertyListValue (PropertyListValueId, Identifier, PropertyDefinitionId, SortKey, TranslationIdentifier) values (1, 'beach', 2, 1, 'lv1'), (2, 'print', 8, 1, null);
+        insert MAM.Property values (1, 22, 1, 0), (2, 22, 2, 0), (3, 22, 3, 0), (4, 21, 3, 0), (5, 10, 3, 0), (6, 22, 4, 0), (7, 22, 5, 0), (8, 22, 7, 0), (9, 72, 8, 0);
         insert MAM.PropertyValue (PropertyValueId, PropertyId, PropertyListValueId, ValueInt, ValueText, TranslationIdentifier) values
             (1, 1, null, null, null, 'pv1'), (2, 2, 1, null, null, null), (3, 3, null, 5, null, null), (4, 4, null, 3, null, null), (9, 5, null, null, 'not a number', null), (6, 6, null, 1234, null, null), (7, 7, null, null, 'Ansel', null);
         insert MAM.PropertyValue (PropertyValueId, PropertyId, ValueText, UserContextId) values (8, 8, 'Best in class', 1);
+        insert MAM.PropertyValue (PropertyValueId, PropertyId, PropertyListValueId) values (10, 9, 2);
         """;
 }
