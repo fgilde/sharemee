@@ -29,7 +29,7 @@
                 <div class="mb-2" data-person="@person.DisplayName">
                     <b>@person.DisplayName</b>
                     <MudText Typo="Typo.caption" Class="d-block">@person.Position @person.Department</MudText>
-                    @if (person.Email is { } email) { <MudLink Href="@($"mailto:{email}")" Typo="Typo.caption">@email</MudLink> }
+                    @if (IPeopleApi.MailTo(person.Email) is { } mail) { <MudLink Href="@mail" Typo="Typo.caption">@person.Email</MudLink> }
                 </div>
             }
             @if (result.People.Count == 0) { <MudText Typo="Typo.body2">Nobody found.</MudText> }

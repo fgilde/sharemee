@@ -58,7 +58,14 @@ public sealed record HomeLayoutRequest(IReadOnlyList<string> Widgets);
 public sealed record HomeTaskDto(Guid Id, Guid WorkspaceId, string WorkspaceName, string Title, DateOnly? DueDate);
 
 /// <summary>A member of the tenant as the people directory shows them.</summary>
-public sealed record PersonDto(Guid UserId, string DisplayName, string? Email, string? Department, string? Position, string? Phone, string? Location, string? About, bool HasAvatar);
+/// <summary><see cref="AvatarVersion"/> changes with each picture, so its URL can be cached for long.</summary>
+public sealed record PersonDto(Guid UserId, string DisplayName, string? Email, string? Department, string? Position, string? Phone, string? Location, string? About, bool HasAvatar, string? AvatarVersion = null);
+
+public static class PeoplePermissions
+{
+    /// <summary>See the people directory with contact details.</summary>
+    public const string View = "People.View";
+}
 
 public sealed record ProfileRequest(string? Department = null, string? Position = null, string? Phone = null, string? Location = null, string? About = null);
 

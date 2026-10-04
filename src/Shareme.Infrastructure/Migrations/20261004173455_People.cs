@@ -17,6 +17,7 @@ namespace Shareme.Infrastructure.Migrations
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     Department = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     Position = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     Phone = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),

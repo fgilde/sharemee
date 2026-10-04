@@ -29,6 +29,7 @@ public sealed class ShareMeKnowledgeModule : CoworkeeModule, IWebModule
     {
         context.Services.AddMessagingFromAssembly(typeof(ShareMeKnowledgeModule).Assembly);
         context.Services.AddSingleton<IModelContributor, KnowledgeModelContributor>();
+        context.Services.AddSingleton<IPermissionDefinitionContributor, KnowledgePermissionDefinitions>();
     }
 
     public void ConfigureApplication(WebApplication app)
@@ -65,6 +66,12 @@ public sealed class PageVersion : AuditedEntity, IMultiTenant
     public string? Comment { get; set; }
 
     public Guid TenantId { get; set; }
+}
+
+internal sealed class KnowledgePermissionDefinitions : IPermissionDefinitionContributor
+{
+    public void Define(PermissionDefinitionContext context) =>
+        context.Group("People", "People").Add(PeoplePermissions.View, "See the people directory with contact details");
 }
 
 internal sealed class KnowledgeModelContributor : IModelContributor

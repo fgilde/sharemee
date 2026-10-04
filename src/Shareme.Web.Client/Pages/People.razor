@@ -48,7 +48,7 @@
                     <CardHeaderAvatar>
                         @if (person.HasAvatar)
                         {
-                            <MudAvatar><MudImage Src="@IPeopleApi.AvatarUrl(person.UserId)" Alt="" /></MudAvatar>
+                            <MudAvatar><MudImage Src="@IPeopleApi.AvatarUrl(person)" Alt="" /></MudAvatar>
                         }
                         else
                         {
@@ -61,15 +61,19 @@
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent Class="pt-0">
-                    @if (person.Email is { } email) { <div><MudLink Href="@($"mailto:{email}")">@email</MudLink></div> }
+                    @if (person.Email is { } email) { <div>@if (IPeopleApi.MailTo(email) is { } mail) { <MudLink Href="@mail">@email</MudLink> } else { @email }</div> }
                     @if (person.Phone is { } phone) { <div>@phone</div> }
                     @if (person.Location is { } location) { <MudText Typo="Typo.caption">@location</MudText> }
-                    @if (person.About is { } about) { <MudText Typo="Typo.body2" Class="mt-1">@about</MudText> }
+                    @if (person.About is { } about) { <MudText Typo="Typo.body2" Class="mt-1" Style="white-space:pre-line">@about</MudText> }
                 </MudCardContent>
             </MudCard>
         </MudItem>
     }
 </MudGrid>
+@if (_people.Count > 0 && _people.Count % 50 == 0)
+{
+    <MudButton Class="mt-2" OnClick="MoreAsync">More</MudButton>
+}
 
 @code {
     private IReadOnlyList<PersonDto> _people = [];
@@ -142,8 +146,27 @@
 
     private async Task RemoveAvatarAsync()
     {
-        await Api.SetAvatarAsync(null);
-        await LoadAsync();
+        try
+        {
+            await Api.SetAvatarAsync(null);
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task MoreAsync()
+    {
+        try
+        {
+            _people = [.. _people, .. await Api.FindAsync(_search, _people.Count)];
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
     }
 
     private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));

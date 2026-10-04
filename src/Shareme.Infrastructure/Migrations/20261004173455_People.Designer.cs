@@ -12,7 +12,7 @@ using Shareme.Infrastructure;
 namespace Shareme.Infrastructure.Migrations
 {
     [DbContext(typeof(ShareMeDbContext))]
-    [Migration("20261004172757_People")]
+    [Migration("20261004173455_People")]
     partial class People
     {
         /// <inheritdoc />
@@ -3618,6 +3618,12 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("UserId");
 

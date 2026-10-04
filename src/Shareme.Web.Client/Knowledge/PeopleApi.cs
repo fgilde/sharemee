@@ -15,7 +15,10 @@ public interface IPeopleApi
 
     Task<GlobalSearchDto> SearchEverythingAsync(string term, CancellationToken cancellationToken = default);
 
-    static string AvatarUrl(Guid userId) => $"api/v1/people/{userId}/avatar";
+    static string AvatarUrl(PersonDto person) => $"api/v1/people/{person.UserId}/avatar?v={person.AvatarVersion}";
+
+    /// <summary>A mailto link only for plain addresses, so nothing can add cc or body fields.</summary>
+    static string? MailTo(string? email) => email is { Length: > 0 } && email.IndexOfAny(['?', '&', '%', ' ']) < 0 ? $"mailto:{email}" : null;
 }
 
 internal sealed class PeopleApi(HttpClient http) : ApiClientBase(http), IPeopleApi
