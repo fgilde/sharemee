@@ -20,7 +20,9 @@ public sealed record ImportPlan(
     IdentityPlan Identity,
     IReadOnlyList<Coworkee.Identity.Domain.ResourcePermission> NodePermissions,
     IReadOnlyList<UserContext> UserContexts,
-    IReadOnlyList<Restriction> Restrictions);
+    IReadOnlyList<Restriction> Restrictions,
+    IReadOnlyList<Shareme.Workspaces.WorkflowState> States,
+    IReadOnlyList<Shareme.Workspaces.Comment> Comments);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -44,6 +46,9 @@ public sealed record MapTarget(Guid TenantId, Folder Root)
 
     public IReadOnlySet<string> ExistingGroupNames { get; init; } = new HashSet<string>();
 
+    /// <summary>The tenant's workspace roles by key (owner, collaborator), as far as they exist.</summary>
+    public IReadOnlyDictionary<string, Guid> WorkspaceRoles { get; init; } = new Dictionary<string, Guid>();
+
     public IReadOnlyDictionary<Guid, string> KeysOf(string kind) => Keys.TryGetValue(kind, out var keys) ? keys : new Dictionary<Guid, string>();
 }
 
@@ -61,7 +66,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 {
     // Sharedien NodeTypeSemantic and EdgeTypeSemantic values
     private const int Category = 1, AssetSet = 2, Version = 3, Workspace = 4, Task = 5, CustomEntity = 1000;
-    private const int ParentChild = 1, Link = 3, Translation = 5, Variant = 6, Licence = 7, Duplicate = 8, CustomRelation = 0;
+    private const int ParentChild = 1, Link = 3, Translation = 5, Variant = 6, Licence = 7, Duplicate = 8, Transition = 9, CustomRelation = 0;
 
     private readonly Dictionary<long, string> _languageCodes = source.Languages.ToDictionary(l => l.Id, l => LanguageCode(l.Identifier));
     private readonly string _defaultLanguage = source.Languages.FirstOrDefault(l => l.IsDefault) is { } d ? LanguageCode(d.Identifier) : "en";
@@ -100,7 +105,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
         var contexts = MapContexts(out var contextKeyOf);
         var definitions = MapDefinitions(groupIds, typeOf, out var definitionOf, out var listKeyOf);
-        var nodes = MapNodes(typeOf, out var nodeOf);
+        var nodes = MapNodes(typeOf, identity, out var nodeOf, out var stateIds, out var taskLinks);
         foreach (var row in source.Nodes)
         {
             if (row.CreateUser is { } creator && identity.UserByName.TryGetValue(creator, out var userId) && nodeOf.TryGetValue(row.Id, out var created))
@@ -110,7 +115,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         }
 
         var nodePermissions = identityMapper.MapNodePermissions(identity, nodeOf.ToDictionary(n => n.Key, n => n.Value.Id));
-        var edges = MapEdges(nodeOf, edgeTypeOf);
+        var edges = MapEdges(nodeOf, edgeTypeOf, taskLinks);
+        var states = MapStates(nodeOf, stateIds);
+        var comments = MapComments(nodeOf, identity);
         MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
             [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf);
@@ -122,9 +129,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["property definitions"] = definitions.Count;
         report.Mapped["nodes"] = nodes.Count;
         report.Mapped["edges"] = edges.Count;
+        report.Mapped["workflow states"] = states.Count;
+        report.Mapped["comments"] = comments.Count;
         report.Mapped["user contexts"] = contexts.Count;
         report.Mapped["restrictions"] = restrictions.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments);
     }
 
     private List<DataLanguage> MapLanguages()
@@ -235,6 +244,12 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                     break;
                 case AssetSet:
                     typeOf[row.Id] = (NodeType.AssetTypeId, "asset", AssetSet);
+                    break;
+                case Workspace:
+                    typeOf[row.Id] = (NodeType.WorkspaceTypeId, "workspace", Workspace);
+                    break;
+                case Task:
+                    typeOf[row.Id] = (NodeType.TaskTypeId, "task", Task);
                     break;
                 case CustomEntity:
                     var type = Tenant(new NodeType { Key = string.Empty, Name = Name(row.TranslationIdentifier, row.Identifier), Semantic = NodeSemantic.Custom },
@@ -379,16 +394,23 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         return keys;
     }
 
-    private List<Node> MapNodes(Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf, out Dictionary<long, Node> nodeOf)
+    private SourceWorkspaces Work => source.Workspaces ?? SourceWorkspaces.Empty;
+
+    private List<Node> MapNodes(
+        Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf, IdentityPlan identity, out Dictionary<long, Node> nodeOf,
+        out Dictionary<long, Guid> stateIds, out List<(long Task, long Asset)> taskLinks)
     {
-        nodeOf = [];
+        var nodes = new Dictionary<long, Node>();
+        nodeOf = nodes;
         var latest = source.Versions.GroupBy(v => v.AssetNodeId).ToDictionary(g => g.Key, g => g.MaxBy(v => v.Version)!);
+        var workspaces = Work.Workspaces.ToDictionary(w => w.NodeId);
+        var tasks = Work.Tasks.ToDictionary(t => t.NodeId);
         var usedIds = new HashSet<Guid>();
         foreach (var row in source.Nodes)
         {
             if (!typeOf.TryGetValue(row.NodeTypeId, out var type))
             {
-                continue; // versions, workspaces, states, DRM objects: other phases
+                continue; // versions, states, comments, DRM objects: mapped elsewhere or in later phases
             }
 
             Node node = type.Semantic switch
@@ -399,8 +421,30 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                     Name = Cap(latest.TryGetValue(row.Id, out var version) && version.OriginalFilename is { Length: > 0 } file ? file : row.Identifier, 400),
                     Status = row.AssetSetStatus == 2 ? "duplicate" : "importing",
                 },
+                Workspace when workspaces.TryGetValue(row.Id, out var w) => new Shareme.Graph.Workspace
+                {
+                    Name = Name(w.TranslationIdentifier, row.Identifier),
+                    Names = Names(w.TranslationIdentifier),
+                    WorkspaceKind = w.Type switch { 0 => "upload", 1 => "collection", _ => "collaboration" },
+                    IsTemplate = w.IsTemplate,
+                    CopyMetadataToAssets = w.CopyProperties,
+                },
+                Task when tasks.TryGetValue(row.Id, out var t) => new WorkTask
+                {
+                    Name = Cap(t.Name is { Length: > 0 } taskName ? taskName : row.Identifier, 400),
+                    Description = t.Description is { } description ? Cap(description, 8000) : null,
+                    DueDate = t.DueDate is { } due ? DateOnly.FromDateTime(due) : null,
+                    AssigneeIds = t.AssignedUserId is { } assignee && identity.UserIds.TryGetValue(assignee, out var user) ? [user] : [],
+                    CompletedAt = t.Status == 1 ? Utc(row.MutDate ?? row.CreateDate) : null,
+                },
+                Workspace or Task => null!,
                 _ => new CustomNode { Name = Name(row.TranslationIdentifier, row.Identifier), Names = Names(row.TranslationIdentifier) },
             };
+            if (node is null)
+            {
+                report.Problem("missing_detail_row", "MAM.Node", row.Id);
+                continue;
+            }
 
             var id = SourceIds.For(Scope, "MAM.Node", row.Id, row.Identifier);
             if (!usedIds.Add(id))
@@ -417,45 +461,78 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             node.InterruptInheritance = row.InterruptInheritance;
             node.CreatedAt = Utc(row.CreateDate);
             node.ModifiedAt = row.MutDate is { } modified ? Utc(modified) : null;
-            nodeOf[row.Id] = node;
+            nodes[row.Id] = node;
         }
 
-        // Shareme is a tree: the first parent wins, further parents become links. A first parent of a later phase
-        // (workspace, task) holds the node back with its subtree: placed under the root it would be visible to all.
+        // first parent edge of every node; states are no nodes in Shareme: a child of a state hangs at the state's workspace
         var sourceNodes = source.Nodes.Select(n => n.Id).ToHashSet();
-        var parentOf = new Dictionary<long, long>();
-        var deferred = new HashSet<long>();
+        var states = Work.States.Select(st => st.NodeId).ToHashSet();
+        var firstParent = new Dictionary<long, long>();
+        var extraParents = new List<EdgeRow>();
         foreach (var edge in source.Edges.Where(e => SemanticOf(e) == ParentChild).OrderBy(e => e.Id))
         {
-            if (!nodeOf.ContainsKey(edge.ToNodeId) || !sourceNodes.Contains(edge.FromNodeId))
+            if (sourceNodes.Contains(edge.FromNodeId) && !firstParent.TryAdd(edge.ToNodeId, edge.FromNodeId))
+            {
+                extraParents.Add(edge);
+            }
+        }
+
+        var identifiers = source.Nodes.ToDictionary(n => n.Id, n => n.Identifier);
+        stateIds = Work.States.Where(st => firstParent.TryGetValue(st.NodeId, out var w) && nodes.ContainsKey(w))
+            .ToDictionary(st => st.NodeId, st => SourceIds.For(Scope, "MAM.State", st.NodeId, identifiers.GetValueOrDefault(st.NodeId)));
+        taskLinks = [];
+        var parentOf = new Dictionary<long, long>();
+        var deferred = new HashSet<long>();
+        foreach (var (child, from) in firstParent)
+        {
+            if (!nodes.TryGetValue(child, out var node))
             {
                 continue;
             }
 
-            if (parentOf.ContainsKey(edge.ToNodeId) || deferred.Contains(edge.ToNodeId))
+            var parent = from;
+            if (states.Contains(parent))
             {
-                if (nodeOf.ContainsKey(edge.FromNodeId))
+                if (node is WorkTask task && stateIds.TryGetValue(parent, out var stateId))
                 {
-                    report.Problem("multi_parent", "MAM.Edge", edge.Id);
+                    task.StateId = stateId;
                 }
+
+                parent = firstParent.GetValueOrDefault(parent, -1);
             }
-            else if (nodeOf.ContainsKey(edge.FromNodeId))
+
+            if (nodes.TryGetValue(parent, out var parentNode) && parentNode is WorkTask)
             {
-                parentOf[edge.ToNodeId] = edge.FromNodeId;
+                // files of a task live in its workspace and stay linked to the task
+                taskLinks.Add((parent, child));
+                parent = firstParent.GetValueOrDefault(parent, -1);
+                parent = states.Contains(parent) ? firstParent.GetValueOrDefault(parent, -1) : parent;
             }
-            else
+
+            if (nodes.ContainsKey(parent))
             {
-                deferred.Add(edge.ToNodeId);
+                parentOf[child] = parent;
             }
+            else if (sourceNodes.Contains(parent))
+            {
+                deferred.Add(child);
+            }
+        }
+
+        foreach (var edge in extraParents.Where(e => nodes.ContainsKey(e.FromNodeId) && nodes.ContainsKey(e.ToNodeId)))
+        {
+            report.Problem("multi_parent", "MAM.Edge", edge.Id);
         }
 
         var children = parentOf.ToLookup(p => p.Value, p => p.Key);
         var placed = new List<Node>();
-        var queue = new Queue<(long Id, Node Parent)>(nodeOf.Keys.Where(id => !parentOf.ContainsKey(id) && !deferred.Contains(id)).Select(id => (id, (Node)target.Root)));
+        var queue = new Queue<(long Id, Node? Parent)>(nodes
+            .Where(n => !parentOf.ContainsKey(n.Key) && !deferred.Contains(n.Key))
+            .Select(n => (n.Key, n.Value is Shareme.Graph.Workspace ? null : (Node?)target.Root)));
         while (queue.TryDequeue(out var item))
         {
-            var node = nodeOf[item.Id];
-            node.PlaceUnder(item.Parent);
+            var node = nodes[item.Id];
+            node.PlaceUnder(node is Shareme.Graph.Workspace ? null : item.Parent); // a workspace is a root of its own
             placed.Add(node);
             foreach (var child in children[item.Id])
             {
@@ -464,26 +541,107 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         }
 
         var placedIds = placed.Select(n => n.Id).ToHashSet();
-        foreach (var lost in nodeOf.Where(n => !placedIds.Contains(n.Value.Id)).Select(n => n.Key).ToList())
+        foreach (var lost in nodes.Where(n => !placedIds.Contains(n.Value.Id)).Select(n => n.Key).ToList())
         {
             var top = lost;
             var steps = 0;
-            while (parentOf.TryGetValue(top, out var parent) && steps++ < nodeOf.Count)
+            while (parentOf.TryGetValue(top, out var parent) && steps++ < nodes.Count)
             {
                 top = parent;
             }
 
             report.Problem(deferred.Contains(top) ? "deferred_parent" : "cycle", "MAM.Node", lost);
-            nodeOf.Remove(lost);
+            nodes.Remove(lost);
+        }
+
+        foreach (var (sourceId, node) in nodes)
+        {
+            if (node is Shareme.Graph.Workspace workspace && workspaces[sourceId].FinalizationNodeId is { } folder && nodes.TryGetValue(folder, out var finalization))
+            {
+                workspace.FinalizationFolderId = finalization.Id;
+            }
         }
 
         return placed;
     }
 
-    private List<Edge> MapEdges(Dictionary<long, Node> nodeOf, Dictionary<long, Guid> edgeTypeOf)
+    private List<Shareme.Workspaces.WorkflowState> MapStates(Dictionary<long, Node> nodeOf, Dictionary<long, Guid> stateIds)
+    {
+        var parent = source.Edges.Where(e => SemanticOf(e) == ParentChild).GroupBy(e => e.ToNodeId).ToDictionary(g => g.Key, g => g.MinBy(e => e.Id)!.FromNodeId);
+        var transitions = source.Edges.Where(e => SemanticOf(e) == Transition).ToLookup(e => e.FromNodeId, e => e.ToNodeId);
+        var result = new List<Shareme.Workspaces.WorkflowState>();
+        foreach (var row in Work.States)
+        {
+            if (!stateIds.TryGetValue(row.NodeId, out var id) || !nodeOf.TryGetValue(parent[row.NodeId], out var workspace))
+            {
+                report.Skip("states of workspaces not imported");
+                continue;
+            }
+
+            var state = new Shareme.Workspaces.WorkflowState
+            {
+                WorkspaceId = workspace.Id,
+                Name = Name(row.TranslationIdentifier, "State"),
+                SortIndex = row.SequenceNr,
+                IsDefault = row.IsDefault,
+                TenantId = target.TenantId,
+                AllowedTargets = [.. transitions[row.NodeId].Where(stateIds.ContainsKey).Select(t => stateIds[t]).Distinct()],
+            };
+            Ids.Set(state, id);
+            result.Add(state);
+        }
+
+        return result;
+    }
+
+    private List<Shareme.Workspaces.Comment> MapComments(Dictionary<long, Node> nodeOf, IdentityPlan identity)
+    {
+        var parent = source.Edges.Where(e => SemanticOf(e) == ParentChild).GroupBy(e => e.ToNodeId).ToDictionary(g => g.Key, g => g.MinBy(e => e.Id)!.FromNodeId);
+        var result = new List<Shareme.Workspaces.Comment>();
+        foreach (var row in Work.Comments)
+        {
+            if (!parent.TryGetValue(row.NodeId, out var on) || !nodeOf.TryGetValue(on, out var node))
+            {
+                report.Skip("comments of nodes not imported");
+                continue;
+            }
+
+            if (row.CreatedBy is not { } author || !identity.UserByName.TryGetValue(author, out var authorId) || string.IsNullOrWhiteSpace(row.Text))
+            {
+                report.Problem("comment_without_author_or_text", "MAM.Comment", row.NodeId);
+                continue;
+            }
+
+            var comment = new Shareme.Workspaces.Comment
+            {
+                NodeId = node.Id,
+                AuthorId = authorId,
+                Text = Cap(row.Text, 4000),
+                TenantId = target.TenantId,
+                CreatedAt = row.CreatedAt is { } at ? Utc(at) : DateTimeOffset.UtcNow,
+                CreatedBy = authorId,
+            };
+            Ids.Set(comment, SourceIds.Derived(Scope, "MAM.Comment", row.NodeId));
+            result.Add(comment);
+        }
+
+        return result;
+    }
+
+    private List<Edge> MapEdges(Dictionary<long, Node> nodeOf, Dictionary<long, Guid> edgeTypeOf, List<(long Task, long Asset)> taskLinks)
     {
         var edges = new List<Edge>();
         var seen = new HashSet<(Guid, Guid, Guid)>();
+        foreach (var (task, asset) in taskLinks.Where(l => nodeOf.ContainsKey(l.Task) && nodeOf.ContainsKey(l.Asset)))
+        {
+            if (seen.Add((EdgeType.LinkId, nodeOf[task].Id, nodeOf[asset].Id)))
+            {
+                var link = new Edge { EdgeTypeId = EdgeType.LinkId, FromNodeId = nodeOf[task].Id, ToNodeId = nodeOf[asset].Id, TenantId = target.TenantId, CreatedAt = DateTimeOffset.UtcNow };
+                Ids.Set(link, SourceIds.Derived(Scope, "TaskLink:" + task, asset));
+                edges.Add(link);
+            }
+        }
+
         foreach (var row in source.Edges.OrderBy(e => e.Id))
         {
             var semantic = SemanticOf(row);
@@ -497,7 +655,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             if (semantic == ParentChild)
             {
                 // the parent itself is the tree; a second parent stays reachable as a link
-                if (to.ParentId == from.Id)
+                if (to.ParentId == from.Id || from is WorkTask)
                 {
                     continue;
                 }

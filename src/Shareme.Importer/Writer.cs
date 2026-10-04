@@ -68,6 +68,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
         var definitions = await db.Set<PropertyDefinition>().Select(d => d.Id).ToListAsync(cancellationToken);
         var listValues = await db.Set<PropertyListValue>().Where(v => definitions.Contains(v.DefinitionId)).Select(v => new { v.Id, v.DefinitionId, v.Key }).ToListAsync(cancellationToken);
         var languages = await db.Set<DataLanguage>().Select(l => new { l.Code, l.IsDefault }).ToListAsync(cancellationToken);
+        var workspaceRoles = await db.Set<Shareme.Workspaces.WorkspaceRoleBinding>().ToDictionaryAsync(b => b.Key, b => b.RoleId, cancellationToken);
         var users = await db.Set<User>().Where(u => u.NormalizedUserName != null).Select(u => new { u.NormalizedUserName, u.Id, u.TenantId }).ToListAsync(cancellationToken);
         var admin = await db.Set<Role>().Where(r => r.IsSystem && r.Name == SystemRoles.Admin && (r.TenantId == tenantId || r.TenantId == null))
             .OrderByDescending(r => r.TenantId).Select(r => (Guid?)r.Id).FirstOrDefaultAsync(cancellationToken);
@@ -86,6 +87,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             HasDefaultLanguage = languages.Any(l => l.IsDefault),
             ExistingUsers = users.ToDictionary(u => u.NormalizedUserName!, u => (u.Id, u.TenantId)),
             AdminRoleId = admin,
+            WorkspaceRoles = workspaceRoles,
             ExistingRoleNames = (await db.Set<Role>().Where(r => r.TenantId == null || r.TenantId == tenantId).Select(r => r.Name!).ToListAsync(cancellationToken))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase),
             ExistingGroupNames = (await db.Set<UserGroup>().Select(g => g.Name).ToListAsync(cancellationToken)).ToHashSet(StringComparer.OrdinalIgnoreCase),
@@ -108,6 +110,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("profiles", plan.Identity.Profiles, report, cancellationToken, p => p.UserId);
             await InsertNewAsync("roles", plan.Identity.Roles, report, cancellationToken, r => r.Id);
             await InsertNewAsync("permission grants", plan.Identity.Grants, report, cancellationToken);
+            await InsertNewAsync("workspace roles", plan.Identity.WorkspaceRoleBindings ?? [], report, cancellationToken);
             await InsertNewAsync("groups", plan.Identity.Groups, report, cancellationToken);
             await InsertNewAsync("languages", plan.Languages, report, cancellationToken);
             await InsertNewAsync("node types", plan.NodeTypes, report, cancellationToken);
@@ -117,6 +120,8 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("property definitions", plan.PropertyDefinitions, report, cancellationToken);
             await InsertNewAsync("nodes", plan.Nodes, report, cancellationToken); // parents come first: the plan is in tree order
             await InsertNewAsync("edges", plan.Edges, report, cancellationToken);
+            await InsertNewAsync("workflow states", plan.States, report, cancellationToken);
+            await InsertNewAsync("comments", plan.Comments, report, cancellationToken);
             await InsertNewAsync("node permissions", plan.NodePermissions, report, cancellationToken);
             await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
             await _transaction.CommitAsync(cancellationToken);

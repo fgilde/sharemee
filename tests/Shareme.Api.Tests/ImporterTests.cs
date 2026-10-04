@@ -49,21 +49,21 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         (await Admin.PostAsJsonAsync("/api/v1/metadata/languages", new DataLanguageDto("de", "Deutsch", true), Ct)).EnsureSuccessStatusCode();
         var plan = await SharedienImport.RunAsync(Options(write: false), Ct);
         plan.Written.ShouldBeEmpty();
-        plan.Mapped["nodes"].ShouldBe(4);
+        plan.Mapped["nodes"].ShouldBe(9);
         (await Admin.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
         var run = await SharedienImport.RunAsync(Options(write: true), Ct);
 
-        run.Written["nodes"].ShouldBe(4);
+        run.Written["nodes"].ShouldBe(9);
         run.Problems.Select(p => (p.Code, p.Table, p.SourceId)).ShouldBe(
             [("multi_parent", "MAM.Edge", 106), ("invalid_value", "MAM.PropertyValue", 9), ("user_merged", "Admin.User", 2),
-                ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("deferred_parent", "MAM.Node", 51), ("deferred_parent", "MAM.Node", 52),
-                ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2)], ignoreOrder: true);
+                ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2)], ignoreOrder: true);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
         languages.Select(l => l.Code).ShouldBe(["en", "de"], ignoreOrder: true);
         languages.Count(l => l.IsDefault).ShouldBe(1);
         // the stranger of another tenant stays out; tenant roles carry no node rights, so "tenant-reader" gives People.View but no folders
-        (run.Written["users"], run.Written["roles"], run.Written["groups"], run.Written["node permissions"]).ShouldBe((2, 3, 2, 1));
+        (run.Written["users"], run.Written["roles"], run.Written["groups"], run.Written["node permissions"]).ShouldBe((2, 4, 2, 2));
+        (run.Written["workflow states"], run.Written["comments"], run.Written["workspace roles"]).ShouldBe((2, 1, 1));
 
         var root = (await Admin.GetFromJsonAsync<NodeDto>("/api/v1/nodes/root", Ct))!;
         var top = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{root.Id}/children", Ct))!.Items;
@@ -95,6 +95,27 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         (await boss.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var person = await Admin.GetFromJsonAsync<Shareme.Contracts.Knowledge.PersonDto>($"/api/v1/people/{grace}", Ct);
         (person!.DisplayName, person.Department).ShouldBe(("Grace Hopper", "Research"));
+
+        // the workspace is a root of its own: its folder and task live in it, the task sits in its state, its file in the workspace
+        var workspaceId = SourceIds.Derived(_setup.TenantId, "MAM.Node", 50);
+        await using (var scope = api.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Coworkee.Infrastructure.Persistence.CoworkeeDbContext>();
+            var nodes = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Graph.Node>()), Ct);
+            var workspace = nodes.OfType<Shareme.Graph.Workspace>().Single();
+            (workspace.Id, workspace.Name, workspace.ParentId, workspace.WorkspaceKind).ShouldBe((workspaceId, "Campaign", (Guid?)null, "collaboration"));
+            var task = nodes.OfType<Shareme.Graph.WorkTask>().Single();
+            (task.ParentId, task.Name, task.AssigneeIds.Single()).ShouldBe(((Guid?)workspaceId, "Brief", grace));
+            nodes.Single(n => n.Name == "in-workspace").ParentId.ShouldBe(workspaceId);
+            nodes.Single(n => n.Id == SourceIds.Derived(_setup.TenantId, "MAM.Node", 56)).ParentId.ShouldBe(workspaceId);
+            var states = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Workspaces.WorkflowState>()), Ct);
+            var todo = states.Single(st => st.IsDefault);
+            (todo.Name, task.StateId, todo.AllowedTargets.Single()).ShouldBe(("To do", (Guid?)todo.Id, states.Single(st => !st.IsDefault).Id));
+        }
+
+        (await reader.GetAsync($"/api/v1/nodes/{workspaceId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK); // owner through the workspace role
 
         var again = await SharedienImport.RunAsync(Options(write: true), Ct);
         again.Written.Values.ShouldAllBe(count => count == 0);
@@ -168,6 +189,11 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table MAM.AssetSet (AssetSetId bigint identity primary key, AssetSetNodeId bigint not null, AssetSetStatus int not null);
         create table MAM.AssetVersion (AssetVersionId bigint identity primary key, AssetVersionNodeId bigint not null, Created datetime2 not null default getutcdate(), OriginalFilename nvarchar(850) null, Version int not null);
         create table MAM.Edge (EdgeId bigint primary key, Identifier nvarchar(200) not null, FromNodeId bigint not null, ToNodeId bigint not null, EdgeTypeId bigint not null);
+        create table MAM.Workspace (WorkspaceId bigint identity primary key, WorkspaceNodeId bigint not null, TranslationIdentifier nvarchar(80) null, IsTemplate bit not null default 0,
+            FinalizationCategoryId bigint null, CopyPropertiesToAssets bit not null default 0, WorkspaceType int not null);
+        create table MAM.State (StateId bigint identity primary key, StateNodeId bigint not null, SequenceNr int null, TranslationIdentifier nvarchar(80) null, IsDefault bit not null default 0);
+        create table MAM.Task (TaskId bigint identity primary key, NodeId bigint not null, Name nvarchar(400) null, Description nvarchar(max) null, DueDate date null, AssignedUserId bigint null, Status int not null, SequenceNr int null);
+        create table MAM.Comment (CommentId bigint identity primary key, NodeId bigint not null, Text nvarchar(max) null, CreatedBy nvarchar(200) null, CreatedAt datetime2 null);
         create table MAM.PropertyGroup (PropertyGroupId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null, SequenceNr int not null default 0, IsDeleted bit not null default 0);
         create table MAM.PropertyDefinition (PropertyDefinitionId bigint primary key, Identifier nvarchar(200) not null, PropertyGroupId bigint null, TranslationIdentifier nvarchar(80) null, ValueType int not null,
             HasListValues bit not null default 0, Editable bit not null default 1, AllowMultipleValues bit not null default 0, AllowCustomListValue bit not null default 0, SearchOption int not null default 0,
@@ -188,26 +214,33 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert Admin.UserGroup (UserGroupId, Identifier, Name) values (1, 'readers', 'Readers'), (2, 'admins', 'Admins'), (3, 'elsewhere', 'Elsewhere');
         insert Admin.UserGroupUser (UserGroupId, UserId) values (1, 1), (2, 4), (2, 2), (3, 5);
         insert Admin.Role (RoleId, Identifier) values (1, 'reader'), (2, 'tenant-reader'), (3, 'globaladmin');
+        insert Admin.Role (RoleId, Identifier, IsSystem) values (4, 'workspaceOwner', 1);
         insert Admin.RoleObjectTypePermission (RoleId, Permission) values (1, 42), (1, 48), (1, 14), (1, 9999), (1, 2), (2, 75), (2, 48), (2, 181), (3, 101);
         insert Admin.UserGroupToRoleMap (TenantId, RoleId, UserGroupId) values (7, 2, 1), (8, 1, 1), (7, 3, 2), (8, 2, 3);
         insert Admin.NodePermission (NodePermissionId, Identifier, NodeId, RoleId, UserGroupId) values (1, 'np1', 11, 1, 1), (2, 'np2', 40, 1, 1);
+        insert Admin.NodePermission (NodePermissionId, Identifier, NodeId, RoleId, UserId) values (3, 'np3', 50, 4, 1);
         insert Admin.PropertyDefinitionRestriction (PropertyDefinitionRestrictionId, Identifier, RoleId, Action, PropertyDefinitionId) values (1, 'r1', 2, 0, 3), (2, 'r2', 1, 2, 1);
         insert MAM.UserContext (UserContextId, Identifier, IsDefault) values (1, 'b2b', 1);
         insert MAM.Language (LanguageId, Identifier, IsDefaultLanguage) values (1, 'en-US', 1), (2, 'de-DE', 0);
         insert MAM.Translation (TranslationIdentifier, FieldName, LanguageId, TranslatedValue) values
             ('cat1', 'Name', 1, 'Marketing'), ('cat1', 'Name', 2, 'Vertrieb'), ('cn1', 'Name', 1, 'Widget'), ('nt1', 'Name', 1, 'Product'),
-            ('pd2', 'Name', 1, 'Category'), ('lv1', 'Name', 1, 'Beach'), ('pv1', 'TextValue', 1, 'Hello'), ('pv1', 'TextValue', 2, 'Hallo');
+            ('pd2', 'Name', 1, 'Category'), ('ws1', 'Name', 1, 'Campaign'), ('st1', 'Name', 1, 'To do'), ('lv1', 'Name', 1, 'Beach'), ('pv1', 'TextValue', 1, 'Hello'), ('pv1', 'TextValue', 2, 'Hallo');
         insert MAM.NodeType (NodeTypeId, Identifier, NodeSemantic, TranslationIdentifier, IsSystem) values
-            (1, 'Category', 1, null, 1), (2, 'AssetSet', 2, null, 1), (3, 'Version', 3, null, 1), (4, 'product', 1000, 'nt1', 0), (5, 'Workspace', 4, null, 1), (6, 'License', 10, null, 1);
+            (1, 'Category', 1, null, 1), (2, 'AssetSet', 2, null, 1), (3, 'Version', 3, null, 1), (4, 'product', 1000, 'nt1', 0), (5, 'Workspace', 4, null, 1), (6, 'License', 10, null, 1), (7, 'State', 7, null, 1), (8, 'Task', 5, null, 1), (9, 'Comment', 6, null, 1);
         insert MAM.EdgeType (EdgeTypeId, Identifier, EdgeSemantic, TranslationIdentifier, IsDirected, IsSystem) values
-            (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, null, 1, 0);
+            (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, null, 1, 0), (5, 'Transition', 9, null, 1, 1);
         insert MAM.Node (NodeId, Identifier, NodeTypeId, TenantId) values
-            (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7);
+            (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7), (53, 'todo', 7, 7), (54, 'done', 7, 7), (55, 'brief', 8, 7), (56, 'draft', 2, 7), (57, 'remark', 9, 7);
+        insert MAM.Workspace (WorkspaceNodeId, TranslationIdentifier, WorkspaceType) values (50, 'ws1', 2);
+        insert MAM.State (StateNodeId, SequenceNr, TranslationIdentifier, IsDefault) values (53, 1, 'st1', 1), (54, 2, null, 0);
+        insert MAM.Task (NodeId, Name, AssignedUserId, Status) values (55, 'Brief', 1, 0);
+        insert MAM.Comment (NodeId, Text, CreatedBy) values (57, 'Looks good', 'grace');
         insert MAM.Category (CategoryNodeId, TranslationIdentifier) values (10, 'cat1'), (11, null), (40, null), (51, null), (52, null);
         insert MAM.CustomNode (NodeId, TranslationIdentifier) values (30, 'cn1');
-        insert MAM.AssetSet (AssetSetNodeId, AssetSetStatus) values (20, 1);
+        insert MAM.AssetSet (AssetSetNodeId, AssetSetStatus) values (20, 1), (56, 1);
         insert MAM.AssetVersion (AssetVersionNodeId, OriginalFilename, Version) values (21, 'old.jpg', 1), (22, 'photo.jpg', 2);
-        insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1);
+        insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1), (109, 'e109', 50, 53, 1), (110, 'e110', 50, 54, 1), (111, 'e111', 53, 55, 1), (112, 'e112', 55, 56, 1),
+            (113, 'e113', 55, 57, 1), (114, 'e114', 53, 54, 5);
         insert MAM.PropertyGroup (PropertyGroupId, Identifier) values (1, 'general');
         insert MAM.PropertyDefinition (PropertyDefinitionId, Identifier, PropertyGroupId, TranslationIdentifier, ValueType, HasListValues, IsLanguageDependant, IsSystemProperty) values
             (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0), (7, 'claim', 1, null, 0, 0, 0, 0);
