@@ -23,6 +23,13 @@ jobs:
     env:
       SSL_CERT_DIR: /home/runner/.aspnet/dev-certs/trust:/usr/lib/ssl/certs
     steps:
+      # the test containers (Postgres, Elasticsearch, SQL Server for the importer, Aspire) need more disk than the runner leaves free
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/swift /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker image prune --all --force
+          df -h /
+
       - uses: actions/checkout@v4
         with:
           path: shareme
