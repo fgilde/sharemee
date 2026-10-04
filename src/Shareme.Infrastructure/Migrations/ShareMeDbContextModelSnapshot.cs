@@ -3477,6 +3477,60 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("Restrictions", "sm");
                 });
 
+            modelBuilder.Entity("Shareme.Knowledge.Favorite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("NodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NodeId");
+
+                    b.HasIndex("UserId", "NodeId")
+                        .IsUnique();
+
+                    b.ToTable("Favorites", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Knowledge.HomeLayout", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<string>("Widgets")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "UserId")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "UserId"), false);
+
+                    b.ToTable("HomeLayouts", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Knowledge.PageVersion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4483,6 +4537,15 @@ namespace Shareme.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("NodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Knowledge.Favorite", b =>
                 {
                     b.HasOne("Shareme.Graph.Node", null)
                         .WithMany()

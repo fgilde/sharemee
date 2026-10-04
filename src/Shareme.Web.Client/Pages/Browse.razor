@@ -16,6 +16,7 @@
 @inject Shareme.Web.Client.Metadata.IAiApi Ai
 @inject Shareme.Web.Client.Drm.IDrmApi Drm
 @inject Shareme.Web.Client.Knowledge.IPagesApi Pages
+@inject Shareme.Web.Client.Knowledge.IIntranetApi Intranet
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
 
@@ -42,6 +43,7 @@ else if (_detail is not null)
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
         <MudText Typo="Typo.h4">@_detail.Node.Name</MudText>
         <MudSpacer />
+        <Shareme.Web.Client.Knowledge.FavoriteButton NodeId="_detail.Node.Id" />
         <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch" Href="@($"/search?folder={_detail.Node.Id}")" aria-label="Search in this folder" data-testid="search-here" />
         <MudIconButton Icon="@Icons.Material.Outlined.FolderZip" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(FolderId: _detail.Node.Id))" aria-label="Download this folder as zip" data-testid="download-folder" />
         <MudIconButton Icon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(FolderId: _detail.Node.Id, Title: _detail.Node.Name))" aria-label="Contact sheet of this folder" data-testid="contact-sheet-folder" />
@@ -60,6 +62,7 @@ else if (_detail is not null)
         <MudTextField T="string" @bind-Value="_newName" Label="New folder" Immediate="true" data-testid="new-folder-name" Style="max-width:320px" />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateFolderAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-folder">Create</MudButton>
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Article" OnClick="CreatePageAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-page">New page</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Newspaper" OnClick="CreateNewsAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-news">New news</MudButton>
         <MudSpacer />
         <MudTextField T="string" @bind-Value="_search" Placeholder="Filter" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadChildrenAsync()" Style="max-width:240px" />
@@ -338,9 +341,9 @@ else
         _detail = await Api.GetNodeAsync(id);
 
         // pages have their own view
-        if (_detail.Node.Semantic == "page")
+        if (_detail.Node.Semantic is "page" or "news")
         {
-            Nav.NavigateTo($"/pages/{id}", replace: true);
+            Nav.NavigateTo(Shareme.Web.Client.Knowledge.NodeLinks.For(_detail.Node), replace: true);
             return;
         }
 
@@ -529,15 +532,23 @@ else
         }
     }
 
-    private static string Link(NodeDto node) => node.Semantic switch { "asset" => $"/assets/{node.Id}", "page" => $"/pages/{node.Id}", _ => $"/browse/{node.Id}" };
+    private static string Link(NodeDto node) => Shareme.Web.Client.Knowledge.NodeLinks.For(node);
 
-    private static string Icon(NodeDto node) => node.Semantic switch
+    private static string Icon(NodeDto node) => Shareme.Web.Client.Knowledge.NodeLinks.Icon(node.Semantic);
+
+    private async Task CreateNewsAsync()
     {
-        "asset" => Icons.Material.Outlined.InsertDriveFile,
-        "page" => Icons.Material.Outlined.Article,
-        "news" => Icons.Material.Outlined.Newspaper,
-        _ => Icons.Material.Outlined.Folder,
-    };
+        try
+        {
+            var news = await Intranet.CreateNewsAsync(new Shareme.Contracts.Knowledge.NewsRequest(_detail!.Node.Id, _newName!.Trim(), string.Empty));
+            _newName = null;
+            Nav.NavigateTo($"/news/{news.Id}");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
 
     private async Task CreatePageAsync()
     {

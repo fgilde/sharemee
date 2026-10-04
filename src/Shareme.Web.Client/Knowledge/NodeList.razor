@@ -1,0 +1,19 @@
+@using Shareme.Contracts.Graph
+
+@if (Nodes.Count == 0)
+{
+    <MudText Typo="Typo.body2">@Empty</MudText>
+}
+@foreach (var node in Nodes)
+{
+    <div data-node="@node.Id">
+        <MudIcon Icon="@NodeLinks.Icon(node.Semantic)" Size="Size.Small" Class="mr-1" Style="vertical-align:middle" />
+        <MudLink Href="@NodeLinks.For(node)">@node.Name</MudLink>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<NodeDto> Nodes { get; set; } = [];
+
+    [Parameter] public string? Empty { get; set; }
+}

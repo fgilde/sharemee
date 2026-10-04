@@ -33,6 +33,7 @@ public sealed class ShareMeKnowledgeModule : CoworkeeModule, IWebModule
 
     public void ConfigureApplication(WebApplication app)
     {
+        IntranetEndpoints.Map(app);
         var pages = app.MapGroup("/api/v1/pages").WithTags("Pages").RequireAuthorization();
         pages.MapPost("/", (PageRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreatePage(body.ParentId, body), ct).ToHttpResult());
         pages.MapPost("/preview", (PagePreviewRequest body) => body.Markdown is { Length: <= PageContent.MaxMarkdown } markdown
@@ -67,7 +68,20 @@ public sealed class PageVersion : AuditedEntity, IMultiTenant
 
 internal sealed class KnowledgeModelContributor : IModelContributor
 {
-    public void Apply(ModelBuilder modelBuilder) =>
+    public void Apply(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Favorite>(favorite =>
+        {
+            favorite.ToTable("Favorites", "sm");
+            favorite.HasIndex(f => new { f.UserId, f.NodeId }).IsUnique();
+            favorite.HasOne<Node>().WithMany().HasForeignKey(f => f.NodeId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<HomeLayout>(layout =>
+        {
+            layout.ToTable("HomeLayouts", "sm");
+            layout.Property(l => l.Widgets).HasColumnType("jsonb");
+            layout.HasIndex(l => new { l.TenantId, l.UserId }).IsUnique().AreNullsDistinct(false);
+        });
         modelBuilder.Entity<PageVersion>(version =>
         {
             version.ToTable("PageVersions", "sm");
@@ -76,6 +90,7 @@ internal sealed class KnowledgeModelContributor : IModelContributor
             version.HasIndex(v => new { v.PageId, v.Number }).IsUnique();
             version.HasOne<Node>().WithMany().HasForeignKey(v => v.PageId).OnDelete(DeleteBehavior.Cascade);
         });
+    }
 }
 
 /// <summary>Markdown to safe HTML (raw HTML in Markdown is not rendered, links and images only to http(s), mailto and relative addresses) and to plain text for search and diffs.</summary>
