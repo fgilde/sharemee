@@ -20,20 +20,6 @@ namespace Shareme.Infrastructure.Migrations
                 type: "timestamp with time zone",
                 nullable: true);
 
-            migrationBuilder.AddColumn<string>(
-                name: "Html",
-                schema: "sm",
-                table: "Nodes",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "Markdown",
-                schema: "sm",
-                table: "Nodes",
-                type: "text",
-                nullable: true);
-
             migrationBuilder.AddColumn<int>(
                 name: "PageVersion",
                 schema: "sm",
@@ -55,12 +41,28 @@ namespace Shareme.Infrastructure.Migrations
                 type: "timestamp with time zone",
                 nullable: true);
 
-            migrationBuilder.AddColumn<string>(
-                name: "Text",
+            migrationBuilder.CreateTable(
+                name: "NodeContents",
                 schema: "sm",
-                table: "Nodes",
-                type: "text",
-                nullable: true);
+                columns: table => new
+                {
+                    NodeId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Markdown = table.Column<string>(type: "text", nullable: false),
+                    Html = table.Column<string>(type: "text", nullable: false),
+                    Text = table.Column<string>(type: "text", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_NodeContents", x => x.NodeId);
+                    table.ForeignKey(
+                        name: "FK_NodeContents_Nodes_NodeId",
+                        column: x => x.NodeId,
+                        principalSchema: "sm",
+                        principalTable: "Nodes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
 
             migrationBuilder.CreateTable(
                 name: "PageVersions",
@@ -113,6 +115,10 @@ namespace Shareme.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "NodeContents",
+                schema: "sm");
+
+            migrationBuilder.DropTable(
                 name: "PageVersions",
                 schema: "sm");
 
@@ -134,16 +140,6 @@ namespace Shareme.Infrastructure.Migrations
                 table: "Nodes");
 
             migrationBuilder.DropColumn(
-                name: "Html",
-                schema: "sm",
-                table: "Nodes");
-
-            migrationBuilder.DropColumn(
-                name: "Markdown",
-                schema: "sm",
-                table: "Nodes");
-
-            migrationBuilder.DropColumn(
                 name: "PageVersion",
                 schema: "sm",
                 table: "Nodes");
@@ -155,11 +151,6 @@ namespace Shareme.Infrastructure.Migrations
 
             migrationBuilder.DropColumn(
                 name: "PublishAt",
-                schema: "sm",
-                table: "Nodes");
-
-            migrationBuilder.DropColumn(
-                name: "Text",
                 schema: "sm",
                 table: "Nodes");
         }

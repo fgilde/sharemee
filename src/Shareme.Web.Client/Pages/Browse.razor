@@ -336,6 +336,14 @@ else
     private async Task LoadAsync(Guid id)
     {
         _detail = await Api.GetNodeAsync(id);
+
+        // pages have their own view
+        if (_detail.Node.Semantic == "page")
+        {
+            Nav.NavigateTo($"/pages/{id}", replace: true);
+            return;
+        }
+
         _breadcrumb = _detail.Breadcrumb
             .Select((crumb, index) => new BreadcrumbItem(crumb.Name, index == _detail.Breadcrumb.Count - 1 ? null : $"/browse/{crumb.Id}", disabled: index == _detail.Breadcrumb.Count - 1))
             .ToList();
@@ -536,6 +544,7 @@ else
         try
         {
             var page = await Pages.CreateAsync(new Shareme.Contracts.Knowledge.PageRequest(_detail!.Node.Id, _newName!.Trim(), $"# {_newName!.Trim()}\n"));
+            _newName = null;
             Nav.NavigateTo($"/pages/{page.Id}");
         }
         catch (ApiException exception)

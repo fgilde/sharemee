@@ -16,6 +16,8 @@ public interface IPagesApi
     Task<IReadOnlyList<DiffLineDto>> DiffAsync(Guid id, int from, int to, CancellationToken cancellationToken = default);
 
     Task<PageDto> RestoreAsync(Guid id, int number, int expectedVersion, CancellationToken cancellationToken = default);
+
+    Task<string> PreviewAsync(string markdown, CancellationToken cancellationToken = default);
 }
 
 internal sealed class PagesApi(HttpClient http) : ApiClientBase(http), IPagesApi
@@ -33,4 +35,7 @@ internal sealed class PagesApi(HttpClient http) : ApiClientBase(http), IPagesApi
 
     public Task<PageDto> RestoreAsync(Guid id, int number, int expectedVersion, CancellationToken cancellationToken = default) =>
         SendAsync<PageDto>(HttpMethod.Post, $"api/v1/pages/{id}/versions/{number}/restore?expectedVersion={expectedVersion}", null, cancellationToken);
+
+    public async Task<string> PreviewAsync(string markdown, CancellationToken cancellationToken = default) =>
+        (await SendAsync<PagePreviewDto>(HttpMethod.Post, "api/v1/pages/preview", new PagePreviewRequest(markdown), cancellationToken)).Html;
 }

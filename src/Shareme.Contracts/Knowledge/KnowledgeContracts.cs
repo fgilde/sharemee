@@ -9,6 +9,11 @@ public sealed record PageUpdateRequest(string Title, string Markdown, int Expect
 /// <summary><see cref="Html"/> is rendered from <see cref="Markdown"/> on the server and safe to show.</summary>
 public sealed record PageDto(Guid Id, Guid? ParentId, string Title, string Markdown, string Html, int Version, DateTimeOffset ModifiedAt, Guid? ModifiedBy, bool CanEdit);
 
+public sealed record PagePreviewRequest(string Markdown);
+
+/// <summary>The HTML a save would store, for previews.</summary>
+public sealed record PagePreviewDto(string Html);
+
 public sealed record PageVersionDto(int Number, string Title, string? Comment, Guid? CreatedBy, DateTimeOffset CreatedAt);
 
 public sealed record PageVersionContentDto(int Number, string Title, string Markdown, string Html, string? Comment, DateTimeOffset CreatedAt);

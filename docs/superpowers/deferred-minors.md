@@ -2,6 +2,15 @@
 
 Review findings that were graded Minor and not fixed in their phase. Later plans pick them up; tick when done.
 
+## From P7a (pages)
+
+- [ ] No Content-Security-Policy yet (shareme and coworkee); add one with `script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'` and an `img-src` list once the E2E suite covers MudBlazor/MudEx styles and scripts under it.
+- [ ] Folder zip exports and shares leave pages out; export them as `.md` if wanted.
+- [ ] Page versions are unpaged and kept forever (each a full copy, up to 200 KB).
+- [ ] Deeply nested Markdown (quotes, lists, brackets) within 200 KB is untested against Markdig/AngleSharp recursion.
+- [ ] Comments on pages wait for comments beyond workspaces.
+- [ ] RestrictionTests (and once AiTests) sometimes fail as a whole class in 0 ms when run right after AiTests in one serial loop; not reproducible alone.
+
 ## From P6 (licensing)
 
 - [ ] "Today" for license periods and purchases is UTC; use a tenant time zone.

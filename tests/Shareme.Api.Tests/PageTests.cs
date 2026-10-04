@@ -59,6 +59,29 @@ public sealed class PageTests(ApiFixture api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Markdown_cannot_smuggle_script_styles_or_foreign_images()
+    {
+        var page = await CreateAsync("Tricks", string.Join(Environment.NewLine + Environment.NewLine,
+            "<javascript:alert(1)>", "![a](javascript:alert(1))", "![b](http://tracker.test/p.png)", "![c](https://cdn.test/ok.png)", "![d](/api/v1/assets/x/derivations/preview)",
+            "Overlay {.mud-overlay #app onclick=alert(1)}", "[p](//evil.test/x)", "[e](javascript&#58;alert(1))", "[m](mailto:a@b.test)"));
+        // shown as text at most, never as a link, image or attribute
+        page.Html.ShouldNotMatch(@"(href|src)=""[^""]*(javascript|tracker\.test|evil\.test)");
+        page.Html.ShouldNotMatch("<[^>]+(class|id|onclick)=");
+        page.Html.ShouldContain("src=\"https://cdn.test/ok.png\"");
+        page.Html.ShouldContain("src=\"/api/v1/assets/x/derivations/preview\"");
+        page.Html.ShouldContain("href=\"mailto:a@b.test\"");
+
+        var preview = await (await Admin.PostAsJsonAsync("/api/v1/pages/preview", new PagePreviewRequest("<img src=x onerror=alert(1)> **ok**"), Ct)).Content.ReadFromJsonAsync<PagePreviewDto>(Ct);
+        preview!.Html.ShouldNotMatch("<img[^>]*onerror");
+        preview.Html.ShouldContain("<strong>ok</strong>");
+
+        // two saves from the same version: one wins, the other is told
+        var saves = await Task.WhenAll(Enumerable.Range(0, 2).Select(i => Admin.PutAsJsonAsync($"/api/v1/pages/{page.Id}", new PageUpdateRequest("Tricks", $"edit {i}", 1), Ct)));
+        saves.Select(r => r.StatusCode).Order().ShouldBe([HttpStatusCode.OK, HttpStatusCode.Conflict]);
+        (await Admin.PutAsJsonAsync($"/api/v1/nodes/{page.Id}", new UpdateNodeRequest("Renamed"), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Pages_are_found_by_their_text_and_follow_node_permissions()
     {
         var page = await CreateAsync("Travel policy", "Trains are preferred over planes for trips under 600 km.");

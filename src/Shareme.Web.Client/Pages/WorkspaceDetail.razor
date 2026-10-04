@@ -67,7 +67,7 @@ else
                                         <img src="@AssetUrls.Derivation(item.Node.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, tag)" alt="" style="max-width:48px;max-height:48px" />
                                     }
                                 </td>
-                                <td><MudLink Href="@(item.Node.Semantic == "asset" ? $"/assets/{item.Node.Id}" : $"/browse/{item.Node.Id}")">@item.Node.Name</MudLink></td>
+                                <td><MudLink Href="@(item.Node.Semantic switch { "asset" => $"/assets/{item.Node.Id}", "page" => $"/pages/{item.Node.Id}", _ => $"/browse/{item.Node.Id}" })">@item.Node.Name</MudLink></td>
                                 <td>@(item.IsLinked ? "linked" : item.Node.Semantic)</td>
                                 <td style="text-align:right">
                                     @if (item.IsLinked)

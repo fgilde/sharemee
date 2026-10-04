@@ -35,6 +35,9 @@ public sealed class ShareMeKnowledgeModule : CoworkeeModule, IWebModule
     {
         var pages = app.MapGroup("/api/v1/pages").WithTags("Pages").RequireAuthorization();
         pages.MapPost("/", (PageRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreatePage(body.ParentId, body), ct).ToHttpResult());
+        pages.MapPost("/preview", (PagePreviewRequest body) => body.Markdown is { Length: <= PageContent.MaxMarkdown } markdown
+            ? Results.Ok(new PagePreviewDto(PageContent.Html(markdown)))
+            : Results.BadRequest());
         pages.MapGet("/{id:guid}", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetPage(id), ct).ToHttpResult());
         pages.MapPut("/{id:guid}", (Guid id, PageUpdateRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new UpdatePage(id, body), ct).ToHttpResult());
         pages.MapGet("/{id:guid}/versions", (Guid id, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetPageVersions(id), ct).ToHttpResult());
@@ -45,7 +48,8 @@ public sealed class ShareMeKnowledgeModule : CoworkeeModule, IWebModule
     }
 }
 
-/// <summary>An earlier (or the current) content of a page.</summary>
+/// <summary>An earlier (or the current) content of a page; the page's history, so the audit trail does not copy it again.</summary>
+[NotAudited]
 public sealed class PageVersion : AuditedEntity, IMultiTenant
 {
     public Guid PageId { get; set; }
@@ -77,9 +81,12 @@ internal sealed class KnowledgeModelContributor : IModelContributor
 /// <summary>Markdown to safe HTML (raw HTML in Markdown is not rendered, links and images only to http(s), mailto and relative addresses) and to plain text for search and diffs.</summary>
 public static partial class PageContent
 {
-    public const int MaxMarkdown = 500_000;
+    public const int MaxMarkdown = 200_000;
 
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().DisableHtml().UseAdvancedExtensions().Build();
+    // no raw HTML, no generic attributes ({.class #id}), no media embeds
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().DisableHtml()
+        .UsePipeTables().UseGridTables().UseEmphasisExtras().UseTaskLists().UseAutoLinks().UseListExtras().UseFootnotes().UseDefinitionLists().UseAbbreviations()
+        .Build();
 
     private static readonly HtmlSanitizer Sanitizer = CreateSanitizer();
 
@@ -94,18 +101,38 @@ public static partial class PageContent
     public static string Text(string html) =>
         WebUtility.HtmlDecode(Tags().Replace(LineBreaks().Replace(html, "\n"), string.Empty)).Replace("\r", string.Empty).Trim();
 
+    /// <summary>Images only from Shareme files or https; links to http(s), mail and paths of this app; never protocol relative.</summary>
+    public static string? AllowedUrl(string tag, string url)
+    {
+        if (url.StartsWith("//", StringComparison.Ordinal) || url.StartsWith("\\", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (tag.Equals("img", StringComparison.OrdinalIgnoreCase))
+        {
+            return url.StartsWith("/api/v1/assets/", StringComparison.Ordinal) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? url : null;
+        }
+
+        return url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase) || url.StartsWith('/') || url.StartsWith('#')
+            ? url
+            : null;
+    }
+
     private static HtmlSanitizer CreateSanitizer()
     {
         var sanitizer = new HtmlSanitizer();
-        sanitizer.AllowedAttributes.Remove("style");
-        sanitizer.AllowedCssProperties.Clear();
-        sanitizer.AllowedSchemes.Clear();
-        foreach (var scheme in new[] { "http", "https", "mailto" })
+
+        // no styles, classes or ids: nothing that reaches into the app's own layout or elements
+        foreach (var attribute in new[] { "style", "class", "id" })
         {
-            sanitizer.AllowedSchemes.Add(scheme);
+            sanitizer.AllowedAttributes.Remove(attribute);
         }
 
-        sanitizer.AllowedAttributes.Add("id");
+        sanitizer.AllowedCssProperties.Clear();
+        sanitizer.AllowedSchemes.Add("mailto");
+        sanitizer.FilterUrl += (_, e) => e.SanitizedUrl = e.SanitizedUrl is { } url ? AllowedUrl(e.Tag.TagName, url) : null;
         return sanitizer;
     }
 }
@@ -113,16 +140,41 @@ public static partial class PageContent
 /// <summary>A line diff (longest common subsequence) of two texts.</summary>
 public static class LineDiff
 {
-    public const int MaxLines = 5000;
+    /// <summary>The changed middle may span this many line pairs; bigger changes show as removed and added.</summary>
+    public const long MaxCells = 2_000_000;
 
     public static List<DiffLineDto> Compare(string before, string after)
     {
-        var a = before.Split('\n');
-        var b = after.Split('\n');
-        if (a.Length > MaxLines || b.Length > MaxLines)
+        var all = before.Split('\n');
+        var other = after.Split('\n');
+
+        // common start and end first, so a small edit in a long page stays small
+        var start = 0;
+        while (start < all.Length && start < other.Length && all[start] == other[start])
         {
-            return [.. a.Select(l => new DiffLineDto(DiffKinds.Removed, l)), .. b.Select(l => new DiffLineDto(DiffKinds.Added, l))];
+            start++;
         }
+
+        var end = 0;
+        while (end < all.Length - start && end < other.Length - start && all[^(end + 1)] == other[^(end + 1)])
+        {
+            end++;
+        }
+
+        var head = all[..start].Select(l => new DiffLineDto(DiffKinds.Same, l));
+        var tail = all[(all.Length - end)..].Select(l => new DiffLineDto(DiffKinds.Same, l));
+        var a = all[start..(all.Length - end)];
+        var b = other[start..(other.Length - end)];
+        if ((long)a.Length * b.Length > MaxCells)
+        {
+            return [.. head, .. a.Select(l => new DiffLineDto(DiffKinds.Removed, l)), .. b.Select(l => new DiffLineDto(DiffKinds.Added, l)), .. tail];
+        }
+
+        return [.. head, .. Middle(a, b), .. tail];
+    }
+
+    private static List<DiffLineDto> Middle(string[] a, string[] b)
+    {
 
         var lengths = new int[a.Length + 1, b.Length + 1];
         for (var i = a.Length - 1; i >= 0; i--)
@@ -216,23 +268,28 @@ internal sealed class PageHandlers(CoworkeeDbContext db, NodeAccess access)
             return Error.NotFound("nodes.not_found", "The folder does not exist.");
         }
 
-        if (parent.Semantic is not (NodeSemantic.Folder or NodeSemantic.Workspace or NodeSemantic.Custom))
+        // where files may go: folders, open workspaces (not templates, collections or finished ones), custom nodes
+        if (!(parent.AcceptsFiles() || parent.Semantic == NodeSemantic.Custom))
         {
-            return Error.Validation("ParentId", "Pages live in folders and workspaces.");
+            return Error.Validation("ParentId", "Pages live in folders and open workspaces.");
         }
 
         var page = new Page { NodeTypeId = NodeType.PageTypeId, Name = command.Request.Title.Trim() };
         page.SortIndex = await db.Set<Node>().Where(n => n.ParentId == parent.Id).Select(n => (int?)n.SortIndex).MaxAsync(cancellationToken) + 1 ?? 0;
         page.PlaceUnder(parent);
-        Apply(page, command.Request.Title, command.Request.Markdown, null);
+        var content = new NodeContent { NodeId = page.Id };
+        db.Add(content);
+        Apply(page, content, command.Request.Title, command.Request.Markdown, null);
         page.MarkChanged("created");
         db.Add(page);
         await db.SaveChangesAsync(cancellationToken);
-        return await MapAsync(page, cancellationToken);
+        return await MapAsync(page, content, cancellationToken);
     }
 
     public async Task<Result<PageDto>> HandleAsync(GetPage query, CancellationToken cancellationToken) =>
-        await db.Set<Page>().AsNoTracking().SingleOrDefaultAsync(p => p.Id == query.Id, cancellationToken) is { } page ? await MapAsync(page, cancellationToken) : NotFound;
+        await db.Set<Page>().AsNoTracking().SingleOrDefaultAsync(p => p.Id == query.Id, cancellationToken) is { } page
+            ? await MapAsync(page, await db.Set<NodeContent>().AsNoTracking().SingleOrDefaultAsync(c => c.NodeId == page.Id, cancellationToken) ?? new NodeContent { NodeId = page.Id }, cancellationToken)
+            : NotFound;
 
     public async Task<Result<PageDto>> HandleAsync(UpdatePage command, CancellationToken cancellationToken)
     {
@@ -248,18 +305,28 @@ internal sealed class PageHandlers(CoworkeeDbContext db, NodeAccess access)
 
         if (page.PageVersion != command.Request.ExpectedVersion)
         {
-            return Error.Conflict("pages.changed", $"Someone saved version {page.PageVersion} in the meantime; reload and apply your changes again.");
+            return Changed(page.PageVersion);
         }
 
-        if (page.Name == command.Request.Title.Trim() && page.Markdown == command.Request.Markdown)
+        var content = await db.Set<NodeContent>().SingleOrDefaultAsync(c => c.NodeId == page.Id, cancellationToken) ?? db.Add(new NodeContent { NodeId = page.Id }).Entity;
+        if (page.Name == command.Request.Title.Trim() && content.Markdown == command.Request.Markdown)
         {
-            return await MapAsync(page, cancellationToken);
+            return await MapAsync(page, content, cancellationToken);
         }
 
-        Apply(page, command.Request.Title, command.Request.Markdown, command.Request.Comment);
+        Apply(page, content, command.Request.Title, command.Request.Markdown, command.Request.Comment);
         page.MarkChanged("content changed");
-        await db.SaveChangesAsync(cancellationToken);
-        return await MapAsync(page, cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // a save at the same moment took this version number (unique index) or changed the page (row version)
+            return Changed(command.Request.ExpectedVersion + 1);
+        }
+
+        return await MapAsync(page, content, cancellationToken);
     }
 
     public async Task<Result<IReadOnlyList<PageVersionDto>>> HandleAsync(GetPageVersions query, CancellationToken cancellationToken)
@@ -300,13 +367,16 @@ internal sealed class PageHandlers(CoworkeeDbContext db, NodeAccess access)
         return await HandleAsync(new UpdatePage(command.Id, new PageUpdateRequest(version.Title, version.Markdown, command.ExpectedVersion, $"Restored version {version.Number}")), cancellationToken);
     }
 
+    private static Error Changed(int version) =>
+        Error.Conflict("pages.changed", $"Someone saved version {version} in the meantime; reload and apply your changes again.");
+
     /// <summary>The new content goes onto the page and into a new version.</summary>
-    private void Apply(Page page, string title, string markdown, string? comment)
+    private void Apply(Page page, NodeContent content, string title, string markdown, string? comment)
     {
         page.Name = title.Trim();
-        page.Markdown = markdown;
-        page.Html = PageContent.Html(markdown);
-        page.Text = PageContent.Text(page.Html);
+        content.Markdown = markdown;
+        content.Html = PageContent.Html(markdown);
+        content.Text = PageContent.Text(content.Html);
         page.PageVersion++;
         db.Add(new PageVersion { PageId = page.Id, Number = page.PageVersion, Title = page.Name, Markdown = markdown, Comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim()[..Math.Min(comment.Trim().Length, 500)] });
     }
@@ -314,7 +384,7 @@ internal sealed class PageHandlers(CoworkeeDbContext db, NodeAccess access)
     private Task<PageVersion?> VersionAsync(Guid pageId, int number, CancellationToken cancellationToken) =>
         db.Set<PageVersion>().AsNoTracking().SingleOrDefaultAsync(v => v.PageId == pageId && v.Number == number, cancellationToken);
 
-    private async Task<PageDto> MapAsync(Page page, CancellationToken cancellationToken) =>
-        new(page.Id, page.ParentId, page.Name, page.Markdown, page.Html, page.PageVersion, page.ModifiedAt ?? page.CreatedAt, page.ModifiedBy ?? page.CreatedBy,
+    private async Task<PageDto> MapAsync(Page page, NodeContent content, CancellationToken cancellationToken) =>
+        new(page.Id, page.ParentId, page.Name, content.Markdown, PageContent.Html(content.Markdown), page.PageVersion, page.ModifiedAt ?? page.CreatedAt, page.ModifiedBy ?? page.CreatedBy,
             await access.CanAsync(NodePermissions.Update, page.Id, cancellationToken));
 }

@@ -3286,6 +3286,31 @@ namespace Shareme.Infrastructure.Migrations
                     b.UseTphMappingStrategy();
                 });
 
+            modelBuilder.Entity("Shareme.Graph.NodeContent", b =>
+                {
+                    b.Property<Guid>("NodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Html")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Markdown")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("NodeId");
+
+                    b.ToTable("NodeContents", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4111,26 +4136,11 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Html")
-                        .IsRequired()
-                        .ValueGeneratedOnUpdateSometimes()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Markdown")
-                        .IsRequired()
-                        .ValueGeneratedOnUpdateSometimes()
-                        .HasColumnType("text");
-
                     b.Property<bool>("Pinned")
                         .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("PublishAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .ValueGeneratedOnUpdateSometimes()
-                        .HasColumnType("text");
 
                     b.HasDiscriminator().HasValue("news");
                 });
@@ -4139,23 +4149,8 @@ namespace Shareme.Infrastructure.Migrations
                 {
                     b.HasBaseType("Shareme.Graph.Node");
 
-                    b.Property<string>("Html")
-                        .IsRequired()
-                        .ValueGeneratedOnUpdateSometimes()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Markdown")
-                        .IsRequired()
-                        .ValueGeneratedOnUpdateSometimes()
-                        .HasColumnType("text");
-
                     b.Property<int>("PageVersion")
                         .HasColumnType("integer");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .ValueGeneratedOnUpdateSometimes()
-                        .HasColumnType("text");
 
                     b.HasDiscriminator().HasValue("page");
                 });
@@ -4476,6 +4471,15 @@ namespace Shareme.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Shareme.Graph.NodeContent", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithOne()
+                        .HasForeignKey("Shareme.Graph.NodeContent", "NodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>

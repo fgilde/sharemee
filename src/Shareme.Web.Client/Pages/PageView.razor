@@ -33,11 +33,13 @@
                     <MudTextField @bind-Value="_title" Label="Title" data-testid="page-edit-title" />
                     <MudGrid Class="mt-2">
                         <MudItem xs="12" md="6">
-                            <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="24" Variant="Variant.Outlined" Immediate="true" DebounceInterval="400" data-testid="page-edit-markdown" />
+                            <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="24" Variant="Variant.Outlined" Immediate="true" DebounceInterval="400"
+                                          OnDebounceIntervalElapsed="_ => PreviewAsync()" data-testid="page-edit-markdown" />
                         </MudItem>
                         <MudItem xs="12" md="6">
                             <MudText Typo="Typo.caption">Preview</MudText>
-                            <MudMarkdown Value="@_markdown" />
+                            @* rendered by the server like a save, so the preview shows exactly what readers will see *@
+                            <div class="page-content" data-testid="page-preview">@((MarkupString)_preview)</div>
                         </MudItem>
                     </MudGrid>
                     <MudTextField @bind-Value="_comment" Label="What changed (optional)" Class="mt-2" />
@@ -91,6 +93,7 @@
     private int _diffFrom;
     private bool _editing, _historyShown;
     private string? _title, _markdown, _comment;
+    private string _preview = string.Empty;
 
     [Parameter] public Guid Id { get; set; }
 
@@ -109,6 +112,8 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        // another page: nothing of the previous one stays
+        (_editing, _diff, _versions, _historyShown) = (false, null, [], false);
         try
         {
             _page = await Api.GetAsync(Id);
@@ -121,13 +126,32 @@
 
     private async Task LoadVersionsAsync()
     {
-        _versions = await Api.GetVersionsAsync(Id);
+        try
+        {
+            _versions = await Api.GetVersionsAsync(Id);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+
         StateHasChanged();
     }
 
     private void Edit()
     {
-        (_title, _markdown, _comment, _editing) = (_page!.Title, _page.Markdown, null, true);
+        (_title, _markdown, _comment, _editing, _preview) = (_page!.Title, _page.Markdown, null, true, _page.Html);
+    }
+
+    private async Task PreviewAsync()
+    {
+        try
+        {
+            _preview = await Api.PreviewAsync(_markdown ?? string.Empty);
+        }
+        catch (ApiException)
+        {
+        }
     }
 
     private async Task SaveAsync()
@@ -149,8 +173,15 @@
 
     private async Task DiffAsync(int from)
     {
-        _diffFrom = from;
-        _diff = await Api.DiffAsync(Id, from, _page!.Version);
+        try
+        {
+            _diff = await Api.DiffAsync(Id, from, _page!.Version);
+            _diffFrom = from;
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
     }
 
     private async Task RestoreAsync(int number)

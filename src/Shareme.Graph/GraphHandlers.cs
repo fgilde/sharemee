@@ -284,6 +284,7 @@ internal sealed class NotifySubscribers(CoworkeeDbContext db, ICurrentUser curre
             Workspace => $"/workspaces/{node.Id}",
             WorkTask => $"/workspaces/{node.ParentId}",
             Asset => $"/assets/{node.Id}",
+            Page => $"/pages/{node.Id}",
             _ when node.PathIds.Count > 0 && await db.Set<Workspace>().AnyAsync(w => w.Id == node.PathIds[0], cancellationToken) => $"/workspaces/{node.PathIds[0]}",
             _ => $"/browse/{node.ParentId ?? node.Id}",
         };

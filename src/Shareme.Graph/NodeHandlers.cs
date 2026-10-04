@@ -291,6 +291,12 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return NodeErrors.NotFound;
         }
 
+        // a page title is part of its versions
+        if (node is Page)
+        {
+            return Error.Validation("Name", "Rename pages by editing them, so the title stays in their history.");
+        }
+
         node.Name = command.Request.Name.Trim();
         if (command.Request.Names is { } names)
         {

@@ -173,18 +173,23 @@ public sealed class Workspace : Node
     public DateTimeOffset? FinalizedAt { get; set; }
 }
 
-/// <summary>Content written in Markdown; <see cref="Html"/> is rendered and sanitized from it, <see cref="Text"/> is what search indexes.</summary>
-public abstract class ContentNode : Node
+/// <summary>The text of a page or news item, in a table of its own so loading nodes does not drag bodies along; <see cref="Html"/> is rendered and sanitized from the Markdown, <see cref="Text"/> is what search indexes.</summary>
+[NotAudited]
+public sealed class NodeContent : IMultiTenant
 {
+    public Guid NodeId { get; set; }
+
     public string Markdown { get; set; } = string.Empty;
 
     public string Html { get; set; } = string.Empty;
 
     public string Text { get; set; } = string.Empty;
+
+    public Guid TenantId { get; set; }
 }
 
-/// <summary>A knowledge base page; earlier contents are kept as page versions.</summary>
-public sealed class Page : ContentNode
+/// <summary>A knowledge base page; earlier contents are kept as page versions, the current one in <see cref="NodeContent"/>.</summary>
+public sealed class Page : Node
 {
     public override NodeSemantic Semantic => NodeSemantic.Page;
 
@@ -193,7 +198,7 @@ public sealed class Page : ContentNode
 }
 
 /// <summary>Intranet news, shown from <see cref="PublishAt"/> until <see cref="ExpiresAt"/>.</summary>
-public sealed class News : ContentNode
+public sealed class News : Node
 {
     public override NodeSemantic Semantic => NodeSemantic.News;
 
@@ -312,6 +317,13 @@ internal sealed class GraphModelContributor : IModelContributor
             (a, b) => a!.Count == b!.Count && !a.Except(b).Any(),
             d => d.Aggregate(0, (hash, pair) => HashCode.Combine(hash, pair.Key, pair.Value)),
             d => new Dictionary<string, string>(d));
+
+        modelBuilder.Entity<NodeContent>(content =>
+        {
+            content.ToTable("NodeContents", Schema);
+            content.HasKey(c => c.NodeId);
+            content.HasOne<Node>().WithOne().HasForeignKey<NodeContent>(c => c.NodeId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<NodeType>(type =>
         {

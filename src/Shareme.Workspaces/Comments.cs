@@ -246,6 +246,7 @@ public static class WorkspaceLinks
         Workspace => $"/workspaces/{node.Id}",
         WorkTask => $"/workspaces/{node.ParentId}",
         Asset => $"/assets/{node.Id}",
+        Page => $"/pages/{node.Id}",
         _ => $"/browse/{node.Id}",
     };
 }
