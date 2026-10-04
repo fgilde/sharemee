@@ -116,7 +116,8 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("pages");
         Get(await MetadataAsync(ok), "label").ShouldBe("fine!");
         Get(await MetadataAsync(empty), "label").ShouldBeNull();
-        Get(await MetadataAsync(ok), "verdict").ShouldNotBe("not changed");
+        // the run executes only the chosen rules; its writes may still trigger the live rule afterwards, which is fine
+        job.Entries.ShouldAllBe(e => e.Message == null || !e.Message.Contains("Live only"));
         Get(await MetadataAsync(bad), "label").ShouldBe("bad!");
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("Written by Label");
         (await Admin.GetFromJsonAsync<RuleJobDto[]>("/api/v1/rule-jobs", Ct))!.Select(j => j.Id).ShouldContain(job.Id);
