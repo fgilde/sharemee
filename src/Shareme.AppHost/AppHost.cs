@@ -5,7 +5,7 @@ var infrastructure = builder.AddCoworkeeInfrastructure("shareme");
 
 var migrations = builder.AddProject<Projects.Shareme_Migrations>("shareme-migrations")
     .WithReference(infrastructure.Database)
-    .WaitFor(infrastructure.Database);
+    .WaitFor(infrastructure.Server);
 
 // api and processing share the stored files
 var blobRoot = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", ".data", "blobs"));
