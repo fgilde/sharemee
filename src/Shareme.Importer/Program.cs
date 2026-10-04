@@ -2,12 +2,18 @@ namespace Shareme.Importer;
 
 internal static class ImporterProgram
 {
+    private const string Usage =
+        """
+        usage: shareme-import plan|run --source-tenant <id> --tenant <guid> [--report <file>] [--max-problems <n>]
+          source and target connections come from the environment, never the command line:
+          SHAREME_IMPORT_SOURCE (SQL Server, read only) and SHAREME_IMPORT_TARGET (Shareme Postgres)
+        """;
+
     public static async Task<int> Main(string[] args)
     {
-        // shareme-import plan|run --source <sql server> --source-tenant <id> --target <postgres> --tenant <guid> [--report <file>] [--max-problems <n>]
-        if (args.Length == 0 || args[0] is not ("plan" or "run") || ImportOptions.Parse(args) is not { } options)
+        if (ImportOptions.Parse(args, Environment.GetEnvironmentVariable("SHAREME_IMPORT_SOURCE"), Environment.GetEnvironmentVariable("SHAREME_IMPORT_TARGET")) is not { } options)
         {
-            Console.Error.WriteLine("usage: shareme-import plan|run --source <sql server connection> --source-tenant <id> --target <postgres connection> --tenant <guid> [--report <file>] [--max-problems <n>]");
+            Console.Error.WriteLine(Usage);
             return 2;
         }
 
@@ -18,11 +24,28 @@ internal static class ImporterProgram
             cancel.Cancel();
         };
 
-        var report = await SharedienImport.RunAsync(options, cancel.Token);
-        Console.WriteLine(report.Summary());
-        if (options.ReportPath is { } path)
+        var report = new ImportReport();
+        try
         {
-            await report.SaveAsync(path, cancel.Token);
+            await SharedienImport.RunAsync(options, report, cancel.Token);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or OperationCanceledException)
+        {
+            Console.Error.WriteLine(exception.Message);
+            return 1;
+        }
+        finally
+        {
+            Console.WriteLine(report.Summary());
+            if (options.ReportPath is { } path)
+            {
+                await report.SaveAsync(path, CancellationToken.None);
+            }
+        }
+
+        if (options.Write)
+        {
+            Console.WriteLine("Done. Start a search reindex for the tenant (admin › search) so the imported items become findable.");
         }
 
         return report.Problems.Count > options.MaxProblems ? 1 : 0;
@@ -31,31 +54,47 @@ internal static class ImporterProgram
 
 public sealed record ImportOptions(bool Write, string Source, long SourceTenant, string Target, Guid Tenant, string? ReportPath, int MaxProblems)
 {
-    public static ImportOptions? Parse(string[] args)
+    private static readonly HashSet<string> Flags = ["--source-tenant", "--tenant", "--report", "--max-problems"];
+
+    /// <summary>Null on any unknown flag, missing value or unparsable number, so a typo never runs an import.</summary>
+    public static ImportOptions? Parse(string[] args, string? source, string? target)
     {
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 1; i + 1 < args.Length; i += 2)
+        if (args.Length == 0 || args[0] is not ("plan" or "run") || args.Length % 2 == 0 || string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target))
         {
-            values[args[i]] = args[i + 1];
+            return null;
         }
 
-        return values.TryGetValue("--source", out var source) && values.TryGetValue("--target", out var target)
-            && long.TryParse(values.GetValueOrDefault("--source-tenant"), out var sourceTenant) && Guid.TryParse(values.GetValueOrDefault("--tenant"), out var tenant)
-            ? new ImportOptions(args[0] == "run", source, sourceTenant, target, tenant, values.GetValueOrDefault("--report"),
-                int.TryParse(values.GetValueOrDefault("--max-problems"), out var max) ? max : int.MaxValue)
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 1; i < args.Length; i += 2)
+        {
+            if (!Flags.Contains(args[i]) || args[i + 1].StartsWith("--", StringComparison.Ordinal) || !values.TryAdd(args[i], args[i + 1]))
+            {
+                return null;
+            }
+        }
+
+        var max = int.MaxValue;
+        return long.TryParse(values.GetValueOrDefault("--source-tenant"), out var sourceTenant)
+            && Guid.TryParse(values.GetValueOrDefault("--tenant"), out var tenant) && tenant != Guid.Empty
+            && (!values.TryGetValue("--max-problems", out var limit) || int.TryParse(limit, out max))
+            ? new ImportOptions(args[0] == "run", source, sourceTenant, target, tenant, values.GetValueOrDefault("--report"), max)
             : null;
     }
 }
 
 public static class SharedienImport
 {
-    /// <summary>Reads the source tenant, maps it and, unless planning, writes what is not there yet.</summary>
-    public static async Task<ImportReport> RunAsync(ImportOptions options, CancellationToken cancellationToken)
+    /// <summary>Reads the source tenant, maps it and, unless planning, writes what is not there yet in one transaction.</summary>
+    public static async Task<ImportReport> RunAsync(ImportOptions options, ImportReport report, CancellationToken cancellationToken)
     {
-        var report = new ImportReport();
         var source = await new SharedienSource(options.Source).LoadAsync(options.SourceTenant, cancellationToken);
+        if (source.Nodes.Count == 0)
+        {
+            throw new InvalidOperationException($"The source tenant {options.SourceTenant} has no nodes.");
+        }
+
         await using var writer = new ImportWriter(options.Target, options.Tenant);
-        var plan = new SharedienMapper(source, await writer.TargetAsync(options.Write, cancellationToken), report).Map();
+        var plan = new SharedienMapper(source, await writer.TargetAsync(cancellationToken), report).Map();
         if (options.Write)
         {
             await writer.WriteAsync(plan, report, cancellationToken);
@@ -63,4 +102,6 @@ public static class SharedienImport
 
         return report;
     }
+
+    public static Task<ImportReport> RunAsync(ImportOptions options, CancellationToken cancellationToken) => RunAsync(options, new ImportReport(), cancellationToken);
 }

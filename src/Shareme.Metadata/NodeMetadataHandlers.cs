@@ -49,6 +49,14 @@ public static class MetadataRules
 {
     /// <summary>An error, or the value in the form it is stored and searched in.</summary>
     public static (string? Problem, JsonElement? Value) Check(PropertyDefinition definition, JsonElement? value) => NodeMetadataHandlers.CheckValue(definition, value, []);
+
+    /// <summary>All checks of the API for the values of one property; the values count as already stored, so deactivated list values stay valid.</summary>
+    public static IReadOnlyList<string> Check(
+        PropertyDefinition definition, List<MetadataValue> values, HashSet<string> languages, HashSet<string> contexts, out List<MetadataValue> normalized)
+    {
+        normalized = [];
+        return NodeMetadataHandlers.Check(definition, values, values, languages, contexts, [], normalized).ToList();
+    }
 }
 
 internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog, Restrictions restrictions)
@@ -216,7 +224,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
     private const int MaxMetadataLength = 1024 * 1024;
 
     /// <summary>Validates the values of one property and adds their canonical form to <paramref name="normalized"/>.</summary>
-    private static IEnumerable<string> Check(
+    internal static IEnumerable<string> Check(
         PropertyDefinition definition, List<MetadataValue> values, List<MetadataValue> current, HashSet<string> languages, HashSet<string> contexts,
         Dictionary<Guid, string> references, List<MetadataValue> normalized)
     {

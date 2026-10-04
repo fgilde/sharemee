@@ -16,23 +16,53 @@ public sealed record ImportPlan(
     IReadOnlyList<PropertyGroup> PropertyGroups,
     IReadOnlyList<PropertyDefinition> PropertyDefinitions,
     IReadOnlyList<Node> Nodes,
-    IReadOnlyList<Edge> Edges);
+    IReadOnlyList<Edge> Edges,
+    IdentityPlan Identity,
+    IReadOnlyList<Coworkee.Identity.Domain.ResourcePermission> NodePermissions);
 
-/// <param name="Root">The target tenant's root folder; top level categories and nodes without a parent go below it.</param>
-/// <param name="TakenKeys">Keys of node types, edge types, groups and definitions already in the tenant, so imported ones never clash.</param>
-public sealed record MapTarget(Guid TenantId, Folder Root, IReadOnlySet<string> TakenKeys);
+/// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
+public sealed record MapTarget(Guid TenantId, Folder Root)
+{
+    /// <summary>Keys by kind (<see cref="KeyKinds"/>) and id, of everything already stored, imported or not.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<Guid, string>> Keys { get; init; } = new Dictionary<string, IReadOnlyDictionary<Guid, string>>();
+
+    public IReadOnlyDictionary<Guid, (Guid DefinitionId, string Key)> ListValues { get; init; } = new Dictionary<Guid, (Guid, string)>();
+
+    public IReadOnlySet<string> LanguageCodes { get; init; } = new HashSet<string>();
+
+    public bool HasDefaultLanguage { get; init; }
+
+    /// <summary>Users already in Shareme by normalized user name; imported accounts with the same name merge into them.</summary>
+    public IReadOnlyDictionary<string, Guid> ExistingUsers { get; init; } = new Dictionary<string, Guid>();
+
+    public IReadOnlySet<string> ExistingRoleNames { get; init; } = new HashSet<string>();
+
+    public IReadOnlySet<string> ExistingGroupNames { get; init; } = new HashSet<string>();
+
+    public IReadOnlyDictionary<Guid, string> KeysOf(string kind) => Keys.TryGetValue(kind, out var keys) ? keys : new Dictionary<Guid, string>();
+}
+
+public static class KeyKinds
+{
+    public const string NodeType = "node type";
+    public const string EdgeType = "edge type";
+    public const string Group = "property group";
+    public const string Definition = "property definition";
+}
 
 /// <summary>Maps Sharedien rows to Shareme entities. Pure: no database, so every rule is testable with synthetic rows.</summary>
 public sealed class SharedienMapper(SourceData source, MapTarget target, ImportReport report)
 {
     // Sharedien NodeTypeSemantic and EdgeTypeSemantic values
-    private const int Category = 1, AssetSet = 2, CustomEntity = 1000;
+    private const int Category = 1, AssetSet = 2, Version = 3, Workspace = 4, Task = 5, CustomEntity = 1000;
     private const int ParentChild = 1, Link = 3, Translation = 5, Variant = 6, Licence = 7, Duplicate = 8, CustomRelation = 0;
 
     private readonly Dictionary<long, string> _languageCodes = source.Languages.ToDictionary(l => l.Id, l => LanguageCode(l.Identifier));
     private readonly string _defaultLanguage = source.Languages.FirstOrDefault(l => l.IsDefault) is { } d ? LanguageCode(d.Identifier) : "en";
     private readonly Dictionary<(string, string), Dictionary<string, string>> _translations = [];
-    private readonly HashSet<string> _keys = new(target.TakenKeys, StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _takenKeys = [];
+
+    private Guid Scope => target.TenantId;
 
     public ImportPlan Map()
     {
@@ -45,26 +75,34 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             }
         }
 
-        var languages = source.Languages.Select(l => Tenant(new DataLanguage
-        {
-            Code = LanguageCode(l.Identifier),
-            Name = Cap(Name(l.TranslationIdentifier, l.Identifier), 100),
-            IsDefault = l.IsDefault,
-        }, "MAM.Language", l.Id, l.Identifier)).DistinctBy(l => l.Code).ToList();
-
+        var languages = MapLanguages();
+        var identityMapper = new IdentityMapper(source.Identity ?? SourceIdentity.Empty, target, report, Name);
+        var identity = source.Identity is null ? IdentityPlan.Empty : identityMapper.Map();
         var nodeTypes = MapNodeTypes(out var typeOf);
         var edgeTypes = MapEdgeTypes(out var edgeTypeOf);
-        var groups = source.PropertyGroups.Select(g => Tenant(new PropertyGroup
+        var groups = new List<PropertyGroup>();
+        var groupIds = new Dictionary<long, Guid>();
+        foreach (var g in source.PropertyGroups)
         {
-            Key = Key(g.Identifier, Name(g.TranslationIdentifier, null), "group", g.Id),
-            Name = Name(g.TranslationIdentifier, g.Identifier),
-            SortIndex = g.SequenceNr,
-        }, "MAM.PropertyGroup", g.Id, g.Identifier)).ToList();
-        var groupIds = source.PropertyGroups.Zip(groups).ToDictionary(p => p.First.Id, p => p.Second.Id);
-        var definitions = MapDefinitions(typeOf, groupIds, out var definitionOf, out var listKeyOf);
+            var group = Tenant(new PropertyGroup { Key = string.Empty, Name = Name(g.TranslationIdentifier, g.Identifier), SortIndex = g.SequenceNr }, "MAM.PropertyGroup", g.Id, g.Identifier);
+            group.Key = Key(KeyKinds.Group, group.Id, g.Identifier, Name(g.TranslationIdentifier, null), "group", g.Id);
+            groups.Add(group);
+            groupIds[g.Id] = group.Id;
+        }
+
+        var definitions = MapDefinitions(groupIds, out var definitionOf, out var listKeyOf);
         var nodes = MapNodes(typeOf, out var nodeOf);
+        foreach (var row in source.Nodes)
+        {
+            if (row.CreateUser is { } creator && identity.UserByName.TryGetValue(creator, out var userId) && nodeOf.TryGetValue(row.Id, out var created))
+            {
+                created.CreatedBy = userId;
+            }
+        }
+
+        var nodePermissions = identityMapper.MapNodePermissions(identity, nodeOf.ToDictionary(n => n.Key, n => n.Value.Id));
         var edges = MapEdges(nodeOf, edgeTypeOf);
-        MapValues(nodeOf, definitionOf, listKeyOf);
+        MapValues(nodeOf, typeOf, definitionOf, listKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)]);
 
         report.Mapped["languages"] = languages.Count;
         report.Mapped["node types"] = nodeTypes.Count;
@@ -73,7 +111,30 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["property definitions"] = definitions.Count;
         report.Mapped["nodes"] = nodes.Count;
         report.Mapped["edges"] = edges.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions);
+    }
+
+    private List<DataLanguage> MapLanguages()
+    {
+        // one row per code; a code the tenant already has stays as it is, and only a tenant without default gets one
+        var languages = new List<DataLanguage>();
+        foreach (var row in source.Languages.OrderByDescending(l => l.IsDefault).ThenBy(l => l.Id))
+        {
+            var code = LanguageCode(row.Identifier);
+            if (target.LanguageCodes.Contains(code) || languages.Any(l => l.Code == code))
+            {
+                continue;
+            }
+
+            languages.Add(Tenant(new DataLanguage
+            {
+                Code = code,
+                Name = Cap(Name(row.TranslationIdentifier, row.Identifier), 100),
+                IsDefault = row.IsDefault && !target.HasDefaultLanguage,
+            }, "MAM.Language", row.Id, row.Identifier));
+        }
+
+        return languages;
     }
 
     private List<NodeType> MapNodeTypes(out Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf)
@@ -91,12 +152,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                     typeOf[row.Id] = (NodeType.AssetTypeId, "asset", AssetSet);
                     break;
                 case CustomEntity:
-                    var type = Tenant(new NodeType
-                    {
-                        Key = Key(row.Identifier, Name(row.TranslationIdentifier, null), "type", row.Id),
-                        Name = Name(row.TranslationIdentifier, row.Identifier),
-                        Semantic = NodeSemantic.Custom,
-                    }, "MAM.NodeType", row.Id, row.Identifier);
+                    var type = Tenant(new NodeType { Key = string.Empty, Name = Name(row.TranslationIdentifier, row.Identifier), Semantic = NodeSemantic.Custom },
+                        "MAM.NodeType", row.Id, row.Identifier);
+                    type.Key = Key(KeyKinds.NodeType, type.Id, row.Identifier, Name(row.TranslationIdentifier, null), "type", row.Id);
                     typeOf[row.Id] = (type.Id, type.Key, CustomEntity);
                     created.Add(type);
                     break;
@@ -112,11 +170,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var created = new List<EdgeType>();
         foreach (var row in source.EdgeTypes)
         {
+            // Variant edges wait for the file phase: the processing sweep fails assets that are variant targets without a file
             Guid? seeded = row.Semantic switch
             {
                 Link => EdgeType.LinkId,
                 Duplicate => EdgeType.DuplicateId,
-                Variant => EdgeType.VariantId,
                 Translation => EdgeType.TranslationId,
                 _ => null,
             };
@@ -126,13 +184,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             }
             else if (row.Semantic is CustomRelation or Licence)
             {
-                var type = Tenant(new EdgeType
-                {
-                    Key = Key(row.Semantic == Licence ? "licence" : row.Identifier, Name(row.TranslationIdentifier, null), "relation", row.Id),
-                    Name = Name(row.TranslationIdentifier, row.Identifier),
-                    Semantic = EdgeSemantic.Custom,
-                    IsDirected = row.IsDirected,
-                }, "MAM.EdgeType", row.Id, row.Identifier);
+                var type = Tenant(new EdgeType { Key = string.Empty, Name = Name(row.TranslationIdentifier, row.Identifier), Semantic = EdgeSemantic.Custom, IsDirected = row.IsDirected },
+                    "MAM.EdgeType", row.Id, row.Identifier);
+                type.Key = Key(KeyKinds.EdgeType, type.Id, row.Semantic == Licence ? "licence" : row.Identifier, Name(row.TranslationIdentifier, null), "relation", row.Id);
                 edgeTypeOf[row.Id] = type.Id;
                 created.Add(type);
             }
@@ -142,13 +196,13 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     }
 
     private List<PropertyDefinition> MapDefinitions(
-        Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf, Dictionary<long, Guid> groupIds,
-        out Dictionary<long, PropertyDefinition> definitionOf, out Dictionary<long, string> listKeyOf)
+        Dictionary<long, Guid> groupIds, out Dictionary<long, PropertyDefinition> definitionOf, out Dictionary<long, string> listKeyOf)
     {
         definitionOf = [];
         listKeyOf = [];
         var listValues = source.ListValues.ToLookup(v => v.DefinitionId);
         var nodeTypes = source.DefinitionNodeTypes.ToLookup(t => t.DefinitionId);
+        var typeKeys = TypeKeys();
         foreach (var row in source.PropertyDefinitions)
         {
             if (MapValueType(row) is not { } valueType)
@@ -157,9 +211,18 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 continue;
             }
 
+            // metadata of versions belongs to the asset in Shareme; types without a counterpart (states, DRM objects) do not count
+            var linked = nodeTypes[row.Id].ToList();
+            var keys = linked.Select(t => typeKeys.GetValueOrDefault(t.NodeTypeId)).OfType<string>().Distinct().ToList();
+            if (linked.Count > 0 && keys.Count == 0)
+            {
+                report.Problem("definition_without_types", "MAM.PropertyDefinition", row.Id);
+                continue;
+            }
+
             var definition = Tenant(new PropertyDefinition
             {
-                Key = Key(row.Identifier, Name(row.TranslationIdentifier, null), "property", row.Id),
+                Key = string.Empty,
                 Name = Name(row.TranslationIdentifier, row.Identifier),
                 Description = Text(row.TranslationIdentifier, "Description") is { } description ? Cap(description, 2000) : null,
                 GroupId = row.GroupId is { } g && groupIds.TryGetValue(g, out var groupId) ? groupId : null,
@@ -167,20 +230,27 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 ListMode = !row.HasListValues ? ListModes.None : row.AllowMultipleValues ? ListModes.Multi : ListModes.Single,
                 MultiValue = row.AllowMultipleValues && !row.HasListValues,
                 AllowCustomValues = row.AllowCustomListValue,
-                Localizable = row.IsLanguageDependant,
-                HasContext = row.HasUserContext,
+                // a list value is the same in every language, Sharedien only translates its label
+                Localizable = row.IsLanguageDependant && !row.HasListValues,
+
+                // ponytail: user contexts come with a later phase; until then context bound values stay behind (reported)
+                HasContext = false,
                 Editable = row.Editable,
                 Searchable = row.SearchOption switch { 1 => SearchModes.Filter, 2 => SearchModes.Fulltext, 3 => SearchModes.Both, _ => SearchModes.None },
                 Facet = row.IsSearchableFacet,
                 IgnoreOnNewVersion = row.IgnoreCopyingOnNewVersion,
                 SortIndex = row.SortKey,
-                NodeTypeKeys = [.. nodeTypes[row.Id].Select(t => typeOf.TryGetValue(t.NodeTypeId, out var type) ? type.Key : null).OfType<string>().Distinct()],
+                NodeTypeKeys = keys,
             }, "MAM.PropertyDefinition", row.Id, row.Identifier);
+            definition.Key = Key(KeyKinds.Definition, definition.Id, row.Identifier, Name(row.TranslationIdentifier, null), "property", row.Id);
 
-            var listKeys = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var value in listValues[row.Id].OrderBy(v => v.SortKey))
+            var listKeys = target.ListValues.Values.Where(v => v.DefinitionId == definition.Id).Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
+            foreach (var value in listValues[row.Id].OrderBy(v => v.SortKey).ThenBy(v => v.Id))
             {
-                var key = Unique(Slug(Guid.TryParse(value.Identifier, out _) ? Name(value.TranslationIdentifier, value.Text) : value.Identifier) ?? $"value-{value.Id}", listKeys);
+                var id = SourceIds.For(Scope, "MAM.PropertyListValue", value.Id, value.Identifier);
+                var key = target.ListValues.TryGetValue(id, out var stored)
+                    ? stored.Key
+                    : Unique(Slug(Guid.TryParse(value.Identifier, out _) ? Name(value.TranslationIdentifier, value.Text) : value.Identifier) ?? $"value-{value.Id}", listKeys);
                 var entry = new PropertyListValue
                 {
                     DefinitionId = definition.Id,
@@ -189,7 +259,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                     SortIndex = value.SortKey,
                     IsActive = value.IsActive,
                 };
-                Ids.Set(entry, SourceIds.For("MAM.PropertyListValue", value.Id, value.Identifier));
+                Ids.Set(entry, id);
                 definition.ListValues.Add(entry);
                 listKeyOf[value.Id] = key;
             }
@@ -198,6 +268,29 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         }
 
         return [.. definitionOf.Values];
+    }
+
+    /// <summary>Shareme node type keys of Sharedien node types, as far as they have one.</summary>
+    private Dictionary<long, string> TypeKeys()
+    {
+        var keys = new Dictionary<long, string>();
+        foreach (var row in source.NodeTypes)
+        {
+            string? key = row.Semantic switch
+            {
+                Category => "folder",
+                AssetSet or Version => "asset",
+                Workspace => "workspace",
+                Task => "task",
+                _ => null,
+            };
+            if (key is not null)
+            {
+                keys[row.Id] = key;
+            }
+        }
+
+        return keys;
     }
 
     private List<Node> MapNodes(Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf, out Dictionary<long, Node> nodeOf)
@@ -223,11 +316,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 _ => new CustomNode { Name = Name(row.TranslationIdentifier, row.Identifier), Names = Names(row.TranslationIdentifier) },
             };
 
-            var id = SourceIds.For("MAM.Node", row.Id, row.Identifier);
+            var id = SourceIds.For(Scope, "MAM.Node", row.Id, row.Identifier);
             if (!usedIds.Add(id))
             {
                 report.Problem("duplicate_identifier", "MAM.Node", row.Id);
-                id = SourceIds.Derived("MAM.Node", row.Id);
+                id = SourceIds.Derived(Scope, "MAM.Node", row.Id);
                 usedIds.Add(id);
             }
 
@@ -237,28 +330,42 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             node.SortIndex = row.SequenceNr;
             node.InterruptInheritance = row.InterruptInheritance;
             node.CreatedAt = Utc(row.CreateDate);
-            node.ModifiedAt = Utc(row.MutDate);
+            node.ModifiedAt = row.MutDate is { } modified ? Utc(modified) : null;
             nodeOf[row.Id] = node;
         }
 
-        // Shareme is a tree: the first parent wins, further parents become links
+        // Shareme is a tree: the first parent wins, further parents become links. A first parent of a later phase
+        // (workspace, task) holds the node back with its subtree: placed under the root it would be visible to all.
+        var sourceNodes = source.Nodes.Select(n => n.Id).ToHashSet();
         var parentOf = new Dictionary<long, long>();
+        var deferred = new HashSet<long>();
         foreach (var edge in source.Edges.Where(e => SemanticOf(e) == ParentChild).OrderBy(e => e.Id))
         {
-            if (!nodeOf.ContainsKey(edge.FromNodeId) || !nodeOf.ContainsKey(edge.ToNodeId))
+            if (!nodeOf.ContainsKey(edge.ToNodeId) || !sourceNodes.Contains(edge.FromNodeId))
             {
                 continue;
             }
 
-            if (!parentOf.TryAdd(edge.ToNodeId, edge.FromNodeId))
+            if (parentOf.ContainsKey(edge.ToNodeId) || deferred.Contains(edge.ToNodeId))
             {
-                report.Problem("multi_parent", "MAM.Edge", edge.Id);
+                if (nodeOf.ContainsKey(edge.FromNodeId))
+                {
+                    report.Problem("multi_parent", "MAM.Edge", edge.Id);
+                }
+            }
+            else if (nodeOf.ContainsKey(edge.FromNodeId))
+            {
+                parentOf[edge.ToNodeId] = edge.FromNodeId;
+            }
+            else
+            {
+                deferred.Add(edge.ToNodeId);
             }
         }
 
         var children = parentOf.ToLookup(p => p.Value, p => p.Key);
         var placed = new List<Node>();
-        var queue = new Queue<(long Id, Node Parent)>(nodeOf.Keys.Where(id => !parentOf.ContainsKey(id)).Select(id => (id, (Node)target.Root)));
+        var queue = new Queue<(long Id, Node Parent)>(nodeOf.Keys.Where(id => !parentOf.ContainsKey(id) && !deferred.Contains(id)).Select(id => (id, (Node)target.Root)));
         while (queue.TryDequeue(out var item))
         {
             var node = nodeOf[item.Id];
@@ -273,7 +380,14 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var placedIds = placed.Select(n => n.Id).ToHashSet();
         foreach (var lost in nodeOf.Where(n => !placedIds.Contains(n.Value.Id)).Select(n => n.Key).ToList())
         {
-            report.Problem("cycle", "MAM.Node", lost);
+            var top = lost;
+            var steps = 0;
+            while (parentOf.TryGetValue(top, out var parent) && steps++ < nodeOf.Count)
+            {
+                top = parent;
+            }
+
+            report.Problem(deferred.Contains(top) ? "deferred_parent" : "cycle", "MAM.Node", lost);
             nodeOf.Remove(lost);
         }
 
@@ -284,19 +398,20 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     {
         var edges = new List<Edge>();
         var seen = new HashSet<(Guid, Guid, Guid)>();
-        var parentEdges = new HashSet<(long, long)>();
         foreach (var row in source.Edges.OrderBy(e => e.Id))
         {
+            var semantic = SemanticOf(row);
             if (!nodeOf.TryGetValue(row.FromNodeId, out var from) || !nodeOf.TryGetValue(row.ToNodeId, out var to))
             {
+                report.Skip(semantic == ParentChild ? "parent edges outside the phase" : "edges to nodes not imported");
                 continue;
             }
 
             Guid type;
-            if (SemanticOf(row) == ParentChild)
+            if (semantic == ParentChild)
             {
                 // the parent itself is the tree; a second parent stays reachable as a link
-                if (to.ParentId == from.Id || !parentEdges.Add((row.FromNodeId, row.ToNodeId)))
+                if (to.ParentId == from.Id)
                 {
                     continue;
                 }
@@ -305,13 +420,14 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             }
             else if (!edgeTypeOf.TryGetValue(row.EdgeTypeId, out type))
             {
+                report.Skip($"edges of semantic {semantic}");
                 continue;
             }
 
             if (seen.Add((type, from.Id, to.Id)))
             {
-                var edge = new Edge { EdgeTypeId = type, FromNodeId = from.Id, ToNodeId = to.Id, TenantId = target.TenantId };
-                Ids.Set(edge, SourceIds.For("MAM.Edge", row.Id, row.Identifier));
+                var edge = new Edge { EdgeTypeId = type, FromNodeId = from.Id, ToNodeId = to.Id, TenantId = target.TenantId, CreatedAt = DateTimeOffset.UtcNow };
+                Ids.Set(edge, SourceIds.For(Scope, "MAM.Edge", row.Id, row.Identifier));
                 edges.Add(edge);
             }
         }
@@ -319,17 +435,22 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         return edges;
     }
 
-    private void MapValues(Dictionary<long, Node> nodeOf, Dictionary<long, PropertyDefinition> definitionOf, Dictionary<long, string> listKeyOf)
+    private void MapValues(
+        Dictionary<long, Node> nodeOf, Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf, Dictionary<long, PropertyDefinition> definitionOf,
+        Dictionary<long, string> listKeyOf, HashSet<string> languages)
     {
         // asset metadata lives on the current version in Sharedien
         var assetOfVersion = source.Versions.GroupBy(v => v.AssetNodeId)
             .Select(g => g.MaxBy(v => v.Version)!).ToDictionary(v => v.VersionNodeId, v => v.AssetNodeId);
+        var typeKeyOf = source.Nodes.Where(n => typeOf.ContainsKey(n.NodeTypeId)).ToDictionary(n => n.Id, n => typeOf[n.NodeTypeId].Key);
+        var collected = new Dictionary<(long Node, long Definition), List<MetadataValue>>();
         foreach (var row in source.Values.OrderBy(v => v.Id))
         {
             var owner = assetOfVersion.TryGetValue(row.NodeId, out var asset) ? asset : row.NodeId;
-            if (!nodeOf.TryGetValue(owner, out var node) || !definitionOf.TryGetValue(row.DefinitionId, out var definition))
+            if (!nodeOf.ContainsKey(owner) || !definitionOf.TryGetValue(row.DefinitionId, out var definition))
             {
-                continue; // older versions, system properties and nodes of later phases
+                report.Skip("values of nodes or definitions not imported");
+                continue;
             }
 
             if (row.UserContextId is not null)
@@ -338,7 +459,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 continue;
             }
 
-            var values = node.Metadata.TryGetValue(definition.Key, out var existing) ? existing : node.Metadata[definition.Key] = [];
+            var values = collected.TryGetValue((owner, row.DefinitionId), out var list) ? list : collected[(owner, row.DefinitionId)] = [];
             if (row.ListValueId is { } listValue)
             {
                 if (listKeyOf.TryGetValue(listValue, out var key))
@@ -349,31 +470,55 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 {
                     report.Problem("unknown_list_value", "MAM.PropertyValue", row.Id);
                 }
+
+                continue;
+            }
+
+            if (definition.Localizable && row.TranslationIdentifier is { } ti && _translations.TryGetValue((ti, "TextValue"), out var texts))
+            {
+                values.AddRange(texts.Select(t => new MetadataValue(Lang: t.Key, V: JsonSerializer.SerializeToElement(t.Value))));
+            }
+            else if (Value(definition.ValueType, row) is { } value)
+            {
+                values.Add(new MetadataValue(Lang: definition.Localizable ? _defaultLanguage : null, V: value));
             }
             else
             {
-                IEnumerable<(string? Lang, JsonElement? V)> candidates =
-                    definition.Localizable && row.TranslationIdentifier is { } ti && _translations.TryGetValue((ti, "TextValue"), out var texts)
-                        ? texts.Select(t => ((string?)t.Key, (JsonElement?)JsonSerializer.SerializeToElement(t.Value)))
-                        : [(null, Value(definition.ValueType, row))];
-                foreach (var (lang, candidate) in candidates)
-                {
-                    // the same check as the API, so every imported value can be edited and searched like a typed one
-                    if (MetadataRules.Check(definition, candidate) is (null, { } valid))
-                    {
-                        values.Add(new MetadataValue(Lang: lang, V: valid));
-                    }
-                    else
-                    {
-                        report.Problem("invalid_value", "MAM.PropertyValue", row.Id);
-                    }
-                }
+                report.Problem("invalid_value", "MAM.PropertyValue", row.Id);
+            }
+        }
+
+        foreach (var ((owner, definitionId), values) in collected.OrderBy(c => c.Key))
+        {
+            var definition = definitionOf[definitionId];
+            if (!definition.AppliesTo(typeKeyOf[owner]))
+            {
+                report.Problem("property_not_for_type", "MAM.Node", owner);
+                continue;
             }
 
-            if (values.Count == 0)
+            // single valued properties keep their first value per language and context
+            var single = definition.ListMode != ListModes.Multi && !definition.MultiValue;
+            var kept = single ? values.GroupBy(v => (v.Lang, v.Ctx)).Select(g => g.First()).ToList() : values;
+            if (kept.Count < values.Count)
             {
-                node.Metadata.Remove(definition.Key);
+                report.Problem("extra_values_dropped", "MAM.Node", owner);
             }
+
+            // the same checks as the API, so every imported value can be edited and searched like a typed one
+            if (kept.Count == 0)
+            {
+                continue;
+            }
+
+            if (MetadataRules.Check(definition, kept, languages, [], out var normalized) is [var first, ..])
+            {
+                // the API message without quoted parts (keys, codes), so the report names the rule but no content
+                report.Problem("invalid_property: " + System.Text.RegularExpressions.Regex.Replace(first, "'[^']*'", "'…'"), "MAM.Node", owner);
+                continue;
+            }
+
+            nodeOf[owner].Metadata[definition.Key] = normalized;
         }
     }
 
@@ -383,11 +528,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         {
             PropertyValueTypes.String or PropertyValueTypes.Text or PropertyValueTypes.Url => row.Text,
             PropertyValueTypes.Date => (row.Date ?? row.DateTime)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            PropertyValueTypes.DateTime => row.DateTime is { } moment ? Utc(moment).ToString("yyyy-MM-ddTHH:mm:ssK", CultureInfo.InvariantCulture) : null,
+            PropertyValueTypes.DateTime => row.DateTime is { } moment ? Utc(moment).ToString("yyyy-MM-ddTHH:mm:ss.FFFFFFFK", CultureInfo.InvariantCulture) : null,
             PropertyValueTypes.Time => row.DateTime?.ToString("HH:mm:ss", CultureInfo.InvariantCulture)
                 ?? (row.DurationTicks is { } t ? TimeSpan.FromTicks(t).ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : row.Text),
             PropertyValueTypes.Integer => row.Int,
-            PropertyValueTypes.Decimal => row.Decimal,
+            PropertyValueTypes.Decimal => row.Decimal is { } number ? number / 1.0000000000000000000000000000m : null, // drops the scale-10 trailing zeros
             PropertyValueTypes.Boolean => row.Bool,
             PropertyValueTypes.Duration => row.DurationTicks is { } ticks ? XmlConvert.ToString(TimeSpan.FromTicks(ticks)) : null,
             _ => null,
@@ -417,7 +562,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     private T Tenant<T>(T entity, string table, long sourceId, string? identifier)
         where T : Coworkee.Domain.Entity
     {
-        Ids.Set(entity, SourceIds.For(table, sourceId, identifier));
+        Ids.Set(entity, SourceIds.For(Scope, table, sourceId, identifier));
         switch (entity)
         {
             case Coworkee.Domain.IMultiTenant tenant:
@@ -434,8 +579,18 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         return entity;
     }
 
-    private string Key(string identifier, string? name, string fallback, long sourceId) =>
-        Unique((Guid.TryParse(identifier, out _) ? Slug(name) : Slug(identifier)) ?? $"{fallback}-{sourceId}", _keys);
+    /// <summary>The stored key of an entity that exists already, otherwise a new one unique within its kind.</summary>
+    private string Key(string kind, Guid id, string identifier, string? name, string fallback, long sourceId)
+    {
+        var stored = target.KeysOf(kind);
+        if (stored.TryGetValue(id, out var key))
+        {
+            return key;
+        }
+
+        var taken = _takenKeys.TryGetValue(kind, out var set) ? set : _takenKeys[kind] = new HashSet<string>(stored.Values, StringComparer.Ordinal);
+        return Unique((Guid.TryParse(identifier, out _) ? Slug(name) : Slug(identifier)) ?? $"{fallback}-{sourceId}", taken);
+    }
 
     private string Name(string? translationIdentifier, string? fallback) =>
         Text(translationIdentifier, "Name") is { Length: > 0 } name ? (name.Length > 200 ? name[..200] : name) : fallback ?? "?";

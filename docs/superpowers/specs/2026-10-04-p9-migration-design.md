@@ -174,7 +174,12 @@ Keine Passwort-Migration (Sharedien: PBKDF2 mit eigenem Salt-Format; Übernahme 
 
 ## 5. Umsetzungsschnitt (Plan-Vorschlag)
 
-**Stand Slice 1 (umgesetzt):** `plan`/`run` für Sprachen, Knoten- und Kantentypen, Property-Gruppen, -Definitionen und -Listenwerte, Baum (Ordner, Assets ohne Dateien mit Status `importing`, Custom Nodes), Kanten und Metadaten (geprüft mit `MetadataRules`). Ziel-Ids deterministisch, ein zweiter Lauf schreibt nichts; `import.IdMap` folgt erst mit Delta-Updates. Lokaler Lauf gegen die Analyse-DB: ≈ 10 000 Knoten, 6 300 Kanten, 199 Definitionen in wenigen Sekunden; Werte mit UserContext (468) folgen mit den UserContexts.
+**Stand (umgesetzt):** `shareme-import plan|run --source-tenant <id> --tenant <guid>`, Verbindungen nur über `SHAREME_IMPORT_SOURCE`/`SHAREME_IMPORT_TARGET`. Übernommen: Benutzer (ohne Passwort, gleiche E-Mail → ein User), Profile, Gruppen mit Mitgliedern und Mandantenrollen, Rollen mit Rechten (`PermissionMap`, Sharedien-Enum → Shareme-Recht, Lücken im Bericht), Knotenrechte, Sprachen (vorhandene Codes bleiben, höchstens ein Default), Knoten- und Kantentypen, Property-Gruppen/-Definitionen/-Listenwerte (Version-Typen zählen als Asset), Baum (Ordner, Assets ohne Dateien, Custom Nodes), Kanten und Metadaten (volle API-Prüfung über `MetadataRules`). Regeln:
+- Ein Lauf ist **eine Transaktion**; abgeleitete Ids enthalten den Zielmandanten, eine übernommene Quell-GUID darf nur in einem Mandanten leben (sonst Abbruch); vorhandene Keys werden wiederverwendet, ein zweiter Lauf schreibt nichts.
+- Knoten, deren erster Elternknoten in eine spätere Phase gehört (Workspace, Task), bleiben samt Teilbaum draußen (`deferred_parent`), statt unter der Wurzel für alle sichtbar zu werden. Variant-Kanten warten auf die Dateiphase (sonst markiert der Processing-Sweep Assets als fehlgeschlagen).
+- Lokaler Lauf gegen die Analyse-DB: ≈ 9 200 Knoten, 118 User, 88 Rollen, 602 Grants, 141 Knotenrechte in ≈ 13 s; übrig nur echte Datenfehler (12 ungültige URLs, 13 Einzelwerte).
+- **Nur Einfügen:** bis Upsert (Id + Hash, `import.IdMap`) umgesetzt ist, darf ein Lauf nur gegen ein Wegwerf- oder frisches Ziel gehen; spätere Phasen müssen Status, Eltern (Workspaces) und Kataloge aktualisieren können.
+- Offen: UserContexts (Kontextwerte bleiben draußen, `HasContext` vorerst aus), Workspaces/States/Tasks, DRM, Regeln, Dateien, Translation-Schlüssel mit `ObjectType` (6 Kollisionen), Katalog nur auf genutzte Definitionen beschränken, Suche: nach dem Lauf Reindex anstoßen (Hinweis in der Ausgabe).
 
 1. `MetadataRules`-Refactor + Importer-Gerüst (CLI, Quellleser, IdMap, Import-Kontext, Bericht) + Katalog-Phase.
 2. Identity + Tree + Metadata.
