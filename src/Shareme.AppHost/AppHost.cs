@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 var builder = DistributedApplication.CreateBuilder(args);
 
 var infrastructure = builder.AddCoworkeeInfrastructure("shareme");
@@ -59,6 +60,12 @@ var web = builder.AddProject<Projects.Shareme_Web>("shareme-web")
 
 // links in digest mails lead to the web app
 api.WithEnvironment("Coworkee__Notifications__PublicAppUrl", web.GetEndpoint("https"));
+
+if (builder.Environment.IsDevelopment())
+{
+    // per machine certificates are fine locally; production configures Coworkee__Auth__SigningCertificate and __EncryptionCertificate
+    auth.WithEnvironment("Coworkee__Auth__DevelopmentCertificates", "true");
+}
 
 auth.WithEnvironment("Coworkee__Auth__ApiScopes__shareme_api", "shareme_api")
     .WithEnvironment("Coworkee__Jobs__RunServer", "false")

@@ -233,7 +233,7 @@ Vorher immer ein Backup (Abschnitt 10).
 
 - **Data Protection**: Keys liegen in `cw."DataProtectionKeys"`, Anwendungsname `Coworkee`, damit teilen alle Dienste die Keys. Die Keys sind **unverschlüsselt** gespeichert (**Offen**: `ProtectKeysWithCertificate`). Datenbank-Backups entsprechend schützen.
 - **Secrets in Einstellungen** (`Secret`-Typ) und KI-Provider-Keys sind mit Data Protection verschlüsselt.
-- **Auth-Server nutzt Entwicklungszertifikate** für Signatur und Verschlüsselung (`AddDevelopmentSigningCertificate`), Issuer ist nicht fest gesetzt (**Offen**, blockiert Produktion).
+- **Auth-Server-Zertifikate**: außerhalb von Development startet der Auth-Server nur mit `Coworkee:Auth:SigningCertificate:Path`/`:Password` und `Coworkee:Auth:EncryptionCertificate:Path`/`:Password` (PKCS#12; Signatur-Zertifikat mit Key Usage DigitalSignature, Verschlüsselung mit KeyEncipherment), gleiche Dateien für alle Instanzen. `Coworkee:Auth:Issuer` setzt die öffentliche Adresse fest (hinter Proxy oder bei mehreren Instanzen). `Coworkee:Auth:DevelopmentCertificates=true` erlaubt die Entwicklungszertifikate für Tests und Demos; der AppHost setzt es nur im Development-Modus.
 - **Content-Security-Policy fehlt** noch in Sharemee und Coworkee (**Offen**, siehe `docs/superpowers/deferred-minors.md`).
 - Swagger UI (`/swagger`) und `/openapi/v1.json` sind in allen Umgebungen gemappt (**Offen**).
 - BFF-Cookie: `HttpOnly`, `SameSite=Strict`, `Secure` wie der Request – TLS am Proxy erzwingen.
@@ -282,5 +282,5 @@ dotnet run --project src/Shareme.Importer -- run  --source-tenant <id> --tenant 
 | KI-Extraktion: `... is no public address` | Provider im privaten Netz; `Shareme:Ai:AllowPrivateNetworks=true`. |
 | Upload bricht mit `413` ab | Body-Limit am Reverse-Proxy (≥ 101 MB). |
 | Öffentlicher Freigabe-Link liefert `429` | `Shareme:Shares:RequestsPerMinute` erhöhen. |
-| Nach Neustart des Auth-Containers ungültige Tokens | Entwicklungszertifikate (Abschnitt 13). |
+| Nach Neustart des Auth-Containers ungültige Tokens | Entwicklungszertifikate erlaubt (`Coworkee:Auth:DevelopmentCertificates`) statt konfigurierter Zertifikate (Abschnitt Sicherheit). |
 | Hangfire-Dashboard `401/403` | Anmeldung über die Web-App und Recht `Jobs.View`. |
