@@ -51,6 +51,25 @@ public sealed record GroupRoleRow(long GroupId, long RoleId);
 
 public sealed record NodePermissionRow(long Id, string Identifier, long NodeId, long RoleId, long? GroupId, long? UserId);
 
+public sealed record OriginalRow(long VersionNodeId, string? DataId, string? FileHash);
+
+public sealed record WorkspaceRow(long NodeId, string? TranslationIdentifier, bool IsTemplate, long? FinalizationNodeId, bool CopyProperties, int Type);
+
+public sealed record StateRow(long NodeId, int SequenceNr, string? TranslationIdentifier, bool IsDefault);
+
+public sealed record TaskRow(long NodeId, string? Name, string? Description, DateTime? DueDate, long? AssignedUserId, int Status, int SequenceNr);
+
+public sealed record CommentRow(long NodeId, string? Text, string? CreatedBy, DateTime? CreatedAt);
+
+public sealed record SourceWorkspaces(IReadOnlyList<WorkspaceRow> Workspaces, IReadOnlyList<StateRow> States, IReadOnlyList<TaskRow> Tasks, IReadOnlyList<CommentRow> Comments)
+{
+    public static readonly SourceWorkspaces Empty = new([], [], [], []);
+}
+
+public sealed record UserContextRow(long Id, string Identifier, string? TranslationIdentifier, int SequenceNr, bool IsDefault);
+
+public sealed record PropertyRestrictionRow(long Id, string Identifier, long RoleId, int Action, long DefinitionId);
+
 public sealed record SourceIdentity(
     IReadOnlyList<UserRow> Users,
     IReadOnlyList<GroupRow> Groups,
@@ -58,7 +77,8 @@ public sealed record SourceIdentity(
     IReadOnlyList<RoleRow> Roles,
     IReadOnlyList<RolePermissionRow> RolePermissions,
     IReadOnlyList<GroupRoleRow> GroupRoles,
-    IReadOnlyList<NodePermissionRow> NodePermissions)
+    IReadOnlyList<NodePermissionRow> NodePermissions,
+    IReadOnlyList<PropertyRestrictionRow>? PropertyRestrictions = null)
 {
     public static readonly SourceIdentity Empty = new([], [], [], [], [], [], []);
 }
@@ -76,7 +96,10 @@ public sealed record SourceData(
     IReadOnlyList<DefinitionNodeTypeRow> DefinitionNodeTypes,
     IReadOnlyList<ListValueRow> ListValues,
     IReadOnlyList<ValueRow> Values,
-    SourceIdentity? Identity = null);
+    SourceIdentity? Identity = null,
+    IReadOnlyList<UserContextRow>? UserContexts = null,
+    SourceWorkspaces? Workspaces = null,
+    IReadOnlyList<OriginalRow>? Originals = null);
 
 /// <summary>Reads one source tenant, read only. Deleted rows and system property definitions stay behind.</summary>
 public sealed class SharedienSource(string connectionString)
@@ -185,7 +208,39 @@ public sealed class SharedienSource(string connectionString)
                     from Admin.NodePermission where NodeId in ({TenantNodes})
                     order by NodePermissionId
                     """,
-                    r => new NodePermissionRow(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetInt64(3), r.Long(4), r.Long(5)))));
+                    r => new NodePermissionRow(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetInt64(3), r.Long(4), r.Long(5))),
+                await Query(
+                    """
+                    select PropertyDefinitionRestrictionId, Identifier, RoleId, Action, PropertyDefinitionId
+                    from Admin.PropertyDefinitionRestriction order by PropertyDefinitionRestrictionId
+                    """,
+                    r => new PropertyRestrictionRow(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetInt32(3), r.GetInt64(4)))),
+            await Query("select UserContextId, Identifier, TranslationIdentifier, SequenceNr, IsDefault from MAM.UserContext where IsDeleted = 0 order by UserContextId",
+                r => new UserContextRow(r.GetInt64(0), r.GetString(1), r.Text(2), r.Int(3) ?? 0, r.GetBoolean(4))),
+            new SourceWorkspaces(
+                await Query(
+                    $"""
+                    select w.WorkspaceNodeId, w.TranslationIdentifier, w.IsTemplate, c.CategoryNodeId, w.CopyPropertiesToAssets, w.WorkspaceType
+                    from MAM.Workspace w left join MAM.Category c on c.CategoryId = w.FinalizationCategoryId
+                    where w.WorkspaceNodeId in ({TenantNodes}) order by w.WorkspaceId
+                    """,
+                    r => new WorkspaceRow(r.GetInt64(0), r.Text(1), r.GetBoolean(2), r.Long(3), r.GetBoolean(4), r.GetInt32(5))),
+                await Query($"select StateNodeId, SequenceNr, TranslationIdentifier, IsDefault from MAM.State where StateNodeId in ({TenantNodes}) order by StateId",
+                    r => new StateRow(r.GetInt64(0), r.Int(1) ?? 0, r.Text(2), r.GetBoolean(3))),
+                await Query($"select NodeId, Name, Description, DueDate, AssignedUserId, Status, SequenceNr from MAM.Task where NodeId in ({TenantNodes}) order by TaskId",
+                    r => new TaskRow(r.GetInt64(0), r.Text(1), r.Text(2), r.IsDBNull(3) ? null : r.GetDateTime(3), r.Long(4), r.GetInt32(5), r.Int(6) ?? 0)),
+                await Query($"select NodeId, Text, CreatedBy, CreatedAt from MAM.Comment where NodeId in ({TenantNodes}) order by CommentId",
+                    r => new CommentRow(r.GetInt64(0), r.Text(1), r.Text(2), r.IsDBNull(3) ? null : r.GetDateTime(3)))),
+            await Query(
+                $"""
+                select v.AssetVersionNodeId, d.DataId, d.FileHash
+                from MAM.AssetVersion v
+                join MAM.AssetDerivation d on d.AssetVersionId = v.AssetVersionId
+                join MAM.DerivationType t on t.DerivationTypeId = d.DerivationTypeId and t.Identifier = 'Original'
+                where v.AssetVersionNodeId in ({TenantNodes})
+                order by d.AssetDerivationId
+                """,
+                r => new OriginalRow(r.GetInt64(0), r.Text(1), r.Text(2))));
     }
 }
 

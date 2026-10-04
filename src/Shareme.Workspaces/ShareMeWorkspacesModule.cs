@@ -191,14 +191,20 @@ internal sealed class WorkspaceModelContributor : IModelContributor
 }
 
 /// <summary>The owner and collaborator roles of a tenant, made on first use; admins may rename them or change their permissions like any role.</summary>
-internal sealed class WorkspaceRoleStore(CoworkeeDbContext db, ICurrentUser currentUser)
+/// <summary>The roles members get per workspace, by key; tenants get them on their first workspace (or from the importer).</summary>
+public static class WorkspaceRoleDefinitions
 {
-    private static readonly Dictionary<string, (string Name, string[] Permissions)> Definitions = new()
+    public static readonly IReadOnlyDictionary<string, (string Name, string[] Permissions)> All = new Dictionary<string, (string Name, string[] Permissions)>
     {
         [WorkspaceRoles.Owner] = ("Workspace owner",
             [NodePermissions.Read, NodePermissions.Create, NodePermissions.Update, NodePermissions.Delete, NodePermissions.ManagePermissions, AssetPermissions.Download, WorkspacePermissions.Finalize]),
         [WorkspaceRoles.Collaborator] = ("Workspace collaborator", [NodePermissions.Read, NodePermissions.Create, NodePermissions.Update, AssetPermissions.Download]),
     };
+}
+
+internal sealed class WorkspaceRoleStore(CoworkeeDbContext db, ICurrentUser currentUser)
+{
+    private static readonly IReadOnlyDictionary<string, (string Name, string[] Permissions)> Definitions = WorkspaceRoleDefinitions.All;
 
     private Dictionary<string, Guid>? _roles;
 

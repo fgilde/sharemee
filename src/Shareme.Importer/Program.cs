@@ -5,8 +5,11 @@ internal static class ImporterProgram
     private const string Usage =
         """
         usage: shareme-import plan|run --source-tenant <id> --tenant <guid> [--report <file>] [--max-problems <n>]
+                                     [--blobs-folder <StorageHandler root> | --blobs-container <Azure container>]
           source and target connections come from the environment, never the command line:
-          SHAREME_IMPORT_SOURCE (SQL Server, read only) and SHAREME_IMPORT_TARGET (Shareme Postgres)
+          SHAREME_IMPORT_SOURCE (SQL Server, read only), SHAREME_IMPORT_TARGET (Shareme Postgres),
+          SHAREME_IMPORT_BLOBS (Azure storage connection for --blobs-container); the target storage is configured
+          like Shareme itself (Coworkee__Storage__...)
         """;
 
     public static async Task<int> Main(string[] args)
@@ -52,7 +55,7 @@ internal static class ImporterProgram
         if (options.Write)
         {
             Console.WriteLine("Done. Restart Shareme (or wait five minutes for the permission cache) and start a search reindex for the tenant (admin › search).");
-            Console.WriteLine("Not imported yet: role restrictions (hidden properties, list values, renditions). Review them before users sign in.");
+            Console.WriteLine("Not imported yet: list value and rendition restrictions of roles. Review them before users sign in.");
         }
 
         return report.Problems.Count > options.MaxProblems ? 1 : 0;
@@ -61,7 +64,10 @@ internal static class ImporterProgram
 
 public sealed record ImportOptions(bool Write, string Source, long SourceTenant, string Target, Guid Tenant, string? ReportPath, int MaxProblems)
 {
-    private static readonly HashSet<string> Flags = ["--source-tenant", "--tenant", "--report", "--max-problems"];
+    private static readonly HashSet<string> Flags = ["--source-tenant", "--tenant", "--report", "--max-problems", "--blobs-folder", "--blobs-container"];
+
+    /// <summary>Where the original files come from; without it only the database moves.</summary>
+    public ISourceBlobs? Blobs { get; init; }
 
     /// <summary>Null on any unknown flag, missing value or unparsable number, so a typo never runs an import.</summary>
     public static ImportOptions? Parse(string[] args, string? source, string? target)
@@ -84,7 +90,14 @@ public sealed record ImportOptions(bool Write, string Source, long SourceTenant,
         return long.TryParse(values.GetValueOrDefault("--source-tenant"), out var sourceTenant)
             && Guid.TryParse(values.GetValueOrDefault("--tenant"), out var tenant) && tenant != Guid.Empty
             && (!values.TryGetValue("--max-problems", out var limit) || int.TryParse(limit, out max))
+            && !(values.ContainsKey("--blobs-folder") && values.ContainsKey("--blobs-container"))
+            && (!values.ContainsKey("--blobs-container") || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SHAREME_IMPORT_BLOBS")))
             ? new ImportOptions(args[0] == "run", source, sourceTenant, target, tenant, values.GetValueOrDefault("--report"), max)
+            {
+                Blobs = values.TryGetValue("--blobs-folder", out var folder) ? new FileSystemBlobs(folder)
+                    : values.TryGetValue("--blobs-container", out var container) ? new AzureBlobs(Environment.GetEnvironmentVariable("SHAREME_IMPORT_BLOBS")!, container)
+                    : null,
+            }
             : null;
     }
 }
@@ -101,15 +114,46 @@ public static class SharedienImport
         }
 
         await using var writer = new ImportWriter(options.Target, options.Tenant);
-        var plan = new SharedienMapper(source, await writer.TargetAsync(cancellationToken), report).Map();
+        var plan = new SharedienMapper(source, await writer.TargetAsync(cancellationToken) with { WithFiles = options.Blobs is not null }, report).Map();
         if (options.Write && report.Problems.Count > options.MaxProblems)
         {
             throw new InvalidOperationException($"{report.Problems.Count} problems exceed --max-problems {options.MaxProblems}; nothing was written.");
         }
 
-        if (options.Write)
+        if (!options.Write)
         {
-            await writer.WriteAsync(plan, report, cancellationToken);
+            return report;
+        }
+
+        List<Shareme.Assets.AssetVersion> versions = [];
+        if (options.Blobs is { } blobs)
+        {
+            // the writer only inserts: files can only come together with their assets, never for assets of an earlier run
+            var existingAssets = await writer.ExistingNodesAsync(plan.Versions.Select(v => v.Asset.Id).Distinct(), cancellationToken);
+            var existingVersions = await writer.ExistingVersionsAsync(plan.Versions.Select(v => v.VersionId), cancellationToken);
+            foreach (var asset in plan.Versions.GroupBy(v => v.Asset.Id).Where(g => existingAssets.Contains(g.Key) && !g.Any(v => existingVersions.Contains(v.VersionId))))
+            {
+                report.Problem("asset_imported_without_files", "MAM.AssetVersion", asset.First().VersionNodeId);
+            }
+
+            versions = await new BlobCopier(blobs, writer.Storage, await writer.FileTypesAsync(cancellationToken), report)
+                .CopyAsync([.. plan.Versions.Where(v => !existingAssets.Contains(v.Asset.Id))], existingVersions, options.Tenant, cancellationToken);
+        }
+
+        if (report.Problems.Count > options.MaxProblems)
+        {
+            throw new InvalidOperationException($"{report.Problems.Count} problems exceed --max-problems {options.MaxProblems} after copying files; nothing was written (copied files are overwritten by the next run).");
+        }
+
+        await writer.WriteAsync(plan, versions, report, cancellationToken);
+        try
+        {
+            report.Written["rendition requests"] = await writer.RequestRenditionsAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // the import is committed; the next run requests what is still missing
+            report.Problem("renditions_not_requested", "import", 0);
         }
 
         return report;

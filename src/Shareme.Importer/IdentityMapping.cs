@@ -104,7 +104,8 @@ public sealed record IdentityPlan(
     IReadOnlyDictionary<string, Guid> UserByName,
     IReadOnlyDictionary<long, Guid> TenantRoleIds,
     IReadOnlyDictionary<long, Guid> NodeRoleIds,
-    IReadOnlyDictionary<long, Guid> GroupIds)
+    IReadOnlyDictionary<long, Guid> GroupIds,
+    IReadOnlyList<Shareme.Workspaces.WorkspaceRoleBinding>? WorkspaceRoleBindings = null)
 {
     public static readonly IdentityPlan Empty = new([], [], [], [], [], new Dictionary<long, Guid>(), new Dictionary<string, Guid>(),
         new Dictionary<long, Guid>(), new Dictionary<long, Guid>(), new Dictionary<long, Guid>());
@@ -117,6 +118,14 @@ public sealed record IdentityPlan(
 public sealed class IdentityMapper(SourceIdentity source, MapTarget target, ImportReport report, Func<string?, string, string> name)
 {
     private const int Active = 1;
+
+    // Sharedien's system roles on workspaces and collections become Shareme's workspace roles, so members show as such
+    private static readonly Dictionary<string, string> WorkspaceRoleKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["workspaceOwner"] = Shareme.Contracts.Workspaces.WorkspaceRoles.Owner,
+        ["collectionOwner"] = Shareme.Contracts.Workspaces.WorkspaceRoles.Owner,
+        ["workspaceCollaborator"] = Shareme.Contracts.Workspaces.WorkspaceRoles.Collaborator,
+    };
     private static readonly HashSet<int> NeverApproved = [10, 11, 20, 21]; // email verification or approval pending, expired or denied
 
     public IdentityPlan Map()
@@ -210,8 +219,26 @@ public sealed class IdentityMapper(SourceIdentity source, MapTarget target, Impo
         var roleNames = new HashSet<string>(target.ExistingRoleNames, StringComparer.OrdinalIgnoreCase);
         var permissions = source.RolePermissions.ToLookup(p => p.RoleId, p => p.Permission);
         var unmapped = new HashSet<int>();
+        var bindings = new List<Shareme.Workspaces.WorkspaceRoleBinding>();
+        var workspaceRoles = new Dictionary<string, Guid>(target.WorkspaceRoles);
         foreach (var row in source.Roles.OrderBy(r => r.Id))
         {
+            if (row.IsSystem && WorkspaceRoleKeys.TryGetValue(row.Identifier, out var key))
+            {
+                if (!workspaceRoles.TryGetValue(key, out var workspaceRole))
+                {
+                    var (workspaceRoleName, rights) = Shareme.Workspaces.WorkspaceRoleDefinitions.All[key];
+                    workspaceRole = AddRole(roles, grants, roleNames, workspaceRoleName, "WorkspaceRole:" + key, 0, rights);
+                    var binding = new Shareme.Workspaces.WorkspaceRoleBinding { Key = key, RoleId = workspaceRole, TenantId = target.TenantId };
+                    Ids.Set(binding, SourceIds.Derived(target.TenantId, "WorkspaceRoleBinding:" + key, 0));
+                    bindings.Add(binding);
+                    workspaceRoles[key] = workspaceRole;
+                }
+
+                nodeRoleIds[row.Id] = workspaceRole;
+                continue;
+            }
+
             var names = new SortedSet<string>(StringComparer.Ordinal);
             foreach (var permission in permissions[row.Id])
             {
@@ -278,7 +305,7 @@ public sealed class IdentityMapper(SourceIdentity source, MapTarget target, Impo
         report.Mapped["roles"] = roles.Count;
         report.Mapped["permission grants"] = grants.Count;
         report.Mapped["groups"] = groups.Count;
-        return new IdentityPlan(users, profiles, roles, grants, groups, userIds, byName, tenantRoleIds, nodeRoleIds, groupIds);
+        return new IdentityPlan(users, profiles, roles, grants, groups, userIds, byName, tenantRoleIds, nodeRoleIds, groupIds, bindings);
     }
 
     /// <summary>Node level role assignments; nodes not imported drop their assignments.</summary>
