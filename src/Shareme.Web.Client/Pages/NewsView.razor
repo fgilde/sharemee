@@ -1,0 +1,101 @@
+@page "/news/{Id:guid}"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Knowledge
+@using Shareme.Web.Client.Knowledge
+@inject IIntranetApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_news?.Title ?? "News")</PageTitle>
+
+@if (_news is { } item)
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+        @if (item.ParentId is { } parent)
+        {
+            <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Href="@($"/browse/{parent}")" aria-label="Up to the folder" />
+        }
+        <MudText Typo="Typo.h4" data-testid="news-title">@item.Title</MudText>
+        @if (item.Pinned)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.PushPin" />
+        }
+        <MudSpacer />
+        <FavoriteButton NodeId="item.Id" />
+        @if (item.CanEdit && !_editing)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Edit" OnClick="Edit" data-testid="edit-news">Edit</MudButton>
+        }
+    </MudStack>
+    <MudText Typo="Typo.caption" Class="mb-4 d-block">Published @item.PublishAt.ToLocalTime().ToString("g")@(item.ExpiresAt is { } until ? $", until {until.ToLocalTime():g}" : null)</MudText>
+
+    @if (_editing)
+    {
+        <MudPaper Outlined="true" Class="pa-4">
+            <MudTextField @bind-Value="_title" Label="Title" />
+            <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="14" Variant="Variant.Outlined" Class="mt-2" />
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
+                <MudTextField T="DateTime?" @bind-Value="_publish" Label="Published from" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" data-testid="news-publish" />
+                <MudButton Size="Size.Small" OnClick="() => _publish = DateTime.Now">Now</MudButton>
+                <MudTextField T="DateTime?" @bind-Value="_expires" Label="Shown until (optional)" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" Clearable="true" />
+                <MudCheckBox @bind-Value="_pinned" Label="Pinned" />
+            </MudStack>
+            <MudStack Row="true" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-news">Save</MudButton>
+                <MudButton OnClick="() => _editing = false">Cancel</MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="pa-4 page-content" data-testid="news-content">@((MarkupString)item.Html)</MudPaper>
+    }
+}
+
+@code {
+    private NewsDto? _news;
+    private bool _editing, _pinned;
+    private string? _title, _markdown;
+    private DateTime? _publish, _expires;
+
+    [Parameter] public Guid Id { get; set; }
+
+    [SupplyParameterFromQuery(Name = "edit")] public bool OpenEditor { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _editing = false;
+        try
+        {
+            _news = await Api.GetNewsAsync(Id);
+            if (OpenEditor && _news.CanEdit)
+            {
+                Edit();
+            }
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private void Edit() =>
+        (_title, _markdown, _publish, _expires, _pinned, _editing) = (_news!.Title, _news.Markdown, _news.PublishAt.LocalDateTime, _news.ExpiresAt?.LocalDateTime, _news.Pinned, true);
+
+    /// <summary>A local date and time of the browser as UTC.</summary>
+    private static DateTimeOffset Utc(DateTime local) => new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime();
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _news = await Api.UpdateNewsAsync(Id, new NewsUpdateRequest(_title ?? string.Empty, _markdown ?? string.Empty,
+                _publish is { } publish ? Utc(publish) : DateTimeOffset.UtcNow, _expires is { } expires ? Utc(expires) : null, _pinned));
+            _editing = false;
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+}

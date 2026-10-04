@@ -29,6 +29,7 @@ public sealed class BrowseTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Knowledge.IIntranetApi>());
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Drm.IDrmApi>());
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Knowledge.IPagesApi>());
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);

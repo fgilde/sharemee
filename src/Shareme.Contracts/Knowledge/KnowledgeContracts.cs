@@ -26,3 +26,33 @@ public static class DiffKinds
 }
 
 public sealed record DiffLineDto(string Kind, string Text);
+
+/// <summary>News under a folder or workspace, shown from <see cref="PublishAt"/> (now when empty) until <see cref="ExpiresAt"/>.</summary>
+public sealed record NewsRequest(Guid ParentId, string Title, string Markdown, DateTimeOffset? PublishAt = null, DateTimeOffset? ExpiresAt = null, bool Pinned = false);
+
+public sealed record NewsUpdateRequest(string Title, string Markdown, DateTimeOffset PublishAt, DateTimeOffset? ExpiresAt, bool Pinned);
+
+public sealed record NewsDto(Guid Id, Guid? ParentId, string Title, string Markdown, string Html, DateTimeOffset PublishAt, DateTimeOffset? ExpiresAt, bool Pinned, Guid? AuthorId, bool CanEdit);
+
+/// <summary>A news item in the feed: the beginning of its text instead of the whole of it.</summary>
+public sealed record NewsSummaryDto(Guid Id, string Title, string Teaser, DateTimeOffset PublishAt, bool Pinned);
+
+public static class HomeWidgets
+{
+    public const string News = "news";
+    public const string Favorites = "favorites";
+    public const string Recent = "recent";
+    public const string Tasks = "tasks";
+    public const string Due = "due";
+    public const string Search = "search";
+
+    public static readonly IReadOnlyList<string> All = [Search, News, Favorites, Tasks, Due, Recent];
+}
+
+/// <summary>The widgets of the start page in their order; <see cref="IsDefault"/> when it is the tenant's (or the built-in) layout.</summary>
+public sealed record HomeLayoutDto(IReadOnlyList<string> Widgets, bool IsDefault);
+
+public sealed record HomeLayoutRequest(IReadOnlyList<string> Widgets);
+
+/// <summary>A task of the current user for the start page.</summary>
+public sealed record HomeTaskDto(Guid Id, Guid WorkspaceId, string WorkspaceName, string Title, DateOnly? DueDate);

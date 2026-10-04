@@ -18,6 +18,7 @@
         <MudText Typo="Typo.h4" data-testid="page-title">@current.Title</MudText>
         <MudSpacer />
         <MudText Typo="Typo.caption">Version @current.Version · @current.ModifiedAt.ToLocalTime().ToString("g")</MudText>
+        <FavoriteButton NodeId="current.Id" />
         <MudToggleIconButton @bind-Toggled="_history" Icon="@Icons.Material.Outlined.History" ToggledIcon="@Icons.Material.Filled.History" aria-label="Versions" data-testid="toggle-history" />
         @if (current.CanEdit && !_editing)
         {

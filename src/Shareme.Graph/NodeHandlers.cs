@@ -209,6 +209,13 @@ internal sealed class NodeQueryHandlers(CoworkeeDbContext db, ICurrentUser curre
         }
 
         children = await access.VisibleAsync(children, cancellationToken);
+
+        // news before and after their time are for their authors only
+        if (!await access.CanAsync(NodePermissions.Update, query.Id, cancellationToken))
+        {
+            var now = DateTimeOffset.UtcNow;
+            children = children.Where(n => !(n is News) || (((News)n).PublishAt <= now && (((News)n).ExpiresAt == null || ((News)n).ExpiresAt > now)));
+        }
         if (!string.IsNullOrWhiteSpace(query.Page.Search))
         {
             var search = query.Page.Search.Trim();

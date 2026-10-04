@@ -1,4 +1,197 @@
 @page "/"
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Graph
+@using Shareme.Contracts.Knowledge
+@using Shareme.Web.Client.Knowledge
+@inject IIntranetApi Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
 <PageTitle>Sharemee</PageTitle>
-<MudText Typo="Typo.h3">Sharemee</MudText>
-<MudText Class="mt-2">Assets, documents, knowledge and intranet. The admin area is in the menu.</MudText>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudText Typo="Typo.h3">Sharemee</MudText>
+        <MudText Class="mt-2">Assets, documents, knowledge and intranet. Sign in to start.</MudText>
+    </NotAuthorized>
+    <Authorized>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">Welcome</MudText>
+            <MudSpacer />
+            <MudToggleIconButton @bind-Toggled="_customizing" Icon="@Icons.Material.Outlined.Dashboard" ToggledIcon="@Icons.Material.Filled.Dashboard" aria-label="Customize the start page" data-testid="customize-home" />
+        </MudStack>
+
+        @if (_customizing)
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="home-layout">
+                @foreach (var widget in HomeWidgets.All)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudCheckBox T="bool" Value="_widgets.Contains(widget)" ValueChanged="on => Toggle(widget, on)" Label="@Title(widget)" />
+                        @if (_widgets.Contains(widget))
+                        {
+                            <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Size="Size.Small" aria-label="Move up" OnClick="() => Move(widget, -1)" />
+                            <MudIconButton Icon="@Icons.Material.Outlined.ArrowDownward" Size="Size.Small" aria-label="Move down" OnClick="() => Move(widget, 1)" />
+                        }
+                    </MudStack>
+                }
+                <MudStack Row="true" Class="mt-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SaveAsync(false)" data-testid="save-layout">Save</MudButton>
+                    <MudButton OnClick="ResetAsync">Back to the default</MudButton>
+                    <MudButton OnClick="() => SaveAsync(true)">Use as default for everyone</MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+
+        <MudGrid>
+            @foreach (var widget in _widgets)
+            {
+                <MudItem xs="12" md="@(widget == HomeWidgets.Search ? 12 : 6)">
+                    <MudPaper Outlined="true" Class="pa-4" Style="height:100%" data-widget="@widget">
+                        <MudText Typo="Typo.h6" Class="mb-2">@Title(widget)</MudText>
+                        @switch (widget)
+                        {
+                            case HomeWidgets.Search:
+                                <MudTextField T="string" @bind-Value="_term" Placeholder="Search everything" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                                              OnKeyDown="SearchKeyAsync" Immediate="true" />
+                                break;
+                            case HomeWidgets.News:
+                                @foreach (var news in _news)
+                                {
+                                    <div class="mb-3">
+                                        <MudLink Href="@($"/news/{news.Id}")"><b>@news.Title</b></MudLink>
+                                        @if (news.Pinned)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.PushPin" Size="Size.Small" Class="ml-1" />
+                                        }
+                                        <MudText Typo="Typo.caption" Class="d-block">@news.PublishAt.ToLocalTime().ToString("d")</MudText>
+                                        <MudText Typo="Typo.body2">@news.Teaser</MudText>
+                                    </div>
+                                }
+                                @if (_news.Count == 0) { <MudText Typo="Typo.body2">No news.</MudText> }
+                                break;
+                            case HomeWidgets.Favorites:
+                                <NodeList Nodes="_favorites" Empty="Mark folders, files and pages with the star to find them here." />
+                                break;
+                            case HomeWidgets.Recent:
+                                <NodeList Nodes="_recent" Empty="Nothing changed lately." />
+                                break;
+                            case HomeWidgets.Tasks:
+                            case HomeWidgets.Due:
+                                var tasks = widget == HomeWidgets.Due ? _tasks.Where(t => t.DueDate is { } due && due <= DateOnly.FromDateTime(DateTime.Today.AddDays(14))).ToList() : _tasks;
+                                @foreach (var task in tasks)
+                                {
+                                    <div><MudLink Href="@($"/workspaces/{task.WorkspaceId}")">@task.Title</MudLink> <MudText Typo="Typo.caption" Inline="true">@task.WorkspaceName @task.DueDate</MudText></div>
+                                }
+                                @if (tasks.Count == 0) { <MudText Typo="Typo.body2">@(widget == HomeWidgets.Due ? "Nothing due in the next two weeks." : "No open tasks.")</MudText> }
+                                break;
+                        }
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private List<string> _widgets = [];
+    private IReadOnlyList<NewsSummaryDto> _news = [];
+    private IReadOnlyList<NodeDto> _favorites = [], _recent = [];
+    private IReadOnlyList<HomeTaskDto> _tasks = [];
+    private bool _customizing;
+    private string? _term;
+
+    [CascadingParameter] private Task<AuthenticationState>? Auth { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Auth is null || !((await Auth).User.Identity?.IsAuthenticated ?? false))
+        {
+            return;
+        }
+
+        try
+        {
+            _widgets = [.. (await Api.GetLayoutAsync()).Widgets];
+            await LoadWidgetsAsync();
+        }
+        catch (Exception exception) when (exception is ApiException or HttpRequestException or System.Text.Json.JsonException)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task LoadWidgetsAsync()
+    {
+        // only what the layout shows is fetched, all at once
+        var news = _widgets.Contains(HomeWidgets.News) ? Api.GetFeedAsync() : null;
+        var favorites = _widgets.Contains(HomeWidgets.Favorites) ? Api.GetFavoritesAsync() : null;
+        var recent = _widgets.Contains(HomeWidgets.Recent) ? Api.GetRecentAsync() : null;
+        var tasks = _widgets.Contains(HomeWidgets.Tasks) || _widgets.Contains(HomeWidgets.Due) ? Api.GetTasksAsync() : null;
+        _news = news is null ? [] : await news;
+        _favorites = favorites is null ? [] : await favorites;
+        _recent = recent is null ? [] : await recent;
+        _tasks = tasks is null ? [] : await tasks;
+    }
+
+    private static string Title(string widget) => widget switch
+    {
+        HomeWidgets.News => "News",
+        HomeWidgets.Favorites => "Favorites",
+        HomeWidgets.Recent => "Recently changed",
+        HomeWidgets.Tasks => "My tasks",
+        HomeWidgets.Due => "Due soon",
+        _ => "Search",
+    };
+
+    private void Toggle(string widget, bool on)
+    {
+        if (on && !_widgets.Contains(widget)) _widgets.Add(widget);
+        if (!on) _widgets.Remove(widget);
+    }
+
+    private void Move(string widget, int by)
+    {
+        var index = _widgets.IndexOf(widget);
+        var target = Math.Clamp(index + by, 0, _widgets.Count - 1);
+        (_widgets[index], _widgets[target]) = (_widgets[target], _widgets[index]);
+    }
+
+    private async Task SaveAsync(bool forTenant)
+    {
+        try
+        {
+            await Api.SaveLayoutAsync(_widgets, forTenant);
+            _customizing = false;
+            await LoadWidgetsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        try
+        {
+            _widgets = [.. (await Api.SaveLayoutAsync(null)).Widgets];
+            _customizing = false;
+            await LoadWidgetsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private Task SearchKeyAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_term))
+        {
+            Nav.NavigateTo($"/search?q={Uri.EscapeDataString(_term.Trim())}");
+        }
+
+        return Task.CompletedTask;
+    }
+}
