@@ -22,7 +22,8 @@ public sealed record ImportPlan(
     IReadOnlyList<UserContext> UserContexts,
     IReadOnlyList<Restriction> Restrictions,
     IReadOnlyList<Shareme.Workspaces.WorkflowState> States,
-    IReadOnlyList<Shareme.Workspaces.Comment> Comments);
+    IReadOnlyList<Shareme.Workspaces.Comment> Comments,
+    IReadOnlyList<VersionCandidate> Versions);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -45,6 +46,9 @@ public sealed record MapTarget(Guid TenantId, Folder Root)
     public IReadOnlySet<string> ExistingRoleNames { get; init; } = new HashSet<string>();
 
     public IReadOnlySet<string> ExistingGroupNames { get; init; } = new HashSet<string>();
+
+    /// <summary>Whether this run copies files; without them assets stay "importing" and variant edges wait.</summary>
+    public bool WithFiles { get; init; }
 
     /// <summary>The tenant's workspace roles by key (owner, collaborator), as far as they exist.</summary>
     public IReadOnlyDictionary<string, Guid> WorkspaceRoles { get; init; } = new Dictionary<string, Guid>();
@@ -118,6 +122,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var edges = MapEdges(nodeOf, edgeTypeOf, taskLinks);
         var states = MapStates(nodeOf, stateIds);
         var comments = MapComments(nodeOf, identity);
+        var versions = MapVersions(nodeOf);
         MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
             [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf);
@@ -133,7 +138,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["comments"] = comments.Count;
         report.Mapped["user contexts"] = contexts.Count;
         report.Mapped["restrictions"] = restrictions.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions);
     }
 
     private List<DataLanguage> MapLanguages()
@@ -276,6 +281,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 Link => EdgeType.LinkId,
                 Duplicate => EdgeType.DuplicateId,
                 Translation => EdgeType.TranslationId,
+                Variant when target.WithFiles => EdgeType.VariantId,
                 _ => null,
             };
             if (seeded is { } id)
@@ -591,6 +597,39 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             result.Add(state);
         }
 
+        return result;
+    }
+
+    /// <summary>Every Sharedien version with an original file becomes a file version of its asset.</summary>
+    private List<VersionCandidate> MapVersions(Dictionary<long, Node> nodeOf)
+    {
+        var originals = (source.Originals ?? []).Where(o => o.DataId is { Length: > 0 }).GroupBy(o => o.VersionNodeId).ToDictionary(g => g.Key, g => g.First());
+        var identifiers = source.Nodes.ToDictionary(n => n.Id, n => n.Identifier);
+        var result = new List<VersionCandidate>();
+        foreach (var versions in source.Versions.GroupBy(v => v.AssetNodeId))
+        {
+            if (!nodeOf.TryGetValue(versions.Key, out var node) || node is not Asset asset)
+            {
+                continue;
+            }
+
+            var current = versions.Max(v => v.Version);
+            foreach (var version in versions.OrderBy(v => v.Version))
+            {
+                if (!originals.TryGetValue(version.VersionNodeId, out var original))
+                {
+                    report.Problem("version_without_original", "MAM.AssetVersion", version.VersionNodeId);
+                    continue;
+                }
+
+                result.Add(new VersionCandidate(
+                    version.VersionNodeId, asset, SourceIds.For(Scope, "MAM.Node", version.VersionNodeId, identifiers.GetValueOrDefault(version.VersionNodeId)),
+                    version.Version, Cap(version.OriginalFilename is { Length: > 0 } name ? name : asset.Name, 400), original.DataId!, original.FileHash,
+                    Utc(version.Created), version.Version == current));
+            }
+        }
+
+        report.Mapped["file versions"] = result.Count;
         return result;
     }
 

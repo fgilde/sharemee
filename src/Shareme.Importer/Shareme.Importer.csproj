@@ -7,5 +7,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Shareme.Infrastructure\Shareme.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Azure.Storage.Blobs" />
   </ItemGroup>
 </Project>

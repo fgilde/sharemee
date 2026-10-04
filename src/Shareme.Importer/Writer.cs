@@ -48,6 +48,50 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
         return db;
     }
 
+    public Coworkee.Storage.IBlobStorage Storage => _services.GetRequiredService<Coworkee.Storage.IBlobStorage>();
+
+    public async Task<Dictionary<string, (string MimeType, string AssetTypeKey)>> FileTypesAsync(CancellationToken cancellationToken)
+    {
+        await using var db = CreateContext();
+        return await db.Set<Shareme.Assets.FileType>().ToDictionaryAsync(t => t.Extension, t => (t.MimeType, t.AssetTypeKey), cancellationToken);
+    }
+
+    public async Task<HashSet<Guid>> ExistingVersionsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken)
+    {
+        await using var db = CreateContext();
+        var existing = new HashSet<Guid>();
+        foreach (var chunk in ids.Chunk(Batch))
+        {
+            existing.UnionWith(await db.Set<Shareme.Assets.AssetVersion>().IgnoreQueryFilters().Where(v => chunk.Contains(v.Id)).Select(v => v.Id).ToListAsync(cancellationToken));
+        }
+
+        return existing;
+    }
+
+    /// <summary>
+    /// Asks the running Shareme for renditions of the new versions: the events go through the normal outbox, which the
+    /// API processes as usual.
+    /// </summary>
+    public async Task RequestRenditionsAsync(IReadOnlyList<Shareme.Assets.AssetVersion> versions, CancellationToken cancellationToken)
+    {
+        foreach (var chunk in versions.Chunk(Batch))
+        {
+            using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenantId));
+            await using var scope = _services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ShareMeDbContext>();
+            var assets = chunk.Select(v => v.AssetId).ToList();
+            foreach (var asset in await db.Set<Shareme.Graph.Asset>().Where(a => assets.Contains(a.Id)).ToListAsync(cancellationToken))
+            {
+                foreach (var version in chunk.Where(v => v.AssetId == asset.Id))
+                {
+                    asset.Publish(new Shareme.Assets.AssetVersionCreated(asset.Id, version.Id));
+                }
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     public async Task<MapTarget> TargetAsync(CancellationToken cancellationToken)
     {
         await using var db = CreateContext();
@@ -94,7 +138,9 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
         };
     }
 
-    public async Task WriteAsync(ImportPlan plan, ImportReport report, CancellationToken cancellationToken)
+    public async Task WriteAsync(ImportPlan plan, ImportReport report, CancellationToken cancellationToken) => await WriteAsync(plan, [], report, cancellationToken);
+
+    public async Task WriteAsync(ImportPlan plan, IReadOnlyList<Shareme.Assets.AssetVersion> versions, ImportReport report, CancellationToken cancellationToken)
     {
         _connection = new NpgsqlConnection(targetConnectionString);
         await _connection.OpenAsync(cancellationToken);
@@ -119,6 +165,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("property groups", plan.PropertyGroups, report, cancellationToken);
             await InsertNewAsync("property definitions", plan.PropertyDefinitions, report, cancellationToken);
             await InsertNewAsync("nodes", plan.Nodes, report, cancellationToken); // parents come first: the plan is in tree order
+            await InsertNewAsync("file versions", versions, report, cancellationToken);
             await InsertNewAsync("edges", plan.Edges, report, cancellationToken);
             await InsertNewAsync("workflow states", plan.States, report, cancellationToken);
             await InsertNewAsync("comments", plan.Comments, report, cancellationToken);
@@ -197,7 +244,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddConfiguration(configuration).AddEnvironmentVariables().Build());
         services.AddCoworkeeModules<ShareMeDatabaseModule>(configuration);
         return services.BuildServiceProvider();
     }

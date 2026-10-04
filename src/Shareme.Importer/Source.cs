@@ -51,6 +51,8 @@ public sealed record GroupRoleRow(long GroupId, long RoleId);
 
 public sealed record NodePermissionRow(long Id, string Identifier, long NodeId, long RoleId, long? GroupId, long? UserId);
 
+public sealed record OriginalRow(long VersionNodeId, string? DataId, string? FileHash);
+
 public sealed record WorkspaceRow(long NodeId, string? TranslationIdentifier, bool IsTemplate, long? FinalizationNodeId, bool CopyProperties, int Type);
 
 public sealed record StateRow(long NodeId, int SequenceNr, string? TranslationIdentifier, bool IsDefault);
@@ -96,7 +98,8 @@ public sealed record SourceData(
     IReadOnlyList<ValueRow> Values,
     SourceIdentity? Identity = null,
     IReadOnlyList<UserContextRow>? UserContexts = null,
-    SourceWorkspaces? Workspaces = null);
+    SourceWorkspaces? Workspaces = null,
+    IReadOnlyList<OriginalRow>? Originals = null);
 
 /// <summary>Reads one source tenant, read only. Deleted rows and system property definitions stay behind.</summary>
 public sealed class SharedienSource(string connectionString)
@@ -227,7 +230,17 @@ public sealed class SharedienSource(string connectionString)
                 await Query($"select NodeId, Name, Description, DueDate, AssignedUserId, Status, SequenceNr from MAM.Task where NodeId in ({TenantNodes}) order by TaskId",
                     r => new TaskRow(r.GetInt64(0), r.Text(1), r.Text(2), r.IsDBNull(3) ? null : r.GetDateTime(3), r.Long(4), r.GetInt32(5), r.Int(6) ?? 0)),
                 await Query($"select NodeId, Text, CreatedBy, CreatedAt from MAM.Comment where NodeId in ({TenantNodes}) order by CommentId",
-                    r => new CommentRow(r.GetInt64(0), r.Text(1), r.Text(2), r.IsDBNull(3) ? null : r.GetDateTime(3)))));
+                    r => new CommentRow(r.GetInt64(0), r.Text(1), r.Text(2), r.IsDBNull(3) ? null : r.GetDateTime(3)))),
+            await Query(
+                $"""
+                select v.AssetVersionNodeId, d.DataId, d.FileHash
+                from MAM.AssetVersion v
+                join MAM.AssetDerivation d on d.AssetVersionId = v.AssetVersionId
+                join MAM.DerivationType t on t.DerivationTypeId = d.DerivationTypeId and t.Identifier = 'Original'
+                where v.AssetVersionNodeId in ({TenantNodes})
+                order by d.AssetDerivationId
+                """,
+                r => new OriginalRow(r.GetInt64(0), r.Text(1), r.Text(2))));
     }
 }
 

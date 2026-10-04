@@ -25,7 +25,13 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         await Task.WhenAll(_sql.StartAsync(Ct), SetupAsync());
         await using var connection = new SqlConnection(_sql.GetConnectionString());
         await connection.OpenAsync(Ct);
-        foreach (var batch in System.Text.RegularExpressions.Regex.Split(Schema, @"^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline))
+        Blob("aaaa0000old", "the old photo"u8.ToArray());
+        Blob("bbbb1111new", NewFile);
+
+        // the importer writes into the same storage as the API under test
+        Environment.SetEnvironmentVariable("Coworkee__Storage__FileSystem__Root", Path.Combine(Path.GetTempPath(), "shareme-api-tests-blobs"));
+        var schema = Schema.Replace("__MD5__", Convert.ToBase64String(System.Security.Cryptography.MD5.HashData(NewFile)));
+        foreach (var batch in System.Text.RegularExpressions.Regex.Split(schema, @"^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline))
         {
             await using var command = new SqlCommand(batch, connection);
             await command.ExecuteNonQueryAsync(Ct);
@@ -34,13 +40,30 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
 
     private async Task SetupAsync() => _setup = await api.SetupAsync();
 
-    public ValueTask DisposeAsync() => _sql.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await _sql.DisposeAsync();
+        Directory.Delete(_blobs, recursive: true);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private HttpClient Admin => api.As(_setup.AdminUserId, _setup.TenantId);
 
-    private ImportOptions Options(bool write) => new(write, _sql.GetConnectionString(), 7, api.ConnectionString, _setup.TenantId, null, int.MaxValue);
+    private static readonly byte[] NewFile = "the current photo"u8.ToArray();
+
+    private readonly string _blobs = Path.Combine(Path.GetTempPath(), "sharedien-blobs-" + Guid.NewGuid().ToString("N"));
+
+    private ImportOptions Options(bool write) =>
+        new(write, _sql.GetConnectionString(), 7, api.ConnectionString, _setup.TenantId, null, int.MaxValue) { Blobs = new FileSystemBlobs(_blobs) };
+
+    /// <summary>Sharedien's StorageHandler layout: root/id[0..2]/id[0..4]/id.</summary>
+    private void Blob(string dataId, byte[] content)
+    {
+        var folder = Path.Combine(_blobs, dataId[..2], dataId[..4]);
+        Directory.CreateDirectory(folder);
+        File.WriteAllBytes(Path.Combine(folder, dataId), content);
+    }
 
     [Fact]
     public async Task Imports_catalog_tree_and_metadata_once()
@@ -57,7 +80,8 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         run.Written["nodes"].ShouldBe(9);
         run.Problems.Select(p => (p.Code, p.Table, p.SourceId)).ShouldBe(
             [("multi_parent", "MAM.Edge", 106), ("invalid_value", "MAM.PropertyValue", 9), ("user_merged", "Admin.User", 2),
-                ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2)], ignoreOrder: true);
+                ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2), ("checksum_mismatch", "MAM.AssetVersion", 21)], ignoreOrder: true);
+        run.Written["files"].ShouldBe(2);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
         languages.Select(l => l.Code).ShouldBe(["en", "de"], ignoreOrder: true);
         languages.Count(l => l.IsDefault).ShouldBe(1);
@@ -72,6 +96,10 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         var sub = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{TopFolder}/children", Ct))!.Items.Single();
         var asset = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{sub.Id}/children", Ct))!.Items.Single();
         asset.Name.ShouldBe("photo.jpg");
+        var file = (await Admin.GetFromJsonAsync<Shareme.Contracts.Assets.AssetDto>($"/api/v1/assets/{asset.Id}", Ct))!;
+        file.Versions.Select(v => v.Number).ShouldBe([2, 1]);
+        (file.CurrentVersion!.FileName, file.CurrentVersion.Size).ShouldBe(("photo.jpg", (long)NewFile.Length));
+        file.Status.ShouldBe("ready");
 
         var metadata = (await Admin.GetFromJsonAsync<NodeMetadataDto>($"/api/v1/nodes/{asset.Id}/metadata", Ct))!;
         metadata.Properties["caption"].Values.Select(v => (v.Lang, v.V!.Value.GetString())).ShouldBe([("en", "Hello"), ("de", "Hallo")], ignoreOrder: true);
@@ -189,6 +217,8 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table MAM.AssetSet (AssetSetId bigint identity primary key, AssetSetNodeId bigint not null, AssetSetStatus int not null);
         create table MAM.AssetVersion (AssetVersionId bigint identity primary key, AssetVersionNodeId bigint not null, Created datetime2 not null default getutcdate(), OriginalFilename nvarchar(850) null, Version int not null);
         create table MAM.Edge (EdgeId bigint primary key, Identifier nvarchar(200) not null, FromNodeId bigint not null, ToNodeId bigint not null, EdgeTypeId bigint not null);
+        create table MAM.DerivationType (DerivationTypeId bigint primary key, Identifier nvarchar(200) not null, IsSystem bit not null default 1, IsDeleted bit not null default 0);
+        create table MAM.AssetDerivation (AssetDerivationId bigint identity primary key, AssetVersionId bigint not null, DerivationTypeId bigint not null, DataId nvarchar(200) null, FileSize bigint null, FileHash nvarchar(850) null);
         create table MAM.Workspace (WorkspaceId bigint identity primary key, WorkspaceNodeId bigint not null, TranslationIdentifier nvarchar(80) null, IsTemplate bit not null default 0,
             FinalizationCategoryId bigint null, CopyPropertiesToAssets bit not null default 0, WorkspaceType int not null);
         create table MAM.State (StateId bigint identity primary key, StateNodeId bigint not null, SequenceNr int null, TranslationIdentifier nvarchar(80) null, IsDefault bit not null default 0);
@@ -239,6 +269,9 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.CustomNode (NodeId, TranslationIdentifier) values (30, 'cn1');
         insert MAM.AssetSet (AssetSetNodeId, AssetSetStatus) values (20, 1), (56, 1);
         insert MAM.AssetVersion (AssetVersionNodeId, OriginalFilename, Version) values (21, 'old.jpg', 1), (22, 'photo.jpg', 2);
+        insert MAM.DerivationType (DerivationTypeId, Identifier) values (1, 'Original'), (2, 'Thumbnail');
+        insert MAM.AssetDerivation (AssetVersionId, DerivationTypeId, DataId, FileHash) values
+            (1, 1, 'aaaa0000old', 'not-the-md5'), (2, 1, 'bbbb1111new', '__MD5__'), (2, 2, 'cccc2222thumb', null);
         insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1), (109, 'e109', 50, 53, 1), (110, 'e110', 50, 54, 1), (111, 'e111', 53, 55, 1), (112, 'e112', 55, 56, 1),
             (113, 'e113', 55, 57, 1), (114, 'e114', 53, 54, 5);
         insert MAM.PropertyGroup (PropertyGroupId, Identifier) values (1, 'general');
