@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shareme.Api\Shareme.Api.csproj" />
+    <ProjectReference Include="..\..\src\Shareme.Importer\Shareme.Importer.csproj" />
     <CoworkeePackage Include="Coworkee.Testing" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.MsSql" />
   </ItemGroup>
 </Project>

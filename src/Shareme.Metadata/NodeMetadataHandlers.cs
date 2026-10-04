@@ -44,6 +44,13 @@ public static class MetadataSources
 /// <summary>Own values of a node changed; <see cref="Keys"/> are the properties whose values differ now.</summary>
 public sealed record NodeMetadataChanged(Guid NodeId, IReadOnlyList<string> Keys, string Source) : Coworkee.Domain.IDomainEvent;
 
+/// <summary>The value check of the API, for bulk writers such as the importer.</summary>
+public static class MetadataRules
+{
+    /// <summary>An error, or the value in the form it is stored and searched in.</summary>
+    public static (string? Problem, JsonElement? Value) Check(PropertyDefinition definition, JsonElement? value) => NodeMetadataHandlers.CheckValue(definition, value, []);
+}
+
 internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog, Restrictions restrictions)
     : IHandler<GetNodeMetadata, Result<NodeMetadataDto>>, IHandler<SetNodeMetadata, Result>
 {
@@ -286,7 +293,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
     }
 
     /// <summary>Returns an error or the value in the form it is stored and searched in.</summary>
-    private static (string? Problem, JsonElement? Value) CheckValue(PropertyDefinition definition, JsonElement? element, Dictionary<Guid, string> references)
+    internal static (string? Problem, JsonElement? Value) CheckValue(PropertyDefinition definition, JsonElement? element, Dictionary<Guid, string> references)
     {
         if (element is not { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } v)
         {
