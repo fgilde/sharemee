@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Sharemee.Client</PackageId>
+    <Description>Typed .NET client for the Sharemee API: nodes, metadata, search, uploads, downloads, pages, news and people.</Description>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Shareme.Contracts\Shareme.Contracts.csproj" />
+  </ItemGroup>
+</Project>

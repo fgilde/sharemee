@@ -1,0 +1,22 @@
+{
+  "name": "@sharemee/client",
+  "version": "0.1.0",
+  "description": "Typed client for the Sharemee API, generated from sdk/openapi.json",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "generate": "openapi-typescript ../openapi.json -o src/schema.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.14.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.8.0",
+    "typescript": "^5.9.0"
+  }
+}
