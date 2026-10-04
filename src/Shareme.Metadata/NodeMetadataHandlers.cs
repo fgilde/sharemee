@@ -44,6 +44,23 @@ public static class MetadataSources
 /// <summary>Own values of a node changed; <see cref="Keys"/> are the properties whose values differ now.</summary>
 public sealed record NodeMetadataChanged(Guid NodeId, IReadOnlyList<string> Keys, string Source) : Coworkee.Domain.IDomainEvent;
 
+/// <summary>The value check of the API, for bulk writers such as the importer.</summary>
+public static class MetadataRules
+{
+    /// <summary>An error, or the value in the form it is stored and searched in.</summary>
+    public static (string? Problem, JsonElement? Value) Check(PropertyDefinition definition, JsonElement? value) => NodeMetadataHandlers.CheckValue(definition, value, []);
+
+    /// <summary>All checks of the API for the values of one property; deactivated list values of this definition count as already stored, so they stay valid.</summary>
+    public static IReadOnlyList<string> Check(
+        PropertyDefinition definition, List<MetadataValue> values, HashSet<string> languages, HashSet<string> contexts, out List<MetadataValue> normalized)
+    {
+        normalized = [];
+        var inactive = definition.ListValues.Where(v => !v.IsActive).Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
+        var current = values.Where(v => v.List is { } key && inactive.Contains(key)).ToList();
+        return NodeMetadataHandlers.Check(definition, values, current, languages, contexts, [], normalized).ToList();
+    }
+}
+
 internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog catalog, Restrictions restrictions)
     : IHandler<GetNodeMetadata, Result<NodeMetadataDto>>, IHandler<SetNodeMetadata, Result>
 {
@@ -209,7 +226,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
     private const int MaxMetadataLength = 1024 * 1024;
 
     /// <summary>Validates the values of one property and adds their canonical form to <paramref name="normalized"/>.</summary>
-    private static IEnumerable<string> Check(
+    internal static IEnumerable<string> Check(
         PropertyDefinition definition, List<MetadataValue> values, List<MetadataValue> current, HashSet<string> languages, HashSet<string> contexts,
         Dictionary<Guid, string> references, List<MetadataValue> normalized)
     {
@@ -286,7 +303,7 @@ internal sealed class NodeMetadataHandlers(CoworkeeDbContext db, MetadataCatalog
     }
 
     /// <summary>Returns an error or the value in the form it is stored and searched in.</summary>
-    private static (string? Problem, JsonElement? Value) CheckValue(PropertyDefinition definition, JsonElement? element, Dictionary<Guid, string> references)
+    internal static (string? Problem, JsonElement? Value) CheckValue(PropertyDefinition definition, JsonElement? element, Dictionary<Guid, string> references)
     {
         if (element is not { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } v)
         {

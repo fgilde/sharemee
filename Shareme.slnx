@@ -16,6 +16,7 @@
     <Project Path="src/Shareme.Drm/Shareme.Drm.csproj" />
     <Project Path="src/Shareme.Knowledge/Shareme.Knowledge.csproj" />
     <Project Path="src/Shareme.Processing.Host/Shareme.Processing.Host.csproj" />
+    <Project Path="src/Shareme.Importer/Shareme.Importer.csproj" />
     <Project Path="src/Shareme.Infrastructure/Shareme.Infrastructure.csproj" />
     <Project Path="src/Shareme.Migrations/Shareme.Migrations.csproj" />
     <Project Path="src/Shareme.ServiceDefaults/Shareme.ServiceDefaults.csproj" />
