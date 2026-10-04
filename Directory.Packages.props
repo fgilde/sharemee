@@ -7,6 +7,7 @@
     <PackageVersion Include="Coworkee.Domain" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Application" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Infrastructure" Version="$(CoworkeeVersion)" />
+    <PackageVersion Include="Coworkee.Ai" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.AspNetCore" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Testing" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Aspire" Version="$(CoworkeeVersion)" />

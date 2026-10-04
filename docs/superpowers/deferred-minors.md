@@ -302,3 +302,11 @@ Review findings that were graded Minor and not fixed in their phase. Later plans
 ## From P0.2a and P0.1
 
 See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 on create, unique NormalizedEmail, tenant delete cascade, Redis backed HybridCache, setup token logging, setup rate limit, authorization fail-open without attributes, tenant isolation tests, JwtBearer authority fail-fast, system role update 404 vs 409, duplicate email leak across tenants, Permissions.Manage admin equivalence, Swagger auth in production, outbox cleanup and dead letters.
+
+## P8 (KI und MCP)
+
+- Parallel-Schutz für Chats nur pro Prozess (ein laufender Chat pro User); bei mehreren API-Instanzen verteiltes Rate-Limit nachziehen.
+- Unterhaltungen nur im Browser-Speicher der Seite, nicht serverseitig; kein Streaming der Antwort.
+- MCP ohne OAuth-Discovery (protected resource metadata); Clients brauchen ein Bearer-Token der Shareme-API.
+- Kein Test für die Mandantentrennung der Audit-Liste (Abfrage filtert per TenantId, Testfixture setzt DB je Setup zurück).
+- Schreib-Tools laufen im Chat nur in der ersten Runde nach einer User-Nachricht; Text früherer Assistent-Antworten kann noch eingeschleusten Inhalt zitieren.

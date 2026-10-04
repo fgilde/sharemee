@@ -20,6 +20,11 @@ builder.Services.AddHttpClient<Shareme.Web.Client.Drm.IDrmApi, Shareme.Web.Clien
 builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IPagesApi, Shareme.Web.Client.Knowledge.PagesApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IIntranetApi, Shareme.Web.Client.Knowledge.IntranetApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IPeopleApi, Shareme.Web.Client.Knowledge.PeopleApi>(client => client.BaseAddress = baseAddress);
+builder.Services.AddHttpClient<Shareme.Web.Client.Assistant.IAssistantApi, Shareme.Web.Client.Assistant.AssistantApi>(client =>
+{
+    client.BaseAddress = baseAddress;
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
 builder.Services.AddHttpClient<IDataApi, DataApi>(client =>
 {
     client.BaseAddress = baseAddress;

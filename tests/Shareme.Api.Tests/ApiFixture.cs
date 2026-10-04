@@ -87,6 +87,7 @@ public sealed class ApiFactory(PostgresFixture postgres) : PostgresWebApplicatio
         builder.UseSetting("Coworkee:Jobs:PollingInterval", "00:00:01");
         builder.UseSetting("Shareme:Shares:RequestsPerMinute", "100");
         builder.UseSetting("Shareme:Drm:PurchaseEmails", "licensing@acme.test");
+        builder.UseSetting("Coworkee:Settings:Defaults:Ai.Enabled", "true");
 
         // the api also serves the processing queue in tests, so renditions appear without the processing host
         builder.UseSetting("Coworkee:Jobs:Queues:0", "default");

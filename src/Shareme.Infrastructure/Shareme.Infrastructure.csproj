@@ -20,6 +20,7 @@
     <CoworkeePackage Include="Coworkee.Realtime" />
     <CoworkeePackage Include="Coworkee.Notifications" />
     <CoworkeePackage Include="Coworkee.Account" />
+    <CoworkeePackage Include="Coworkee.Ai" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
