@@ -6,6 +6,8 @@ public static class NodeTypeKeys
     public const string Asset = "asset";
     public const string Workspace = "workspace";
     public const string Task = "task";
+    public const string Page = "page";
+    public const string News = "news";
 }
 
 public static class EdgeTypeKeys

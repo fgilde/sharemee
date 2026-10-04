@@ -1,0 +1,209 @@
+@page "/pages/{Id:guid}"
+@attribute [Authorize]
+@using Coworkee.Client.Blazor.Api
+@using Shareme.Contracts.Knowledge
+@using Shareme.Web.Client.Knowledge
+@inject IPagesApi Api
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_page?.Title ?? "Page")</PageTitle>
+
+@if (_page is { } current)
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        @if (current.ParentId is { } parent)
+        {
+            <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Href="@($"/browse/{parent}")" aria-label="Up to the folder" />
+        }
+        <MudText Typo="Typo.h4" data-testid="page-title">@current.Title</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption">Version @current.Version · @current.ModifiedAt.ToLocalTime().ToString("g")</MudText>
+        <MudToggleIconButton @bind-Toggled="_history" Icon="@Icons.Material.Outlined.History" ToggledIcon="@Icons.Material.Filled.History" aria-label="Versions" data-testid="toggle-history" />
+        @if (current.CanEdit && !_editing)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Edit" OnClick="Edit" data-testid="edit-page">Edit</MudButton>
+        }
+    </MudStack>
+
+    <MudGrid>
+        <MudItem xs="12" md="@(_history ? 8 : 12)">
+            @if (_editing)
+            {
+                <MudPaper Outlined="true" Class="pa-4" data-testid="page-editor">
+                    <MudTextField @bind-Value="_title" Label="Title" data-testid="page-edit-title" />
+                    <MudGrid Class="mt-2">
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="24" Variant="Variant.Outlined" Immediate="true" DebounceInterval="400"
+                                          OnDebounceIntervalElapsed="_ => PreviewAsync()" data-testid="page-edit-markdown" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.caption">Preview</MudText>
+                            @* rendered by the server like a save, so the preview shows exactly what readers will see *@
+                            <div class="page-content" data-testid="page-preview">@((MarkupString)_preview)</div>
+                        </MudItem>
+                    </MudGrid>
+                    <MudTextField @bind-Value="_comment" Label="What changed (optional)" Class="mt-2" />
+                    <MudStack Row="true" Class="mt-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-page">Save</MudButton>
+                        <MudButton OnClick="() => _editing = false">Cancel</MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+            else
+            {
+                <MudPaper Outlined="true" Class="pa-4 page-content" data-testid="page-content">@((MarkupString)current.Html)</MudPaper>
+            }
+        </MudItem>
+        @if (_history)
+        {
+            <MudItem xs="12" md="4">
+                <MudPaper Outlined="true" Class="pa-2" data-testid="page-versions">
+                    @foreach (var version in _versions)
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center" data-version="@version.Number">
+                            <MudText Typo="Typo.body2"><b>@version.Number</b> · @version.CreatedAt.ToLocalTime().ToString("g") @version.Comment</MudText>
+                            <MudSpacer />
+                            @if (version.Number != current.Version)
+                            {
+                                <MudButton Size="Size.Small" OnClick="() => DiffAsync(version.Number)">Compare</MudButton>
+                                @if (current.CanEdit)
+                                {
+                                    <MudButton Size="Size.Small" OnClick="() => RestoreAsync(version.Number)">Restore</MudButton>
+                                }
+                            }
+                        </MudStack>
+                    }
+                    @if (_diff is not null)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-2">Version @_diffFrom → @current.Version</MudText>
+                        <pre style="white-space:pre-wrap;font-size:0.8rem" data-testid="page-diff">@foreach (var line in _diff)
+{<span style="@Style(line.Kind)">@(Prefix(line.Kind))@line.Text
+</span>}</pre>
+                    }
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private PageDto? _page;
+    private IReadOnlyList<PageVersionDto> _versions = [];
+    private IReadOnlyList<DiffLineDto>? _diff;
+    private int _diffFrom;
+    private bool _editing, _historyShown;
+    private string? _title, _markdown, _comment;
+    private string _preview = string.Empty;
+
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _history
+    {
+        get => _historyShown;
+        set
+        {
+            _historyShown = value;
+            if (value)
+            {
+                _ = LoadVersionsAsync();
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // another page: nothing of the previous one stays
+        (_editing, _diff, _versions, _historyShown) = (false, null, [], false);
+        try
+        {
+            _page = await Api.GetAsync(Id);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task LoadVersionsAsync()
+    {
+        try
+        {
+            _versions = await Api.GetVersionsAsync(Id);
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+
+        StateHasChanged();
+    }
+
+    private void Edit()
+    {
+        (_title, _markdown, _comment, _editing, _preview) = (_page!.Title, _page.Markdown, null, true, _page.Html);
+    }
+
+    private async Task PreviewAsync()
+    {
+        try
+        {
+            _preview = await Api.PreviewAsync(_markdown ?? string.Empty);
+        }
+        catch (ApiException)
+        {
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _page = await Api.UpdateAsync(Id, new PageUpdateRequest(_title ?? string.Empty, _markdown ?? string.Empty, _page!.Version, _comment));
+            _editing = false;
+            if (_history)
+            {
+                await LoadVersionsAsync();
+            }
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, exception.Status == 409 ? Severity.Warning : Severity.Error);
+        }
+    }
+
+    private async Task DiffAsync(int from)
+    {
+        try
+        {
+            _diff = await Api.DiffAsync(Id, from, _page!.Version);
+            _diffFrom = from;
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Warning);
+        }
+    }
+
+    private async Task RestoreAsync(int number)
+    {
+        try
+        {
+            _page = await Api.RestoreAsync(Id, number, _page!.Version);
+            _diff = null;
+            await LoadVersionsAsync();
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private static string Style(string kind) => kind switch
+    {
+        DiffKinds.Added => "background:rgba(46,160,67,.2)",
+        DiffKinds.Removed => "background:rgba(248,81,73,.2);text-decoration:line-through",
+        _ => string.Empty,
+    };
+
+    private static string Prefix(string kind) => kind switch { DiffKinds.Added => "+ ", DiffKinds.Removed => "- ", _ => "  " };
+}

@@ -300,7 +300,7 @@
         _savedSearches = await Api.GetSavedAsync();
     });
 
-    private void Open(SuggestionDto suggestion) => Nav.NavigateTo(suggestion.Semantic switch { "asset" => $"/assets/{suggestion.Id}", "workspace" => $"/workspaces/{suggestion.Id}", _ => $"/browse/{suggestion.Id}" });
+    private void Open(SuggestionDto suggestion) => Nav.NavigateTo(suggestion.Semantic switch { "asset" => $"/assets/{suggestion.Id}", "workspace" => $"/workspaces/{suggestion.Id}", "page" => $"/pages/{suggestion.Id}", _ => $"/browse/{suggestion.Id}" });
 
     private string FacetTitle(string field) => field switch
     {
@@ -313,7 +313,7 @@
 
     private static string Link(NodeDto node) => node.Semantic switch
     {
-        "asset" => $"/assets/{node.Id}", "workspace" => $"/workspaces/{node.Id}", "task" => $"/workspaces/{node.ParentId}", _ => $"/browse/{node.Id}",
+        "asset" => $"/assets/{node.Id}", "workspace" => $"/workspaces/{node.Id}", "task" => $"/workspaces/{node.ParentId}", "page" => $"/pages/{node.Id}", _ => $"/browse/{node.Id}",
     };
 
     private async Task RunAsync(Func<Task> action)

@@ -3286,6 +3286,31 @@ namespace Shareme.Infrastructure.Migrations
                     b.UseTphMappingStrategy();
                 });
 
+            modelBuilder.Entity("Shareme.Graph.NodeContent", b =>
+                {
+                    b.Property<Guid>("NodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Html")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Markdown")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("NodeId");
+
+                    b.ToTable("NodeContents", "sm");
+                });
+
             modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3384,6 +3409,24 @@ namespace Shareme.Infrastructure.Migrations
                             Key = "task",
                             Name = "Task",
                             Semantic = "Task"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000005"),
+                            Icon = "article",
+                            IsSystem = true,
+                            Key = "page",
+                            Name = "Page",
+                            Semantic = "Page"
+                        },
+                        new
+                        {
+                            Id = new Guid("0190f000-0000-7000-8000-000000000006"),
+                            Icon = "newspaper",
+                            IsSystem = true,
+                            Key = "news",
+                            Name = "News",
+                            Semantic = "News"
                         });
                 });
 
@@ -3432,6 +3475,54 @@ namespace Shareme.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "RoleId", "Kind", "PropertyKey", "Value"), false);
 
                     b.ToTable("Restrictions", "sm");
+                });
+
+            modelBuilder.Entity("Shareme.Knowledge.PageVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Markdown")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PageId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("PageVersions", "sm");
                 });
 
             modelBuilder.Entity("Shareme.Metadata.DataLanguage", b =>
@@ -4038,6 +4129,32 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasDiscriminator().HasValue("folder");
                 });
 
+            modelBuilder.Entity("Shareme.Graph.News", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Pinned")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("PublishAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasDiscriminator().HasValue("news");
+                });
+
+            modelBuilder.Entity("Shareme.Graph.Page", b =>
+                {
+                    b.HasBaseType("Shareme.Graph.Node");
+
+                    b.Property<int>("PageVersion")
+                        .HasColumnType("integer");
+
+                    b.HasDiscriminator().HasValue("page");
+                });
+
             modelBuilder.Entity("Shareme.Graph.WorkTask", b =>
                 {
                     b.HasBaseType("Shareme.Graph.Node");
@@ -4356,11 +4473,29 @@ namespace Shareme.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
                 });
 
+            modelBuilder.Entity("Shareme.Graph.NodeContent", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithOne()
+                        .HasForeignKey("Shareme.Graph.NodeContent", "NodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Shareme.Graph.NodeSubscription", b =>
                 {
                     b.HasOne("Shareme.Graph.Node", null)
                         .WithMany()
                         .HasForeignKey("NodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Shareme.Knowledge.PageVersion", b =>
+                {
+                    b.HasOne("Shareme.Graph.Node", null)
+                        .WithMany()
+                        .HasForeignKey("PageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

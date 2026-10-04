@@ -251,7 +251,7 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return NodeErrors.NotFound;
         }
 
-        if (parent.Semantic is NodeSemantic.Asset or NodeSemantic.Task)
+        if (parent.Semantic is NodeSemantic.Asset or NodeSemantic.Task or NodeSemantic.Page or NodeSemantic.News)
         {
             return Error.Validation("ParentId", "Assets and tasks cannot contain other nodes.");
         }
@@ -291,6 +291,12 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return NodeErrors.NotFound;
         }
 
+        // a page title is part of its versions
+        if (node is Page)
+        {
+            return Error.Validation("Name", "Rename pages by editing them, so the title stays in their history.");
+        }
+
         node.Name = command.Request.Name.Trim();
         if (command.Request.Names is { } names)
         {
@@ -320,7 +326,7 @@ internal sealed class NodeCommandHandlers(CoworkeeDbContext db, ICurrentUser cur
             return node is Workspace ? Error.Conflict("nodes.workspace_is_root", "Workspaces stay where they are.") : NodeErrors.RootIsFixed;
         }
 
-        if (target.Path.StartsWith(node.Path, StringComparison.Ordinal) || target.Semantic is NodeSemantic.Asset or NodeSemantic.Task || node is WorkTask)
+        if (target.Path.StartsWith(node.Path, StringComparison.Ordinal) || target.Semantic is NodeSemantic.Asset or NodeSemantic.Task or NodeSemantic.Page or NodeSemantic.News || node is WorkTask)
         {
             return Error.Conflict("nodes.invalid_target", "A node cannot move into itself, its descendants, an asset or a task; tasks stay in their workspace.");
         }

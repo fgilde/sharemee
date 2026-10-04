@@ -133,6 +133,8 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
         var restrictions = await db.Set<Restriction>().AsNoTracking().ToListAsync(cancellationToken);
         var hiddenProperties = restrictions.Where(r => r.Kind == RestrictionKinds.HiddenProperty).Select(r => r.PropertyKey).OfType<string>().ToHashSet();
         var hiddenValues = restrictions.Where(r => r.Kind == RestrictionKinds.HiddenListValue && r.PropertyKey is not null && r.Value is not null).Select(r => (Key: r.PropertyKey!, Value: r.Value!)).Distinct().ToList();
+        var contentIds = nodes.Where(n => n.Semantic is NodeSemantic.Page or NodeSemantic.News).Select(n => n.Id).ToList();
+        var texts = contentIds.Count == 0 ? [] : await db.Set<NodeContent>().AsNoTracking().Where(c => contentIds.Contains(c.NodeId)).ToDictionaryAsync(c => c.NodeId, c => c.Text, cancellationToken);
         var chainMetadata = hiddenValues.Count == 0
             ? []
             : await db.Set<Node>().AsNoTracking().Where(n => pathIds.Contains(n.Id)).ToDictionaryAsync(n => n.Id, n => n.Metadata, cancellationToken);
@@ -191,6 +193,12 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
                 {
                     AddMetadata(body, hiddenProperties.Contains(key) ? [] : fulltext, definition, values);
                 }
+            }
+
+            // pages and news are found by what they say
+            if (texts.TryGetValue(node.Id, out var text))
+            {
+                fulltext.Add(text);
             }
 
             var marks = hiddenValues.Where(h => node.PathIds.Any(id => chainMetadata.TryGetValue(id, out var metadata)

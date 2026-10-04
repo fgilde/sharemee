@@ -15,6 +15,7 @@
 @inject Shareme.Web.Client.Metadata.IDataApi Data
 @inject Shareme.Web.Client.Metadata.IAiApi Ai
 @inject Shareme.Web.Client.Drm.IDrmApi Drm
+@inject Shareme.Web.Client.Knowledge.IPagesApi Pages
 
 <PageTitle>@(_detail?.Node.Name ?? "Browse")</PageTitle>
 
@@ -58,6 +59,7 @@ else if (_detail is not null)
     <MudStack Row="true" AlignItems="AlignItems.End" Class="mb-2">
         <MudTextField T="string" @bind-Value="_newName" Label="New folder" Immediate="true" data-testid="new-folder-name" Style="max-width:320px" />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateFolderAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-folder">Create</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Article" OnClick="CreatePageAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-page">New page</MudButton>
         <MudSpacer />
         <MudTextField T="string" @bind-Value="_search" Placeholder="Filter" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadChildrenAsync()" Style="max-width:240px" />
@@ -132,13 +134,9 @@ else if (_detail is not null)
                             {
                                 <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, child.Thumbnail)" alt="" loading="lazy" style="width:100%;height:140px;object-fit:contain" />
                             }
-                            else if (child.Semantic == "asset")
-                            {
-                                <div class="d-flex align-center justify-center" style="height:140px"><MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Large" /></div>
-                            }
                             else
                             {
-                                <div class="d-flex align-center justify-center" style="height:140px"><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Large" /></div>
+                                <div class="d-flex align-center justify-center" style="height:140px"><MudIcon Icon="@Icon(child)" Size="Size.Large" /></div>
                             }
                         </a>
                         <MudCardContent Class="pa-2 d-flex align-center">
@@ -173,13 +171,9 @@ else if (_detail is not null)
                             {
                                 <img src="@AssetUrls.Derivation(child.Id, Shareme.Contracts.Assets.DerivationKinds.Thumbnail, child.Thumbnail)" alt="" loading="lazy" style="width:32px;height:32px;object-fit:cover;vertical-align:middle" class="mr-2" />
                             }
-                            else if (child.Semantic == "asset")
-                            {
-                                <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" Class="mr-2" />
-                            }
                             else
                             {
-                                <MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" Class="mr-2" />
+                                <MudIcon Icon="@Icon(child)" Size="Size.Small" Class="mr-2" />
                             }
                             <MudLink Href="@Link(child)">@child.Name</MudLink>
                             @if (child.InterruptInheritance)
@@ -342,6 +336,14 @@ else
     private async Task LoadAsync(Guid id)
     {
         _detail = await Api.GetNodeAsync(id);
+
+        // pages have their own view
+        if (_detail.Node.Semantic == "page")
+        {
+            Nav.NavigateTo($"/pages/{id}", replace: true);
+            return;
+        }
+
         _breadcrumb = _detail.Breadcrumb
             .Select((crumb, index) => new BreadcrumbItem(crumb.Name, index == _detail.Breadcrumb.Count - 1 ? null : $"/browse/{crumb.Id}", disabled: index == _detail.Breadcrumb.Count - 1))
             .ToList();
@@ -527,7 +529,29 @@ else
         }
     }
 
-    private static string Link(NodeDto node) => node.Semantic == "asset" ? $"/assets/{node.Id}" : $"/browse/{node.Id}";
+    private static string Link(NodeDto node) => node.Semantic switch { "asset" => $"/assets/{node.Id}", "page" => $"/pages/{node.Id}", _ => $"/browse/{node.Id}" };
+
+    private static string Icon(NodeDto node) => node.Semantic switch
+    {
+        "asset" => Icons.Material.Outlined.InsertDriveFile,
+        "page" => Icons.Material.Outlined.Article,
+        "news" => Icons.Material.Outlined.Newspaper,
+        _ => Icons.Material.Outlined.Folder,
+    };
+
+    private async Task CreatePageAsync()
+    {
+        try
+        {
+            var page = await Pages.CreateAsync(new Shareme.Contracts.Knowledge.PageRequest(_detail!.Node.Id, _newName!.Trim(), $"# {_newName!.Trim()}\n"));
+            _newName = null;
+            Nav.NavigateTo($"/pages/{page.Id}");
+        }
+        catch (ApiException exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
 
     private Task DeleteAsync(NodeDto child) => RunAsync(async () =>
     {
