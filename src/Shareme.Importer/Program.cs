@@ -52,7 +52,7 @@ internal static class ImporterProgram
         if (options.Write)
         {
             Console.WriteLine("Done. Restart Shareme (or wait five minutes for the permission cache) and start a search reindex for the tenant (admin › search).");
-            Console.WriteLine("Not imported yet: role restrictions (hidden properties, list values, renditions). Review them before users sign in.");
+            Console.WriteLine("Not imported yet: list value and rendition restrictions of roles. Review them before users sign in.");
         }
 
         return report.Problems.Count > options.MaxProblems ? 1 : 0;

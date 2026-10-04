@@ -79,6 +79,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
                 [KeyKinds.EdgeType] = await db.Set<EdgeType>().Where(t => t.TenantId == null || t.TenantId == tenantId).ToDictionaryAsync(t => t.Id, t => t.Key, cancellationToken),
                 [KeyKinds.Group] = await db.Set<PropertyGroup>().ToDictionaryAsync(g => g.Id, g => g.Key, cancellationToken),
                 [KeyKinds.Definition] = await db.Set<PropertyDefinition>().ToDictionaryAsync(d => d.Id, d => d.Key, cancellationToken),
+                [KeyKinds.UserContext] = await db.Set<UserContext>().ToDictionaryAsync(c => c.Id, c => c.Key, cancellationToken),
             },
             ListValues = listValues.ToDictionary(v => v.Id, v => (v.DefinitionId, v.Key)),
             LanguageCodes = languages.Select(l => l.Code).ToHashSet(),
@@ -111,11 +112,13 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("languages", plan.Languages, report, cancellationToken);
             await InsertNewAsync("node types", plan.NodeTypes, report, cancellationToken);
             await InsertNewAsync("edge types", plan.EdgeTypes, report, cancellationToken);
+            await InsertNewAsync("user contexts", plan.UserContexts, report, cancellationToken);
             await InsertNewAsync("property groups", plan.PropertyGroups, report, cancellationToken);
             await InsertNewAsync("property definitions", plan.PropertyDefinitions, report, cancellationToken);
             await InsertNewAsync("nodes", plan.Nodes, report, cancellationToken); // parents come first: the plan is in tree order
             await InsertNewAsync("edges", plan.Edges, report, cancellationToken);
             await InsertNewAsync("node permissions", plan.NodePermissions, report, cancellationToken);
+            await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
             await _transaction.CommitAsync(cancellationToken);
         }
         catch

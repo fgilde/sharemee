@@ -58,7 +58,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         run.Problems.Select(p => (p.Code, p.Table, p.SourceId)).ShouldBe(
             [("multi_parent", "MAM.Edge", 106), ("invalid_value", "MAM.PropertyValue", 9), ("user_merged", "Admin.User", 2),
                 ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("deferred_parent", "MAM.Node", 51), ("deferred_parent", "MAM.Node", 52),
-                ("definition_without_types", "MAM.PropertyDefinition", 6)], ignoreOrder: true);
+                ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2)], ignoreOrder: true);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
         languages.Select(l => l.Code).ShouldBe(["en", "de"], ignoreOrder: true);
         languages.Count(l => l.IsDefault).ShouldBe(1);
@@ -78,6 +78,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         metadata.Properties["rating"].Values.Single().V!.Value.GetInt64().ShouldBe(5);
         metadata.Properties["category"].Values.Single().List.ShouldBe("beach");
         metadata.Properties["shot-by"].Values.Single().V!.Value.GetString().ShouldBe("Ansel");
+        metadata.Properties["claim"].Values.Single().Ctx.ShouldBe("b2b");
         (await Admin.GetFromJsonAsync<NodeTypeDto[]>("/api/v1/node-types", Ct))!.ShouldContain(t => t.Key == "product");
 
         // the imported reader sees the folder granted to the group, with what lies below, and nothing else
@@ -87,6 +88,9 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         (await reader.GetAsync($"/api/v1/nodes/{asset.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await reader.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
         (await reader.GetAsync("/api/v1/people", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var restricted = (await reader.GetFromJsonAsync<NodeMetadataDto>($"/api/v1/nodes/{asset.Id}/metadata", Ct))!;
+        restricted.Properties.Keys.ShouldNotContain("rating"); // hidden for the tenant role of the reader's group
+        restricted.Properties.Keys.ShouldContain("caption");
         var boss = api.As(SourceIds.Derived(_setup.TenantId, "Admin.User", 4), _setup.TenantId);
         (await boss.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var person = await Admin.GetFromJsonAsync<Shareme.Contracts.Knowledge.PersonDto>($"/api/v1/people/{grace}", Ct);
@@ -150,6 +154,8 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table Admin.Role (RoleId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null, Status int not null default 1, IsDeleted bit not null default 0, IsSystem bit not null default 0);
         create table Admin.RoleObjectTypePermission (RoleObjectTypePermissionId bigint identity primary key, RoleId bigint not null, Permission int not null);
         create table Admin.UserGroupToRoleMap (UserGroupToRoleMapId bigint identity primary key, TenantId bigint not null, RoleId bigint not null, UserGroupId bigint not null);
+        create table Admin.PropertyDefinitionRestriction (PropertyDefinitionRestrictionId bigint primary key, Identifier nvarchar(200) not null, RoleId bigint not null, Status int not null default 0, Action int not null, PropertyDefinitionId bigint not null);
+        create table MAM.UserContext (UserContextId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null, SequenceNr int not null default 0, IsDefault bit not null default 0, IsDeleted bit not null default 0);
         create table Admin.NodePermission (NodePermissionId bigint primary key, Identifier nvarchar(200) not null, NodeId bigint not null, RoleId bigint not null, Status int not null default 0, UserGroupId bigint null, UserId bigint null);
         create table MAM.Language (LanguageId bigint primary key, Identifier nvarchar(200) not null, IsDefaultLanguage bit not null, IsDeleted bit not null default 0, TranslationIdentifier nvarchar(80) null);
         create table MAM.Translation (TranslationId bigint identity primary key, TranslationIdentifier nvarchar(80) not null, FieldName nvarchar(850) not null, LanguageId bigint not null, TranslatedValue nvarchar(max) null);
@@ -185,6 +191,8 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert Admin.RoleObjectTypePermission (RoleId, Permission) values (1, 42), (1, 48), (1, 14), (1, 9999), (1, 2), (2, 75), (2, 48), (2, 181), (3, 101);
         insert Admin.UserGroupToRoleMap (TenantId, RoleId, UserGroupId) values (7, 2, 1), (8, 1, 1), (7, 3, 2), (8, 2, 3);
         insert Admin.NodePermission (NodePermissionId, Identifier, NodeId, RoleId, UserGroupId) values (1, 'np1', 11, 1, 1), (2, 'np2', 40, 1, 1);
+        insert Admin.PropertyDefinitionRestriction (PropertyDefinitionRestrictionId, Identifier, RoleId, Action, PropertyDefinitionId) values (1, 'r1', 2, 0, 3), (2, 'r2', 1, 2, 1);
+        insert MAM.UserContext (UserContextId, Identifier, IsDefault) values (1, 'b2b', 1);
         insert MAM.Language (LanguageId, Identifier, IsDefaultLanguage) values (1, 'en-US', 1), (2, 'de-DE', 0);
         insert MAM.Translation (TranslationIdentifier, FieldName, LanguageId, TranslatedValue) values
             ('cat1', 'Name', 1, 'Marketing'), ('cat1', 'Name', 2, 'Vertrieb'), ('cn1', 'Name', 1, 'Widget'), ('nt1', 'Name', 1, 'Product'),
@@ -202,11 +210,13 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1);
         insert MAM.PropertyGroup (PropertyGroupId, Identifier) values (1, 'general');
         insert MAM.PropertyDefinition (PropertyDefinitionId, Identifier, PropertyGroupId, TranslationIdentifier, ValueType, HasListValues, IsLanguageDependant, IsSystemProperty) values
-            (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0);
-        insert MAM.PropertyDefinitionNodeType (PropertyDefinitionId, NodeTypeId) values (1, 2), (2, 2), (3, 2), (3, 1), (5, 3), (6, 6);
+            (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0), (7, 'claim', 1, null, 0, 0, 0, 0);
+        update MAM.PropertyDefinition set HasUserContext = 1 where PropertyDefinitionId = 7;
+        insert MAM.PropertyDefinitionNodeType (PropertyDefinitionId, NodeTypeId) values (1, 2), (2, 2), (3, 2), (3, 1), (5, 3), (6, 6), (7, 3);
         insert MAM.PropertyListValue (PropertyListValueId, Identifier, PropertyDefinitionId, SortKey, TranslationIdentifier) values (1, 'beach', 2, 1, 'lv1');
-        insert MAM.Property values (1, 22, 1, 0), (2, 22, 2, 0), (3, 22, 3, 0), (4, 21, 3, 0), (5, 10, 3, 0), (6, 22, 4, 0), (7, 22, 5, 0);
+        insert MAM.Property values (1, 22, 1, 0), (2, 22, 2, 0), (3, 22, 3, 0), (4, 21, 3, 0), (5, 10, 3, 0), (6, 22, 4, 0), (7, 22, 5, 0), (8, 22, 7, 0);
         insert MAM.PropertyValue (PropertyValueId, PropertyId, PropertyListValueId, ValueInt, ValueText, TranslationIdentifier) values
             (1, 1, null, null, null, 'pv1'), (2, 2, 1, null, null, null), (3, 3, null, 5, null, null), (4, 4, null, 3, null, null), (9, 5, null, null, 'not a number', null), (6, 6, null, 1234, null, null), (7, 7, null, null, 'Ansel', null);
+        insert MAM.PropertyValue (PropertyValueId, PropertyId, ValueText, UserContextId) values (8, 8, 'Best in class', 1);
         """;
 }

@@ -18,7 +18,9 @@ public sealed record ImportPlan(
     IReadOnlyList<Node> Nodes,
     IReadOnlyList<Edge> Edges,
     IdentityPlan Identity,
-    IReadOnlyList<Coworkee.Identity.Domain.ResourcePermission> NodePermissions);
+    IReadOnlyList<Coworkee.Identity.Domain.ResourcePermission> NodePermissions,
+    IReadOnlyList<UserContext> UserContexts,
+    IReadOnlyList<Restriction> Restrictions);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -51,6 +53,7 @@ public static class KeyKinds
     public const string EdgeType = "edge type";
     public const string Group = "property group";
     public const string Definition = "property definition";
+    public const string UserContext = "user context";
 }
 
 /// <summary>Maps Sharedien rows to Shareme entities. Pure: no database, so every rule is testable with synthetic rows.</summary>
@@ -64,6 +67,8 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     private readonly string _defaultLanguage = source.Languages.FirstOrDefault(l => l.IsDefault) is { } d ? LanguageCode(d.Identifier) : "en";
     private readonly Dictionary<(string, string), Dictionary<string, string>> _translations = [];
     private readonly Dictionary<string, HashSet<string>> _takenKeys = [];
+
+    private string? _defaultContext;
 
     private Guid Scope => target.TenantId;
 
@@ -93,6 +98,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             groupIds[g.Id] = group.Id;
         }
 
+        var contexts = MapContexts(out var contextKeyOf);
         var definitions = MapDefinitions(groupIds, typeOf, out var definitionOf, out var listKeyOf);
         var nodes = MapNodes(typeOf, out var nodeOf);
         foreach (var row in source.Nodes)
@@ -105,7 +111,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
         var nodePermissions = identityMapper.MapNodePermissions(identity, nodeOf.ToDictionary(n => n.Key, n => n.Value.Id));
         var edges = MapEdges(nodeOf, edgeTypeOf);
-        MapValues(nodeOf, typeOf, definitionOf, listKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)]);
+        MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
+            [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
+        var restrictions = MapRestrictions(identity, definitionOf);
 
         report.Mapped["languages"] = languages.Count;
         report.Mapped["node types"] = nodeTypes.Count;
@@ -114,7 +122,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["property definitions"] = definitions.Count;
         report.Mapped["nodes"] = nodes.Count;
         report.Mapped["edges"] = edges.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions);
+        report.Mapped["user contexts"] = contexts.Count;
+        report.Mapped["restrictions"] = restrictions.Count;
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions);
     }
 
     private List<DataLanguage> MapLanguages()
@@ -138,6 +148,78 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         }
 
         return languages;
+    }
+
+    private List<UserContext> MapContexts(out Dictionary<long, string> contextKeyOf)
+    {
+        contextKeyOf = [];
+        var contexts = new List<UserContext>();
+        var hasDefault = target.KeysOf(KeyKinds.UserContext).Count > 0;
+        foreach (var row in source.UserContexts ?? [])
+        {
+            var context = Tenant(new UserContext { Key = string.Empty, Name = Name(row.TranslationIdentifier, row.Identifier), IsDefault = row.IsDefault && !hasDefault },
+                "MAM.UserContext", row.Id, row.Identifier);
+            context.Key = Key(KeyKinds.UserContext, context.Id, row.Identifier, Name(row.TranslationIdentifier, null), "context", row.Id);
+            hasDefault |= context.IsDefault;
+            if (row.IsDefault || _defaultContext is null)
+            {
+                _defaultContext = context.Key;
+            }
+            contexts.Add(context);
+            contextKeyOf[row.Id] = context.Key;
+        }
+
+        return contexts;
+    }
+
+    /// <summary>
+    /// Property blacklists of roles: reading forbidden hides the property, changing forbidden makes it read only. Shareme
+    /// applies restrictions through tenant roles; a role used only on nodes cannot carry one (reported).
+    /// </summary>
+    private List<Restriction> MapRestrictions(IdentityPlan identity, Dictionary<long, PropertyDefinition> definitionOf)
+    {
+        var restrictions = new Dictionary<(Guid Role, string Key), Restriction>();
+        foreach (var row in source.Identity?.PropertyRestrictions ?? [])
+        {
+            if (!definitionOf.TryGetValue(row.DefinitionId, out var definition))
+            {
+                report.Skip("restrictions of definitions not imported");
+                continue;
+            }
+
+            if (!identity.TenantRoleIds.TryGetValue(row.RoleId, out var role))
+            {
+                if (identity.NodeRoleIds.ContainsKey(row.RoleId))
+                {
+                    report.Problem("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", row.Id);
+                }
+                else
+                {
+                    report.Skip("restrictions of roles without rights");
+                }
+
+                continue;
+            }
+
+            if (role == target.AdminRoleId)
+            {
+                report.Skip("restrictions of global admin roles"); // GlobalAdmin passes every check in Sharedien
+                continue;
+            }
+
+            // AuthorizableAction: Read 0, Create 1, Update 2, Delete 3, View 4, Any 5
+            var kind = row.Action is 1 or 2 or 3 ? Shareme.Contracts.Graph.RestrictionKinds.ReadOnlyProperty : Shareme.Contracts.Graph.RestrictionKinds.HiddenProperty;
+            if (restrictions.TryGetValue((role, definition.Key), out var existing) && existing.Kind == Shareme.Contracts.Graph.RestrictionKinds.HiddenProperty)
+            {
+                continue;
+            }
+
+            var restriction = new Restriction { RoleId = role, Kind = kind, PropertyKey = definition.Key, TenantId = target.TenantId, CreatedAt = DateTimeOffset.UtcNow };
+            Ids.Set(restriction, SourceIds.Derived(Scope, "Admin.PropertyDefinitionRestriction:" + definition.Key, BitConverter.ToInt64(role.ToByteArray())));
+            restrictions[(role, definition.Key)] = restriction;
+        }
+
+        return [.. restrictions.Values];
     }
 
     private List<NodeType> MapNodeTypes(out Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf)
@@ -237,8 +319,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 // a list value is the same in every language, Sharedien only translates its label
                 Localizable = row.IsLanguageDependant && !row.HasListValues,
 
-                // ponytail: user contexts come with a later phase; until then context bound values stay behind (reported)
-                HasContext = false,
+                HasContext = row.HasUserContext,
                 Editable = row.Editable,
                 Searchable = row.SearchOption switch { 1 => SearchModes.Filter, 2 => SearchModes.Fulltext, 3 => SearchModes.Both, _ => SearchModes.None },
                 Facet = row.IsSearchableFacet,
@@ -442,7 +523,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
     private void MapValues(
         Dictionary<long, Node> nodeOf, Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf, Dictionary<long, PropertyDefinition> definitionOf,
-        Dictionary<long, string> listKeyOf, HashSet<string> languages)
+        Dictionary<long, string> listKeyOf, Dictionary<long, string> contextKeyOf, HashSet<string> languages, HashSet<string> contexts)
     {
         // asset metadata lives on the current version in Sharedien
         var assetOfVersion = source.Versions.GroupBy(v => v.AssetNodeId)
@@ -458,18 +539,22 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 continue;
             }
 
-            if (row.UserContextId is not null)
+            string? ctx = null;
+            if (row.UserContextId is { } contextId && !contextKeyOf.TryGetValue(contextId, out ctx))
             {
-                report.Problem("user_context_not_imported", "MAM.PropertyValue", row.Id);
+                report.Problem("unknown_user_context", "MAM.PropertyValue", row.Id);
                 continue;
             }
+
+            // Sharedien lets a value without context stand for every context; Shareme names one: the default
+            ctx = definition.HasContext ? ctx ?? _defaultContext : null;
 
             var values = collected.TryGetValue((owner, row.DefinitionId), out var list) ? list : collected[(owner, row.DefinitionId)] = [];
             if (row.ListValueId is { } listValue)
             {
                 if (listKeyOf.TryGetValue(listValue, out var key))
                 {
-                    values.Add(new MetadataValue(List: key));
+                    values.Add(new MetadataValue(Ctx: ctx, List: key));
                 }
                 else
                 {
@@ -481,11 +566,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
             if (definition.Localizable && row.TranslationIdentifier is { } ti && _translations.TryGetValue((ti, "TextValue"), out var texts))
             {
-                values.AddRange(texts.Select(t => new MetadataValue(Lang: t.Key, V: JsonSerializer.SerializeToElement(t.Value))));
+                values.AddRange(texts.Select(t => new MetadataValue(Lang: t.Key, Ctx: ctx, V: JsonSerializer.SerializeToElement(t.Value))));
             }
             else if (Value(definition.ValueType, row) is { } value)
             {
-                values.Add(new MetadataValue(Lang: definition.Localizable ? _defaultLanguage : null, V: value));
+                values.Add(new MetadataValue(Lang: definition.Localizable ? _defaultLanguage : null, Ctx: ctx, V: value));
             }
             else
             {
@@ -516,7 +601,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 continue;
             }
 
-            if (MetadataRules.Check(definition, kept, languages, [], out var normalized) is [var first, ..])
+            if (MetadataRules.Check(definition, kept, languages, contexts, out var normalized) is [var first, ..])
             {
                 // the API message without quoted parts (keys, codes), so the report names the rule but no content
                 report.Problem("invalid_property: " + System.Text.RegularExpressions.Regex.Replace(first, "'[^']*'", "'…'"), "MAM.Node", owner);
