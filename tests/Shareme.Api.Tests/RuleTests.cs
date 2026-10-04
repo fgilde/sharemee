@@ -89,7 +89,7 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         test.Values.ShouldBe(new Dictionary<string, string> { ["label"] = "ACME/123" });
         test.Problems.ShouldBeEmpty();
         Get(await MetadataAsync(project), "label").ShouldBeNull();
-        (await Admin.PostAsync($"/api/v1/rules/{rule.Id}/test/{brand}", null, Ct)).Content.ReadFromJsonAsync<RuleTestDto>(Ct).Result!.FiltersMatched.ShouldBeFalse();
+        (await (await Admin.PostAsync($"/api/v1/rules/{rule.Id}/test/{brand}", null, Ct)).Content.ReadFromJsonAsync<RuleTestDto>(Ct))!.FiltersMatched.ShouldBeFalse();
     }
 
     [Fact]
@@ -101,22 +101,17 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         var empty = await FolderAsync("empty", root);
         await PatchAsync(ok, new() { ["status"] = [Text("fine")] });
         await PatchAsync(bad, new() { ["status"] = [Text("bad")] });
-        await RuleAsync(new RuleRequest("Label", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status")], [new RuleAction("label", "{fnc.find(status)}!")]));
-        await RuleAsync(new RuleRequest("Pages", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.EqualTo, "status", "bad")], [new RuleAction("pages", "abc")], SortIndex: 1));
+        // inactive, so live events of the patches above cannot write before the run does
+        var label = await RuleAsync(new RuleRequest("Label", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status")], [new RuleAction("label", "{fnc.find(status)}!")], IsActive: false));
+        var pages = await RuleAsync(new RuleRequest("Pages", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.EqualTo, "status", "bad")], [new RuleAction("pages", "abc")], IsActive: false, SortIndex: 1));
 
-        // live events of the patches above may still arrive and write "changed"; only a job could write "not changed"
+        // live events may still write "changed"; only a run could write the "else" branch
         await RuleAsync(new RuleRequest("Live only", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status"), new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.ValueChanged, "status")],
             [new RuleAction("verdict", "changed"), new RuleAction("verdict", "not changed", OnMatch: false)]));
-        var started = await (await Admin.PostAsJsonAsync("/api/v1/rule-jobs", new RuleJobRequest(FolderId: root), Ct)).Content.ReadFromJsonAsync<RuleJobDto>(Ct);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        RuleJobDto job;
-        while ((job = (await Admin.GetFromJsonAsync<RuleJobDto>($"/api/v1/rule-jobs/{started!.Id}", Ct))!).State is RuleJobStates.Queued or RuleJobStates.Running)
-        {
-            DateTime.UtcNow.ShouldBeLessThan(deadline, "the run did not finish in time");
-            await Task.Delay(250, Ct);
-        }
+        var active = await RunAsync(new RuleJobRequest(FolderId: root));
+        (active.Total, active.Executed).ShouldBe((3, 0));
 
-        job.State.ShouldBe(RuleJobStates.Completed, job.Error);
+        var job = await RunAsync(new RuleJobRequest(FolderId: root, RuleIds: [label.Id, pages.Id]));
         (job.Total, job.Matched, job.Executed, job.Skipped, job.Failed).ShouldBe((3, 2, 1, 1, 1));
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("pages");
         Get(await MetadataAsync(ok), "label").ShouldBe("fine!");
@@ -161,6 +156,21 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
 
         (await Admin.DeleteAsync($"/api/v1/rules/{rule.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
         (await Admin.GetFromJsonAsync<RuleDto[]>("/api/v1/rules", Ct))!.ShouldBeEmpty();
+    }
+
+    private async Task<RuleJobDto> RunAsync(RuleJobRequest request)
+    {
+        var started = await (await Admin.PostAsJsonAsync("/api/v1/rule-jobs", request, Ct)).Content.ReadFromJsonAsync<RuleJobDto>(Ct);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        RuleJobDto job;
+        while ((job = (await Admin.GetFromJsonAsync<RuleJobDto>($"/api/v1/rule-jobs/{started!.Id}", Ct))!).State is RuleJobStates.Queued or RuleJobStates.Running)
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the run did not finish in time");
+            await Task.Delay(250, Ct);
+        }
+
+        job.State.ShouldBe(RuleJobStates.Completed, job.Error);
+        return job;
     }
 
     private async Task<RuleDto> RuleAsync(RuleRequest request)
