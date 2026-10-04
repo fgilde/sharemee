@@ -7,6 +7,7 @@
     <InternalsVisibleTo Include="Shareme.Workspaces" />
     <InternalsVisibleTo Include="Shareme.Automation" />
     <InternalsVisibleTo Include="Shareme.Drm" />
+    <InternalsVisibleTo Include="Shareme.Knowledge" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Shareme.Contracts\Shareme.Contracts.csproj" />
     <CoworkeePackage Include="Coworkee.Identity" />

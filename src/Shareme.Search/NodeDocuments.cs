@@ -193,6 +193,12 @@ internal sealed class NodeDocuments(CoworkeeDbContext db, IResourceAccessReader 
                 }
             }
 
+            // pages and news are found by what they say
+            if (node is ContentNode content)
+            {
+                fulltext.Add(content.Text);
+            }
+
             var marks = hiddenValues.Where(h => node.PathIds.Any(id => chainMetadata.TryGetValue(id, out var metadata)
                     && metadata.TryGetValue(h.Key, out var values) && values.Any(v => v.List == h.Value)))
                 .Select(h => RestrictionSet.Mark(h.Key, h.Value)).ToList();

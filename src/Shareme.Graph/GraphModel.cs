@@ -19,6 +19,12 @@ public enum NodeSemantic
 
     /// <summary>A card on a workspace's board; lives directly under its workspace.</summary>
     Task,
+
+    /// <summary>A versioned knowledge base page.</summary>
+    Page,
+
+    /// <summary>An intranet news item.</summary>
+    News,
 }
 
 public enum EdgeSemantic
@@ -36,6 +42,8 @@ public sealed class NodeType : Entity
     public static readonly Guid AssetTypeId = new("0190f000-0000-7000-8000-000000000002");
     public static readonly Guid WorkspaceTypeId = new("0190f000-0000-7000-8000-000000000003");
     public static readonly Guid TaskTypeId = new("0190f000-0000-7000-8000-000000000004");
+    public static readonly Guid PageTypeId = new("0190f000-0000-7000-8000-000000000005");
+    public static readonly Guid NewsTypeId = new("0190f000-0000-7000-8000-000000000006");
 
     public required string Key { get; set; }
 
@@ -165,6 +173,37 @@ public sealed class Workspace : Node
     public DateTimeOffset? FinalizedAt { get; set; }
 }
 
+/// <summary>Content written in Markdown; <see cref="Html"/> is rendered and sanitized from it, <see cref="Text"/> is what search indexes.</summary>
+public abstract class ContentNode : Node
+{
+    public string Markdown { get; set; } = string.Empty;
+
+    public string Html { get; set; } = string.Empty;
+
+    public string Text { get; set; } = string.Empty;
+}
+
+/// <summary>A knowledge base page; earlier contents are kept as page versions.</summary>
+public sealed class Page : ContentNode
+{
+    public override NodeSemantic Semantic => NodeSemantic.Page;
+
+    /// <summary>Number of the current version.</summary>
+    public int PageVersion { get; set; }
+}
+
+/// <summary>Intranet news, shown from <see cref="PublishAt"/> until <see cref="ExpiresAt"/>.</summary>
+public sealed class News : ContentNode
+{
+    public override NodeSemantic Semantic => NodeSemantic.News;
+
+    public DateTimeOffset PublishAt { get; set; }
+
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    public bool Pinned { get; set; }
+}
+
 /// <summary>A task of a workspace: title is the node name, the state is one of the workspace's states, the order within a state is the sort index.</summary>
 public sealed class WorkTask : Node
 {
@@ -285,7 +324,9 @@ internal sealed class GraphModelContributor : IModelContributor
                 new { Id = NodeType.FolderTypeId, Key = NodeTypeKeys.Folder, Semantic = NodeSemantic.Folder, Name = "Folder", Icon = (string?)"folder", IsSystem = true, TenantId = (Guid?)null },
                 new { Id = NodeType.AssetTypeId, Key = NodeTypeKeys.Asset, Semantic = NodeSemantic.Asset, Name = "Asset", Icon = (string?)"insert_drive_file", IsSystem = true, TenantId = (Guid?)null },
                 new { Id = NodeType.WorkspaceTypeId, Key = NodeTypeKeys.Workspace, Semantic = NodeSemantic.Workspace, Name = "Workspace", Icon = (string?)"workspaces", IsSystem = true, TenantId = (Guid?)null },
-                new { Id = NodeType.TaskTypeId, Key = NodeTypeKeys.Task, Semantic = NodeSemantic.Task, Name = "Task", Icon = (string?)"task_alt", IsSystem = true, TenantId = (Guid?)null });
+                new { Id = NodeType.TaskTypeId, Key = NodeTypeKeys.Task, Semantic = NodeSemantic.Task, Name = "Task", Icon = (string?)"task_alt", IsSystem = true, TenantId = (Guid?)null },
+                new { Id = NodeType.PageTypeId, Key = NodeTypeKeys.Page, Semantic = NodeSemantic.Page, Name = "Page", Icon = (string?)"article", IsSystem = true, TenantId = (Guid?)null },
+                new { Id = NodeType.NewsTypeId, Key = NodeTypeKeys.News, Semantic = NodeSemantic.News, Name = "News", Icon = (string?)"newspaper", IsSystem = true, TenantId = (Guid?)null });
         });
 
         modelBuilder.Entity<Node>(node =>
@@ -296,7 +337,9 @@ internal sealed class GraphModelContributor : IModelContributor
                 .HasValue<Asset>("asset")
                 .HasValue<CustomNode>("custom")
                 .HasValue<Workspace>("workspace")
-                .HasValue<WorkTask>("task");
+                .HasValue<WorkTask>("task")
+                .HasValue<Page>("page")
+                .HasValue<News>("news");
             node.Property<string>("Kind").HasMaxLength(20);
             node.Ignore(n => n.RealtimeTopics);
             node.Ignore(n => n.PathIds);
