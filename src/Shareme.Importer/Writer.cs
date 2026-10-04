@@ -68,7 +68,9 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
         var definitions = await db.Set<PropertyDefinition>().Select(d => d.Id).ToListAsync(cancellationToken);
         var listValues = await db.Set<PropertyListValue>().Where(v => definitions.Contains(v.DefinitionId)).Select(v => new { v.Id, v.DefinitionId, v.Key }).ToListAsync(cancellationToken);
         var languages = await db.Set<DataLanguage>().Select(l => new { l.Code, l.IsDefault }).ToListAsync(cancellationToken);
-        var users = await db.Set<User>().Where(u => u.NormalizedUserName != null).Select(u => new { u.NormalizedUserName, u.Id }).ToListAsync(cancellationToken);
+        var users = await db.Set<User>().Where(u => u.NormalizedUserName != null).Select(u => new { u.NormalizedUserName, u.Id, u.TenantId }).ToListAsync(cancellationToken);
+        var admin = await db.Set<Role>().Where(r => r.IsSystem && r.Name == SystemRoles.Admin && (r.TenantId == tenantId || r.TenantId == null))
+            .OrderByDescending(r => r.TenantId).Select(r => (Guid?)r.Id).FirstOrDefaultAsync(cancellationToken);
         return new MapTarget(tenantId, root)
         {
             Keys = new Dictionary<string, IReadOnlyDictionary<Guid, string>>
@@ -81,7 +83,8 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             ListValues = listValues.ToDictionary(v => v.Id, v => (v.DefinitionId, v.Key)),
             LanguageCodes = languages.Select(l => l.Code).ToHashSet(),
             HasDefaultLanguage = languages.Any(l => l.IsDefault),
-            ExistingUsers = users.ToDictionary(u => u.NormalizedUserName!, u => u.Id),
+            ExistingUsers = users.ToDictionary(u => u.NormalizedUserName!, u => (u.Id, u.TenantId)),
+            AdminRoleId = admin,
             ExistingRoleNames = (await db.Set<Role>().Where(r => r.TenantId == null || r.TenantId == tenantId).Select(r => r.Name!).ToListAsync(cancellationToken))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase),
             ExistingGroupNames = (await db.Set<UserGroup>().Select(g => g.Name).ToListAsync(cancellationToken)).ToHashSet(StringComparer.OrdinalIgnoreCase),

@@ -32,8 +32,11 @@ public sealed record MapTarget(Guid TenantId, Folder Root)
 
     public bool HasDefaultLanguage { get; init; }
 
-    /// <summary>Users already in Shareme by normalized user name; imported accounts with the same name merge into them.</summary>
-    public IReadOnlyDictionary<string, Guid> ExistingUsers { get; init; } = new Dictionary<string, Guid>();
+    /// <summary>Users already in Shareme (any tenant: user names are unique across tenants) by normalized user name.</summary>
+    public IReadOnlyDictionary<string, (Guid Id, Guid TenantId)> ExistingUsers { get; init; } = new Dictionary<string, (Guid, Guid)>();
+
+    /// <summary>The tenant's system admin role; Sharedien GlobalAdmin roles map to it.</summary>
+    public Guid? AdminRoleId { get; init; }
 
     public IReadOnlySet<string> ExistingRoleNames { get; init; } = new HashSet<string>();
 
@@ -90,7 +93,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             groupIds[g.Id] = group.Id;
         }
 
-        var definitions = MapDefinitions(groupIds, out var definitionOf, out var listKeyOf);
+        var definitions = MapDefinitions(groupIds, typeOf, out var definitionOf, out var listKeyOf);
         var nodes = MapNodes(typeOf, out var nodeOf);
         foreach (var row in source.Nodes)
         {
@@ -196,13 +199,14 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     }
 
     private List<PropertyDefinition> MapDefinitions(
-        Dictionary<long, Guid> groupIds, out Dictionary<long, PropertyDefinition> definitionOf, out Dictionary<long, string> listKeyOf)
+        Dictionary<long, Guid> groupIds, Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf,
+        out Dictionary<long, PropertyDefinition> definitionOf, out Dictionary<long, string> listKeyOf)
     {
         definitionOf = [];
         listKeyOf = [];
         var listValues = source.ListValues.ToLookup(v => v.DefinitionId);
         var nodeTypes = source.DefinitionNodeTypes.ToLookup(t => t.DefinitionId);
-        var typeKeys = TypeKeys();
+        var typeKeys = TypeKeys(typeOf);
         foreach (var row in source.PropertyDefinitions)
         {
             if (MapValueType(row) is not { } valueType)
@@ -271,7 +275,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     }
 
     /// <summary>Shareme node type keys of Sharedien node types, as far as they have one.</summary>
-    private Dictionary<long, string> TypeKeys()
+    private Dictionary<long, string> TypeKeys(Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf)
     {
         var keys = new Dictionary<long, string>();
         foreach (var row in source.NodeTypes)
@@ -282,6 +286,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 AssetSet or Version => "asset",
                 Workspace => "workspace",
                 Task => "task",
+                CustomEntity when typeOf.TryGetValue(row.Id, out var custom) => custom.Key,
                 _ => null,
             };
             if (key is not null)

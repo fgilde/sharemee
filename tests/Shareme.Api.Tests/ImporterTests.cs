@@ -62,7 +62,8 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
         languages.Select(l => l.Code).ShouldBe(["en", "de"], ignoreOrder: true);
         languages.Count(l => l.IsDefault).ShouldBe(1);
-        (run.Written["users"], run.Written["roles"], run.Written["groups"], run.Written["node permissions"]).ShouldBe((1, 2, 1, 1));
+        // the stranger of another tenant stays out; tenant roles carry no node rights, so "tenant-reader" gives People.View but no folders
+        (run.Written["users"], run.Written["roles"], run.Written["groups"], run.Written["node permissions"]).ShouldBe((2, 3, 2, 1));
 
         var root = (await Admin.GetFromJsonAsync<NodeDto>("/api/v1/nodes/root", Ct))!;
         var top = (await Admin.GetFromJsonAsync<PagedResult<NodeDto>>($"/api/v1/nodes/{root.Id}/children", Ct))!.Items;
@@ -85,6 +86,9 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         (await reader.GetAsync($"/api/v1/nodes/{sub.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await reader.GetAsync($"/api/v1/nodes/{asset.Id}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await reader.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound);
+        (await reader.GetAsync("/api/v1/people", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var boss = api.As(SourceIds.Derived(_setup.TenantId, "Admin.User", 4), _setup.TenantId);
+        (await boss.GetAsync($"/api/v1/nodes/{TopFolder}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var person = await Admin.GetFromJsonAsync<Shareme.Contracts.Knowledge.PersonDto>($"/api/v1/people/{grace}", Ct);
         (person!.DisplayName, person.Department).ShouldBe(("Grace Hopper", "Research"));
 
@@ -140,7 +144,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create schema Admin
         GO
         create table Admin.[User] (UserId bigint primary key, Identifier nvarchar(200) not null, UserName nvarchar(850) not null, FirstName nvarchar(850) null, LastName nvarchar(850) null,
-            EmailAddress nvarchar(320) null, Department nvarchar(850) null, PhoneNumber nvarchar(100) null, Status int not null, IsDeleted bit not null default 0, LastLoginDate datetime2 null, CreatedAt datetime2 null);
+            EmailAddress nvarchar(320) null, Department nvarchar(850) null, PhoneNumber nvarchar(100) null, Status int not null, IsDeleted bit not null default 0, LastLoginDate datetime2 null, CreatedAt datetime2 null, ProviderSubjectId nvarchar(max) null);
         create table Admin.UserGroup (UserGroupId bigint primary key, Identifier nvarchar(200) not null, Name nvarchar(850) not null, Description nvarchar(2048) null, IsDeleted bit not null default 0);
         create table Admin.UserGroupUser (UserGroupUserId bigint identity primary key, UserGroupId bigint not null, UserId bigint not null);
         create table Admin.Role (RoleId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null, Status int not null default 1, IsDeleted bit not null default 0, IsSystem bit not null default 0);
@@ -172,13 +176,14 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         GO
         insert Admin.[User] (UserId, Identifier, UserName, FirstName, LastName, EmailAddress, Department, Status) values
             (1, '5f0c3d1a-8b2e-4c6d-9e7f-1a2b3c4d5e6f', 'grace', 'Grace', 'Hopper', 'grace@acme.test', 'Research', 1),
-            (2, 'admin-account', 'admin', 'Ada', 'Admin', 'admin@acme.test', null, 1), (3, 'gone', 'gone', null, null, 'gone@acme.test', null, 1);
+            (2, 'admin-account', 'admin', 'Ada', 'Admin', 'admin@acme.test', null, 1), (3, 'gone', 'gone', null, null, 'gone@acme.test', null, 1),
+            (4, 'boss', 'boss', 'Big', 'Boss', 'boss@acme.test', null, 1), (5, 'stranger', 'stranger', null, null, 'stranger@other.test', null, 1);
         update Admin.[User] set IsDeleted = 1 where UserId = 3;
-        insert Admin.UserGroup (UserGroupId, Identifier, Name) values (1, 'readers', 'Readers');
-        insert Admin.UserGroupUser (UserGroupId, UserId) values (1, 1);
-        insert Admin.Role (RoleId, Identifier) values (1, 'reader'), (2, 'tenant-reader');
-        insert Admin.RoleObjectTypePermission (RoleId, Permission) values (1, 42), (1, 48), (1, 14), (1, 9999), (1, 2), (2, 75);
-        insert Admin.UserGroupToRoleMap (TenantId, RoleId, UserGroupId) values (7, 2, 1), (8, 1, 1);
+        insert Admin.UserGroup (UserGroupId, Identifier, Name) values (1, 'readers', 'Readers'), (2, 'admins', 'Admins'), (3, 'elsewhere', 'Elsewhere');
+        insert Admin.UserGroupUser (UserGroupId, UserId) values (1, 1), (2, 4), (2, 2), (3, 5);
+        insert Admin.Role (RoleId, Identifier) values (1, 'reader'), (2, 'tenant-reader'), (3, 'globaladmin');
+        insert Admin.RoleObjectTypePermission (RoleId, Permission) values (1, 42), (1, 48), (1, 14), (1, 9999), (1, 2), (2, 75), (2, 48), (2, 181), (3, 101);
+        insert Admin.UserGroupToRoleMap (TenantId, RoleId, UserGroupId) values (7, 2, 1), (8, 1, 1), (7, 3, 2), (8, 2, 3);
         insert Admin.NodePermission (NodePermissionId, Identifier, NodeId, RoleId, UserGroupId) values (1, 'np1', 11, 1, 1), (2, 'np2', 40, 1, 1);
         insert MAM.Language (LanguageId, Identifier, IsDefaultLanguage) values (1, 'en-US', 1), (2, 'de-DE', 0);
         insert MAM.Translation (TranslationIdentifier, FieldName, LanguageId, TranslatedValue) values

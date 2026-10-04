@@ -34,6 +34,12 @@ internal static class ImporterProgram
             Console.Error.WriteLine(exception.Message);
             return 1;
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException exception)
+        {
+            // database messages can quote row values: name only the kind of failure, nothing was committed
+            Console.Error.WriteLine($"Writing failed and nothing was committed ({(exception.InnerException as Npgsql.PostgresException)?.SqlState ?? "unknown"}).");
+            return 1;
+        }
         finally
         {
             Console.WriteLine(report.Summary());
@@ -45,7 +51,8 @@ internal static class ImporterProgram
 
         if (options.Write)
         {
-            Console.WriteLine("Done. Start a search reindex for the tenant (admin › search) so the imported items become findable.");
+            Console.WriteLine("Done. Restart Shareme (or wait five minutes for the permission cache) and start a search reindex for the tenant (admin › search).");
+            Console.WriteLine("Not imported yet: role restrictions (hidden properties, list values, renditions). Review them before users sign in.");
         }
 
         return report.Problems.Count > options.MaxProblems ? 1 : 0;
@@ -95,6 +102,11 @@ public static class SharedienImport
 
         await using var writer = new ImportWriter(options.Target, options.Tenant);
         var plan = new SharedienMapper(source, await writer.TargetAsync(cancellationToken), report).Map();
+        if (options.Write && report.Problems.Count > options.MaxProblems)
+        {
+            throw new InvalidOperationException($"{report.Problems.Count} problems exceed --max-problems {options.MaxProblems}; nothing was written.");
+        }
+
         if (options.Write)
         {
             await writer.WriteAsync(plan, report, cancellationToken);

@@ -37,7 +37,7 @@ public sealed record ValueRow(
 
 public sealed record UserRow(
     long Id, string Identifier, string UserName, string? FirstName, string? LastName, string? Email, string? Department, string? Phone,
-    int Status, DateTime? LastLoginDate, DateTime? CreatedAt);
+    int Status, DateTime? LastLoginDate, DateTime? CreatedAt, bool IsExternal = false);
 
 public sealed record GroupRow(long Id, string Identifier, string Name, string? Description);
 
@@ -165,12 +165,13 @@ public sealed class SharedienSource(string connectionString)
             new SourceIdentity(
                 await Query(
                     """
-                    select UserId, Identifier, UserName, FirstName, LastName, EmailAddress, Department, PhoneNumber, Status, LastLoginDate, CreatedAt
+                    select UserId, Identifier, UserName, FirstName, LastName, EmailAddress, Department, PhoneNumber, Status, LastLoginDate, CreatedAt,
+                        case when ProviderSubjectId is null or ProviderSubjectId = '' then 0 else 1 end
                     from Admin.[User] where IsDeleted = 0
                     order by UserId
                     """,
                     r => new UserRow(r.GetInt64(0), r.GetString(1), r.GetString(2), r.Text(3), r.Text(4), r.Text(5), r.Text(6), r.Text(7), r.GetInt32(8),
-                        r.IsDBNull(9) ? null : r.GetDateTime(9), r.IsDBNull(10) ? null : r.GetDateTime(10))),
+                        r.IsDBNull(9) ? null : r.GetDateTime(9), r.IsDBNull(10) ? null : r.GetDateTime(10), r.GetInt32(11) == 1)),
                 await Query("select UserGroupId, Identifier, Name, Description from Admin.UserGroup where IsDeleted = 0 order by UserGroupId",
                     r => new GroupRow(r.GetInt64(0), r.GetString(1), r.GetString(2), r.Text(3))),
                 await Query("select UserGroupId, UserId from Admin.UserGroupUser order by UserGroupUserId", r => new GroupUserRow(r.GetInt64(0), r.GetInt64(1))),

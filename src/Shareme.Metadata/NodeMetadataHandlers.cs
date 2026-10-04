@@ -50,12 +50,14 @@ public static class MetadataRules
     /// <summary>An error, or the value in the form it is stored and searched in.</summary>
     public static (string? Problem, JsonElement? Value) Check(PropertyDefinition definition, JsonElement? value) => NodeMetadataHandlers.CheckValue(definition, value, []);
 
-    /// <summary>All checks of the API for the values of one property; the values count as already stored, so deactivated list values stay valid.</summary>
+    /// <summary>All checks of the API for the values of one property; deactivated list values of this definition count as already stored, so they stay valid.</summary>
     public static IReadOnlyList<string> Check(
         PropertyDefinition definition, List<MetadataValue> values, HashSet<string> languages, HashSet<string> contexts, out List<MetadataValue> normalized)
     {
         normalized = [];
-        return NodeMetadataHandlers.Check(definition, values, values, languages, contexts, [], normalized).ToList();
+        var inactive = definition.ListValues.Where(v => !v.IsActive).Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
+        var current = values.Where(v => v.List is { } key && inactive.Contains(key)).ToList();
+        return NodeMetadataHandlers.Check(definition, values, current, languages, contexts, [], normalized).ToList();
     }
 }
 
