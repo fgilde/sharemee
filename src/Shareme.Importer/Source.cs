@@ -99,7 +99,8 @@ public sealed record SourceData(
     SourceIdentity? Identity = null,
     IReadOnlyList<UserContextRow>? UserContexts = null,
     SourceWorkspaces? Workspaces = null,
-    IReadOnlyList<OriginalRow>? Originals = null);
+    IReadOnlyList<OriginalRow>? Originals = null,
+    SourceDrm? Drm = null);
 
 /// <summary>Reads one source tenant, read only. Deleted rows and system property definitions stay behind.</summary>
 public sealed class SharedienSource(string connectionString)
@@ -240,7 +241,8 @@ public sealed class SharedienSource(string connectionString)
                 where v.AssetVersionNodeId in ({TenantNodes})
                 order by d.AssetDerivationId
                 """,
-                r => new OriginalRow(r.GetInt64(0), r.Text(1), r.Text(2))));
+                r => new OriginalRow(r.GetInt64(0), r.Text(1), r.Text(2))),
+            await SourceDrm.LoadAsync(connection, tenantId, cancellationToken));
     }
 }
 

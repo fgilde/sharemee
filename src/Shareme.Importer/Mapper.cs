@@ -23,7 +23,8 @@ public sealed record ImportPlan(
     IReadOnlyList<Restriction> Restrictions,
     IReadOnlyList<Shareme.Workspaces.WorkflowState> States,
     IReadOnlyList<Shareme.Workspaces.Comment> Comments,
-    IReadOnlyList<VersionCandidate> Versions);
+    IReadOnlyList<VersionCandidate> Versions,
+    DrmPlan Drm);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -70,7 +71,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 {
     // Sharedien NodeTypeSemantic and EdgeTypeSemantic values
     private const int Category = 1, AssetSet = 2, Version = 3, Workspace = 4, Task = 5, CustomEntity = 1000;
-    private const int ParentChild = 1, Link = 3, Translation = 5, Variant = 6, Licence = 7, Duplicate = 8, Transition = 9, CustomRelation = 0;
+    private const int ParentChild = 1, Link = 3, Translation = 5, Variant = 6, Licence = 7, Duplicate = 8, Transition = 9, LicenseDrm = 10, CustomRelation = 0;
 
     private readonly Dictionary<long, string> _languageCodes = source.Languages.ToDictionary(l => l.Id, l => LanguageCode(l.Identifier));
     private readonly string _defaultLanguage = source.Languages.FirstOrDefault(l => l.IsDefault) is { } d ? LanguageCode(d.Identifier) : "en";
@@ -126,6 +127,8 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var states = MapStates(nodeOf, stateIds);
         var comments = MapComments(nodeOf, identity);
         var versions = MapVersions(nodeOf);
+        var drm = new DrmMapper(source.Drm ?? SourceDrm.Empty, target.TenantId, report, Name).Map(
+            [.. source.Edges.Where(e => SemanticOf(e) == LicenseDrm).Select(e => (e.FromNodeId, e.ToNodeId))], nodeOf, contextKeyOf);
         MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
             target.KeysOf(KeyKinds.UserContext).Count + contexts.Count == 0 ? [VirtualDefaultContext] : [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf);
@@ -141,7 +144,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["comments"] = comments.Count;
         report.Mapped["user contexts"] = contexts.Count;
         report.Mapped["restrictions"] = restrictions.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm);
     }
 
     private List<DataLanguage> MapLanguages()

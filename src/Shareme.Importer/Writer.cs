@@ -204,6 +204,13 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("comments", plan.Comments, report, cancellationToken);
             await InsertNewAsync("node permissions", plan.NodePermissions, report, cancellationToken);
             await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
+            await InsertNewAsync("billing contacts", plan.Drm.BillingContacts, report, cancellationToken);
+            await InsertNewAsync("rights owners", plan.Drm.RightsOwners, report, cancellationToken);
+            await InsertNewAsync("licenses", plan.Drm.Licenses, report, cancellationToken);
+            await InsertNewAsync("licensed assets", plan.Drm.LicenseAssets, report, cancellationToken);
+            await InsertNewAsync("context groups", plan.Drm.ContextGroups, report, cancellationToken);
+            await InsertNewAsync("price lists", plan.Drm.PriceLists, report, cancellationToken);
+            await InsertNewAsync("buyouts", plan.Drm.Buyouts, report, cancellationToken);
             await _transaction.CommitAsync(cancellationToken);
         }
         catch
