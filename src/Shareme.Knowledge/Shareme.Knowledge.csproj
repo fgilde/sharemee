@@ -3,6 +3,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Markdig" />
-    <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />
+    <ProjectReference Include="..\Shareme.Assets\Shareme.Assets.csproj" />
+    <ProjectReference Include="..\Shareme.Search\Shareme.Search.csproj" />
   </ItemGroup>
 </Project>

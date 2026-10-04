@@ -56,3 +56,11 @@ public sealed record HomeLayoutRequest(IReadOnlyList<string> Widgets);
 
 /// <summary>A task of the current user for the start page.</summary>
 public sealed record HomeTaskDto(Guid Id, Guid WorkspaceId, string WorkspaceName, string Title, DateOnly? DueDate);
+
+/// <summary>A member of the tenant as the people directory shows them.</summary>
+public sealed record PersonDto(Guid UserId, string DisplayName, string? Email, string? Department, string? Position, string? Phone, string? Location, string? About, bool HasAvatar);
+
+public sealed record ProfileRequest(string? Department = null, string? Position = null, string? Phone = null, string? Location = null, string? About = null);
+
+/// <summary>Everything matching a term: nodes from the search index (as far as the user may see them) and people.</summary>
+public sealed record GlobalSearchDto(IReadOnlyList<Shareme.Contracts.Graph.NodeDto> Nodes, long NodeTotal, IReadOnlyList<PersonDto> People);

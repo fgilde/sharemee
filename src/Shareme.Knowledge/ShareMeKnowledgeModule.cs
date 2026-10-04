@@ -34,6 +34,7 @@ public sealed class ShareMeKnowledgeModule : CoworkeeModule, IWebModule
     public void ConfigureApplication(WebApplication app)
     {
         IntranetEndpoints.Map(app);
+        PeopleEndpoints.Map(app);
         var pages = app.MapGroup("/api/v1/pages").WithTags("Pages").RequireAuthorization();
         pages.MapPost("/", (PageRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreatePage(body.ParentId, body), ct).ToHttpResult());
         pages.MapPost("/preview", (PagePreviewRequest body) => body.Markdown is { Length: <= PageContent.MaxMarkdown } markdown
@@ -70,6 +71,19 @@ internal sealed class KnowledgeModelContributor : IModelContributor
 {
     public void Apply(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<UserProfile>(profile =>
+        {
+            profile.ToTable("UserProfiles", "sm");
+            profile.HasKey(p => p.UserId);
+            foreach (var name in new[] { nameof(UserProfile.Department), nameof(UserProfile.Position), nameof(UserProfile.Phone), nameof(UserProfile.Location) })
+            {
+                profile.Property(name).HasMaxLength(200);
+            }
+
+            profile.Property(p => p.About).HasMaxLength(2000);
+            profile.Property(p => p.AvatarBlobKey).HasMaxLength(300);
+            profile.Property(p => p.AvatarMimeType).HasMaxLength(50);
+        });
         modelBuilder.Entity<Favorite>(favorite =>
         {
             favorite.ToTable("Favorites", "sm");
