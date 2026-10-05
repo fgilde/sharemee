@@ -82,7 +82,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         run.Problems.Select(p => (p.Code, p.Table, p.SourceId)).ShouldBe(
             [("multi_parent", "MAM.Edge", 106), ("invalid_value", "MAM.PropertyValue", 9), ("user_merged", "Admin.User", 2),
                 ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2), ("checksum_mismatch", "MAM.AssetVersion", 21), ("missing_blob", "MAM.AssetVersion", 59),
-                ("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", 1)], ignoreOrder: true);
+                ("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", 1), ("restriction_on_original", "Admin.DerivationTypeRestriction", 2)], ignoreOrder: true);
         run.Written["files"].ShouldBe(2);
         run.Skipped["workspace containers"].ShouldBe(1);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
@@ -170,6 +170,18 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
             var owner = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.RightsOwner>()), Ct);
             owner.BillingContactId.ShouldNotBeNull();
+
+            // rendition types: system types are Shareme's built in kinds, the others tenant types sized from their job
+            var types = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.DerivationType>()), Ct);
+            var web = types.Single(t => t.Key == "web-large");
+            (web.Width, web.Height, web.IsDefault, web.IsOnDemand, web.AllowManualUpload).ShouldBe((800, 600, true, false, true));
+            web.AssetTypeKeys.ShouldBe(["image", "document"], ignoreOrder: true);
+            (types.Single(t => t.Key == "print").Width, types.Count).ShouldBe((1600, 2));
+            var blocked = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Graph.Restriction>()),
+                x => x.Kind == Shareme.Contracts.Graph.RestrictionKinds.BlockedRendition, Ct);
+            blocked.Value.ShouldBe("web-large");
         }
 
         (await reader.GetAsync($"/api/v1/nodes/{workspaceId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK); // owner through the workspace role
@@ -256,7 +268,12 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table MAM.Currency (CurrencyId bigint primary key, ShortName nvarchar(200) not null);
         create table MAM.Buyout (BuyoutId bigint primary key, Identifier nvarchar(200) not null, RightsOwnerId bigint not null, PriceListId bigint not null, LicenseId bigint not null, CurrencyId bigint null,
             Basis decimal(18,0) not null, AdditionalFeePercentage decimal(18,0) not null, FromDate datetime2 null, ToDate datetime2 null);
-        create table MAM.DerivationType (DerivationTypeId bigint primary key, Identifier nvarchar(200) not null, IsSystem bit not null default 1, IsDeleted bit not null default 0);
+        create table MAM.DerivationType (DerivationTypeId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null, IsSystem bit not null default 1, IsDeleted bit not null default 0);
+        create table MAM.AssetType (AssetTypeId bigint primary key, Identifier nvarchar(200) not null);
+        create table MAM.AssetTypeDerivationType (AssetTypeDerivationTypeId bigint identity primary key, AssetTypeId bigint not null, DerivationTypeId bigint not null,
+            IsDefaultDerivation bit not null, AllowManualUpload bit not null, IsOnDemand bit not null);
+        create table MAM.DerivationJobDefinition (DerivationJobDefinitionId bigint identity primary key, DerivationTypeId bigint not null, JobDefinition nvarchar(max) null);
+        create table Admin.DerivationTypeRestriction (DerivationTypeRestrictionId bigint primary key, RoleId bigint not null, Action int not null, DerivationTypeId bigint not null);
         create table MAM.AssetDerivation (AssetDerivationId bigint identity primary key, AssetVersionId bigint not null, DerivationTypeId bigint not null, DataId nvarchar(200) null, FileSize bigint null, FileHash nvarchar(850) null);
         create table MAM.Workspace (WorkspaceId bigint identity primary key, WorkspaceNodeId bigint not null, TranslationIdentifier nvarchar(80) null, IsTemplate bit not null default 0,
             FinalizationCategoryId bigint null, CopyPropertiesToAssets bit not null default 0, WorkspaceType int not null);
@@ -317,7 +334,13 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.CustomNode (NodeId, TranslationIdentifier) values (30, 'cn1');
         insert MAM.AssetSet (AssetSetNodeId, AssetSetStatus) values (20, 1), (56, 1), (58, 1);
         insert MAM.AssetVersion (AssetVersionNodeId, OriginalFilename, Version) values (21, 'old.jpg', 1), (22, 'photo.jpg', 2), (59, 'gone.jpg', 1);
-        insert MAM.DerivationType (DerivationTypeId, Identifier) values (1, 'Original'), (2, 'Thumbnail');
+        insert MAM.DerivationType (DerivationTypeId, Identifier) values (1, 'Original'), (2, 'Thumbnail'), (3, 'Screen');
+        insert MAM.DerivationType (DerivationTypeId, Identifier, IsSystem) values (4, 'Web Large', 0), (5, 'Print', 0);
+        insert MAM.DerivationType (DerivationTypeId, Identifier, IsSystem, IsDeleted) values (6, 'Old', 0, 1);
+        insert MAM.AssetType values (1, 'Image'), (2, 'PDF');
+        insert MAM.AssetTypeDerivationType (AssetTypeId, DerivationTypeId, IsDefaultDerivation, AllowManualUpload, IsOnDemand) values (1, 4, 1, 0, 0), (2, 4, 0, 1, 0);
+        insert MAM.DerivationJobDefinition (DerivationTypeId, JobDefinition) values (4, '{"Steps":[{"Type":"ImageMagickConvert","Arguments":"-resize 800x600 -quality 80"}]}');
+        insert Admin.DerivationTypeRestriction values (1, 2, 0, 4), (2, 2, 0, 1), (3, 3, 0, 4), (4, 2, 1, 3), (5, 2, 0, 6);
         insert MAM.AssetDerivation (AssetVersionId, DerivationTypeId, DataId, FileHash) values
             (1, 1, 'aaaa0000old', 'not-the-md5'), (2, 1, 'bbbb1111new', '__MD5__'), (2, 2, 'cccc2222thumb', null), (3, 1, 'dddd3333missing', null);
         insert MAM.Edge values (100, 'e100', 10, 11, 1), (101, 'e101', 11, 20, 1), (102, 'e102', 20, 21, 2), (103, 'e103', 20, 22, 2), (104, 'e104', 30, 20, 4), (105, 'e105', 10, 20, 3), (106, 'e106', 10, 20, 1), (107, 'e107', 50, 51, 1), (108, 'e108', 51, 52, 1), (109, 'e109', 50, 53, 1), (110, 'e110', 50, 54, 1), (111, 'e111', 53, 55, 1), (112, 'e112', 55, 56, 1),

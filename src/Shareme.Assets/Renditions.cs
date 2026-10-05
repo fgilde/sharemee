@@ -129,7 +129,7 @@ public sealed record UploadDerivation(Guid Id, string Kind, Stream Content) : IC
     public string RequiredPermission => NodePermissions.Update;
 }
 
-internal static class RenditionLimits
+public static class RenditionLimits
 {
     public const int MaxEdge = 8000;
     public const long MaxUpload = 100L * 1024 * 1024;
