@@ -51,11 +51,8 @@ public sealed partial class SignInFlowTests
             ["__RequestVerificationToken"] = AntiforgeryToken().Match(loginHtml).Groups[1].Value,
         }), ct);
 
-        var formPost = await authorizeResponse.Content.ReadAsStringAsync(ct);
-        var callback = await browser.PostAsync(FormAction().Match(formPost).Groups[1].Value,
-            new FormUrlEncodedContent(HiddenField().Matches(formPost).ToDictionary(m => WebUtility.HtmlDecode(m.Groups[1].Value), m => WebUtility.HtmlDecode(m.Groups[2].Value))), ct);
-
-        var user = JsonDocument.Parse(await callback.Content.ReadAsStringAsync(ct)).RootElement;
+        // the code comes back as a redirect (response_mode=query), so the client lands on /bff/user right away
+        var user = JsonDocument.Parse(await authorizeResponse.Content.ReadAsStringAsync(ct)).RootElement;
         user.GetProperty("isAuthenticated").GetBoolean().ShouldBeTrue();
         user.GetProperty("email").GetString().ShouldBe("admin@acme.test");
 
@@ -153,10 +150,7 @@ public sealed partial class SignInFlowTests
             ["Input.Password"] = "Brand#New123",
             ["__RequestVerificationToken"] = AntiforgeryToken().Match(newLoginHtml).Groups[1].Value,
         }), ct);
-        var newFormPost = await newAuthorize.Content.ReadAsStringAsync(ct);
-        var newCallback = await browser.PostAsync(FormAction().Match(newFormPost).Groups[1].Value,
-            new FormUrlEncodedContent(HiddenField().Matches(newFormPost).ToDictionary(m => WebUtility.HtmlDecode(m.Groups[1].Value), m => WebUtility.HtmlDecode(m.Groups[2].Value))), ct);
-        JsonDocument.Parse(await newCallback.Content.ReadAsStringAsync(ct)).RootElement.GetProperty("isAuthenticated").GetBoolean().ShouldBeTrue();
+        JsonDocument.Parse(await newAuthorize.Content.ReadAsStringAsync(ct)).RootElement.GetProperty("isAuthenticated").GetBoolean().ShouldBeTrue();
     }
 
     private static async Task<string> SendJsonAsync(HttpClient client, HttpMethod method, string url, object body, CancellationToken ct)
@@ -182,9 +176,5 @@ public sealed partial class SignInFlowTests
     [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]
     private static partial Regex AntiforgeryToken();
 
-    [GeneratedRegex("<form[^>]*action=\"([^\"]+)\"")]
-    private static partial Regex FormAction();
 
-    [GeneratedRegex("<input type=\"hidden\" name=\"([^\"]+)\" value=\"([^\"]*)\"")]
-    private static partial Regex HiddenField();
 }
