@@ -49,14 +49,30 @@ public sealed class AdminJourneyTests
         await first.Locator("[data-testid='next']").ClickAsync();
         await first.Locator("input[data-testid='tenant-name']").FillAsync("Acme");
         await first.Locator("[data-testid='next']").ClickAsync();
+
+        // the look step applies a theme at once; setup shows no navigation
+        await first.Locator("[data-theme='Ocean']").ClickAsync(new() { Timeout = Timeout });
+        await ShotAsync(first, "setup-look-ocean");
+        await first.Locator("[data-mode='dark']").ClickAsync();
+        await ShotAsync(first, "setup-look-ocean-dark");
+        await first.Locator("[data-mode='light']").ClickAsync();
+        (await first.Locator(".mud-nav-menu").CountAsync()).ShouldBe(0);
+        await first.Locator("[data-testid='next']").ClickAsync();
         await first.Locator("input[data-testid='admin-email']").FillAsync(AdminEmail);
         await first.Locator("input[data-testid='admin-password']").FillAsync(AdminPassword);
+        await first.Locator("input[data-testid='admin-password-confirm']").FillAsync(AdminPassword);
+        await ShotAsync(first, "setup-admin");
         await first.Locator("[data-testid='next']").ClickAsync();
         await first.Locator("[data-testid='finish']").ClickAsync();
-        await first.GetByText("The system is ready").WaitForAsync(new() { Timeout = Timeout });
-        await first.Locator("a[href*='returnUrl=/admin/users']").ClickAsync();
+        await first.Locator("[data-testid='sign-in']").WaitForAsync(new() { Timeout = Timeout });
+        await ShotAsync(first, "setup-done");
+        await first.Locator("[data-testid='sign-in']").ClickAsync(new() { Timeout = Timeout });
+
+        // the sign-in form starts with the administrator's address
+        (await first.Locator("#email").InputValueAsync()).ShouldBe(AdminEmail);
         await SignInAsync(first);
-        await first.WaitForURLAsync("**/admin/users", new() { Timeout = Timeout });
+        await first.WaitForURLAsync(web + "/", new() { Timeout = Timeout });
+        await first.GotoAsync(web + "/admin/users");
 
         await first.GotoAsync(web + "/admin/roles");
         await first.Locator("input[data-testid='new-role-name'], [data-testid='new-role-name'] input").First.FillAsync("Editors");
@@ -175,6 +191,17 @@ public sealed class AdminJourneyTests
             }
         };
         return page;
+    }
+
+    /// <summary>With SHAREME_E2E_SCREENSHOTS set, keeps a picture of the page there (to look at a design without clicking through).</summary>
+    private static async Task ShotAsync(IPage page, string name)
+    {
+        if (Environment.GetEnvironmentVariable("SHAREME_E2E_SCREENSHOTS") is { Length: > 0 } folder)
+        {
+            await page.Mouse.MoveAsync(1, 1);
+            await page.WaitForTimeoutAsync(1000); // transitions settle
+            await page.ScreenshotAsync(new() { Path = Path.Combine(folder, name + ".png"), FullPage = true });
+        }
     }
 
     private static async Task SignInAsync(IPage page)
