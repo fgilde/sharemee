@@ -314,3 +314,9 @@ See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 o
 - `SetNodeMetadata`-Referenzprüfung verrät, ob eine Knoten-id existiert.
 - Navigationseintrag "Assistant" auch sichtbar, wenn die KI global aus ist; Audit-Seite zeigt User-GUID statt Name, kein Kanal-Filter.
 - Spec P8b: Links auf gefundene/angelegte Knoten im Chat und Tool für Lizenzangebote fehlen noch.
+
+## CSP (2026-10-05)
+
+- Shareme.Web sendet jetzt Content-Security-Policy, nosniff und Referrer-Policy; der E2E-Test wertet jede CSP-Verletzung im Browser als Fehler.
+- `'unsafe-eval'` bleibt nötig, solange BlazorJS (MudBlazor.Extensions) Skript-Strings auswertet – in der Lib ablösen, dann streichen.
+- Der Auth-Server (Login-Seiten) hat noch keine CSP: `form-action` muss dort die Redirects zu den Client-Callbacks erlauben, erst im Browser prüfen.
