@@ -7,6 +7,8 @@ using Shareme.Web.Client.Metadata;
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
 builder.Services.AddCoworkeeClient(baseAddress, options => options.AppTitle = "Sharemee");
+builder.Services.AddCoworkeeAppConfiguration<Shareme.Contracts.Configuration.SharemeConfiguration>(
+    Shareme.Contracts.Configuration.SharemeConfiguration.Section, Shareme.Contracts.Configuration.SharemeConfiguration.Title);
 builder.Services.AddHttpClient<ISharemeApi, SharemeApi>(client =>
 {
     client.BaseAddress = baseAddress;

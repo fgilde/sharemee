@@ -1,7 +1,7 @@
 using Coworkee.Core.Modularity;
 using Coworkee.Identity;
 using Coworkee.Application.Setup;
-using Coworkee.Identity.Setup;
+using Coworkee.Settings;
 using Coworkee.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +21,8 @@ public sealed class ShareMeInfrastructureModule : CoworkeeModule
             provider.GetRequiredService<IConfiguration>().GetConnectionString(ConnectionStringName),
             npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "cw")));
         context.Services.AddHealthChecks().AddDbContextCheck<ShareMeDbContext>("database");
+        context.Services.AddCoworkeeAppConfiguration<Shareme.Contracts.Configuration.SharemeConfiguration>(
+            context.Configuration, Shareme.Contracts.Configuration.SharemeConfiguration.Section, Shareme.Contracts.Configuration.SharemeConfiguration.Title);
         context.Services.Configure<SetupGateOptions>(options => options.AllowedPrefixes.Add("/api/v1/system"));
         context.Services.PostConfigure<Coworkee.BackgroundJobs.BackgroundJobOptions>(options => options.ConnectionStringName = ConnectionStringName);
     }

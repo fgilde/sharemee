@@ -7,4 +7,11 @@
   <ItemGroup>
     <CoworkeePackage Include="Coworkee.Contracts" />
   </ItemGroup>
+  <!-- the app configuration: SharemeConfiguration is generated from appconfig.json, which also ships as the defaults -->
+  <ItemGroup>
+    <PackageReference Include="Nextended.CodeGen" PrivateAssets="all" />
+    <AdditionalFiles Include="CodeGen.config.json" />
+    <AdditionalFiles Include="Configuration/appconfig.json" />
+    <EmbeddedResource Include="Configuration/appconfig.json" LogicalName="Shareme.appconfig.json" />
+  </ItemGroup>
 </Project>

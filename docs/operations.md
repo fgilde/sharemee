@@ -284,3 +284,10 @@ dotnet run --project src/Shareme.Importer -- run  --source-tenant <id> --tenant 
 | Öffentlicher Freigabe-Link liefert `429` | `Shareme:Shares:RequestsPerMinute` erhöhen. |
 | Nach Neustart des Auth-Containers ungültige Tokens | Entwicklungszertifikate erlaubt (`Coworkee:Auth:DevelopmentCertificates`) statt konfigurierter Zertifikate (Abschnitt Sicherheit). |
 | Hangfire-Dashboard `401/403` | Anmeldung über die Web-App und Recht `Jobs.View`. |
+
+## App-Konfiguration
+
+- `src/Shareme.Contracts/Configuration/appconfig.json` ist der Abschnitt `Shareme` mit seinen Standardwerten; Nextended.CodeGen erzeugt daraus `SharemeConfiguration` (Server und Client teilen die Klasse). Neue Werte: in die JSON-Datei eintragen, die Klasse entsteht beim Build.
+- Ebenen (unten nach oben): appconfig.json, appsettings, Umgebung (Aspire), in der App geänderte Werte (`cw.ConfigurationEntries`). API, Auth und Processing lesen die Tabelle beim Start und alle 15 Sekunden; der Dienst, der speichert, sofort.
+- Bearbeiten: Admin › Configuration, nur aus der System-Organisation (Recht `Settings.Manage`). Werte, die beim Start gelesen werden (z. B. `Shares.RequestsPerMinute`), wirken erst nach einem Neustart.
+- **Offen**: Geheimnisse liegen dort im Klartext (im Audit maskiert) – Schlüssel und Passwörter weiter über Umgebung/Key Vault setzen.

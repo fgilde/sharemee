@@ -766,6 +766,27 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("NotificationDigests", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Settings.ConfigurationEntry", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("text")
+                        .HasAnnotation("Coworkee:Sensitive", true);
+
+                    b.HasKey("Key");
+
+                    b.ToTable("ConfigurationEntries", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Settings.SettingValue", b =>
                 {
                     b.Property<Guid>("Id")

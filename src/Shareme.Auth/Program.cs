@@ -4,6 +4,7 @@ using Coworkee.Core.Modularity;
 using Shareme.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddSharemeConfiguration();
 builder.AddServiceDefaults();
 builder.AddCoworkee<ShareMeAuthModule>();
 
