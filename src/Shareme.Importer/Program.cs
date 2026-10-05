@@ -54,8 +54,8 @@ internal static class ImporterProgram
 
         if (options.Write)
         {
-            Console.WriteLine("Done. Restart Shareme (or wait five minutes for the permission cache) and start a search reindex for the tenant (admin › search).");
-            Console.WriteLine("Not imported yet: list value and rendition restrictions of roles. Review them before users sign in.");
+            Console.WriteLine("Done. Restart Shareme (or wait five minutes for the permission cache); the search rebuild is queued (admin › search shows it).");
+            Console.WriteLine("Rules came over switched off: review them (names ending in \"(import incomplete)\" lost parts) before switching them on.");
         }
 
         return report.Problems.Count > options.MaxProblems ? 1 : 0;
@@ -154,6 +154,15 @@ public static class SharedienImport
         {
             // the import is committed; the next run requests what is still missing
             report.Problem("renditions_not_requested", "import", 0);
+        }
+
+        try
+        {
+            await writer.RequestReindexAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            report.Problem("reindex_not_requested", "import", 0); // admin › search starts it by hand
         }
 
         return report;

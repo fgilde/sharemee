@@ -157,6 +157,14 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.Derivation>()), Ct);
             derivations.Select(d => d.VersionId).Distinct().ShouldBe([SourceIds.Derived(_setup.TenantId, "MAM.Node", 22)]);
 
+            // the import wrote past the indexing events: a search rebuild is queued through the outbox
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while ((await Admin.GetFromJsonAsync<Shareme.Contracts.Search.ReindexRunDto[]>("/api/v1/search/reindex", Ct))!.Length == 0)
+            {
+                DateTime.UtcNow.ShouldBeLessThan(deadline, "no rebuild was queued");
+                await Task.Delay(250, Ct);
+            }
+
             // licensing: the license with its rights and period covers the photo; the buyout prices it through the partners' group
             var license = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.License>()), Ct);

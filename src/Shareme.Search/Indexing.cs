@@ -172,10 +172,21 @@ internal sealed class ReindexJob(CoworkeeDbContext db, NodeIndexer indexer, ICur
     }
 }
 
-/// <summary>New restrictions change what goes into full text and which nodes are marked hidden: the tenant is indexed again (a running rebuild picks them up already for what it has not done yet).</summary>
-internal sealed class IndexOnRestrictionsChanged(CoworkeeDbContext db, IBackgroundJobs jobs, ICurrentUser currentUser, TimeProvider clock) : IDomainEventHandler<RestrictionsChanged>
+/// <summary>Asks for the tenant to be indexed again, for writers that bypass the regular commands (the importer); raised on any node.</summary>
+public sealed record ReindexRequested : Coworkee.Domain.IDomainEvent;
+
+/// <summary>
+/// New restrictions change what goes into full text and which nodes are marked hidden, and imports write past the indexing
+/// events: the tenant is indexed again (a running rebuild picks them up already for what it has not done yet).
+/// </summary>
+internal sealed class IndexOnRestrictionsChanged(CoworkeeDbContext db, IBackgroundJobs jobs, ICurrentUser currentUser, TimeProvider clock)
+    : IDomainEventHandler<RestrictionsChanged>, IDomainEventHandler<ReindexRequested>
 {
-    public async Task HandleAsync(RestrictionsChanged domainEvent, CancellationToken cancellationToken)
+    public Task HandleAsync(ReindexRequested domainEvent, CancellationToken cancellationToken) => QueueAsync(cancellationToken);
+
+    public Task HandleAsync(RestrictionsChanged domainEvent, CancellationToken cancellationToken) => QueueAsync(cancellationToken);
+
+    private async Task QueueAsync(CancellationToken cancellationToken)
     {
         if (await db.Set<ReindexRun>().AnyAsync(r => r.State == "queued", cancellationToken))
         {
