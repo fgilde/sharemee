@@ -1,0 +1,13 @@
+{
+  "StructureGenerations": [
+    {
+      "ModelType": "Class",
+      "SourceFile": "/Configuration/appconfig.json",
+      "RootClassName": "SharemeConfiguration",
+      "Namespace": "Shareme.Contracts.Configuration",
+      "Ignore": [
+        "Archives.MaxUnpackedBytes"
+      ]
+    }
+  ]
+}

@@ -72,6 +72,10 @@ public sealed class AdminJourneyTests
         (await first.Locator("#email").InputValueAsync()).ShouldBe(AdminEmail);
         await SignInAsync(first);
         await first.WaitForURLAsync(web + "/", new() { Timeout = Timeout });
+        // the generated app configuration is editable by the system admin
+        await first.GotoAsync(web + "/admin/configuration");
+        await first.Locator("[data-section='Shareme']").GetByText("MaxNodes").WaitForAsync(new() { Timeout = Timeout });
+        await ShotAsync(first, "configuration");
         await first.GotoAsync(web + "/admin/users");
 
         await first.GotoAsync(web + "/admin/roles");

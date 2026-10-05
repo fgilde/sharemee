@@ -324,3 +324,10 @@ See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 o
 ## Importer-Wasserzeichen
 
 - Ein Rendition-Typ, den Sharedien zwischen zwei Läufen neu bekommt und dessen Wasserzeichen schon in einem früheren Lauf kam, bleibt unverknüpft (die Plan-Kopie des Wasserzeichens hat bei Folgeläufen keinen `BlobKey`); der Bericht zählt ihn unter den übersprungenen Wasserzeichen. Lösung: vorhandene Wasserzeichen mit gespeichertem Bild in `DropWatermarksWithoutImage` als bereit werten.
+
+## App-Konfiguration (2026-10-05)
+
+- Gekürzte Listen behalten an den Positionen der Standardliste leere Einträge (Konfigurationsquellen können Schlüssel tieferer Ebenen nicht entfernen).
+- Geheimnisse in `cw.ConfigurationEntries` sind nicht verschlüsselt (DataProtection-Schlüssel liegen selbst in der DB und sind beim Laden der Konfiguration noch nicht verfügbar).
+- Nextended.CodeGen leitet `int` auch für Zahlen über `int.MaxValue` ab (`Archives.MaxUnpackedBytes` ist deshalb per `Ignore` ausgenommen und von Hand `long`).
+- Feldnamen erscheinen roh (`RequestsPerMinute`); lesbare Beschriftungen über `MetaConfiguration` oder Attribute im Generator.

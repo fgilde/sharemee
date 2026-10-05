@@ -1,0 +1,17 @@
+{
+  "Shares": {
+    "RequestsPerMinute": 600
+  },
+  "MassEdit": {
+    "MaxNodes": 1000
+  },
+  "Drm": {
+    "PurchaseEmails": ""
+  },
+  "Archives": {
+    "MaxUnpackedBytes": 21474836480
+  },
+  "Ai": {
+    "AllowPrivateNetworks": false
+  }
+}

@@ -1,5 +1,6 @@
 using Coworkee.AspNetCore;
 using Shareme.Api;
+using Shareme.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,7 @@ if (!builder.Configuration.GetSection("Coworkee:Jobs:Queues").Exists())
         ["Coworkee:Jobs:Queues:2"] = "search",
     });
 }
+builder.Configuration.AddSharemeConfiguration();
 builder.AddServiceDefaults();
 builder.AddCoworkee<ShareMeApiModule>();
 

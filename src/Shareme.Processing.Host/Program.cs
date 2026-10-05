@@ -18,6 +18,7 @@ if (string.IsNullOrEmpty(builder.Configuration.GetConnectionString("redis")))
     throw new InvalidOperationException("The processing host needs the 'redis' connection string to notify browsers.");
 }
 
+builder.Configuration.AddSharemeConfiguration();
 builder.AddServiceDefaults();
 builder.AddCoworkee<ShareMeProcessingHostModule>();
 
