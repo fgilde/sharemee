@@ -136,9 +136,13 @@ public static class SharedienImport
                 report.Problem("asset_imported_without_files", "MAM.AssetVersion", asset.First().VersionNodeId);
             }
 
-            versions = await new BlobCopier(blobs, writer.Storage, await writer.FileTypesAsync(cancellationToken), report)
-                .CopyAsync([.. plan.Versions.Where(v => !existingAssets.Contains(v.Asset.Id))], existingVersions, options.Tenant, cancellationToken);
+            var copier = new BlobCopier(blobs, writer.Storage, await writer.FileTypesAsync(cancellationToken), report);
+            versions = await copier.CopyAsync([.. plan.Versions.Where(v => !existingAssets.Contains(v.Asset.Id))], existingVersions, options.Tenant, cancellationToken);
+            await copier.CopyWatermarksAsync(plan.Renditions,
+                await writer.ExistingAsync<Shareme.Assets.WatermarkDefinition>(plan.Renditions.Watermarks.Select(w => w.Id), cancellationToken), options.Tenant, cancellationToken);
         }
+
+        plan.Renditions.DropWatermarksWithoutImage(report);
 
         if (report.Problems.Count > options.MaxProblems)
         {

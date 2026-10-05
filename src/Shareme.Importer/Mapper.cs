@@ -79,6 +79,10 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     private readonly Dictionary<long, string> _languageCodes = source.Languages.ToDictionary(l => l.Id, l => LanguageCode(l.Identifier));
     private readonly string _defaultLanguage = source.Languages.FirstOrDefault(l => l.IsDefault) is { } d ? LanguageCode(d.Identifier) : "en";
     private readonly Dictionary<(string, string), Dictionary<string, string>> _translations = [];
+    private readonly Dictionary<(int, string, string), Dictionary<string, string>> _typedTranslations = [];
+
+    // Sharedien ObjectType of relation types; their translation identifiers can repeat those of asset sets
+    private const int RelationTypeObject = 16;
     private readonly Dictionary<string, HashSet<string>> _takenKeys = [];
 
     private string? _defaultContext;
@@ -90,12 +94,15 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
 
     public ImportPlan Map()
     {
-        foreach (var t in source.Translations)
+        // without an object type the lowest one wins (asset sets before relation types, workspaces before templates)
+        foreach (var t in source.Translations.OrderByDescending(t => t.ObjectType))
         {
             if (_languageCodes.TryGetValue(t.LanguageId, out var code))
             {
                 var key = (t.TranslationIdentifier, t.FieldName);
                 (_translations.TryGetValue(key, out var texts) ? texts : _translations[key] = [])[code] = t.Value;
+                var typed = (t.ObjectType, t.TranslationIdentifier, t.FieldName);
+                (_typedTranslations.TryGetValue(typed, out var own) ? own : _typedTranslations[typed] = [])[code] = t.Value;
             }
         }
 
@@ -136,7 +143,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             target.KeysOf(KeyKinds.UserContext).Count + contexts.Count == 0 ? [VirtualDefaultContext] : [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf, listKeyOf);
         var renditions = new RenditionMapper(source.Renditions ?? SourceRenditions.Empty, target.TenantId, target.KeysOf(KeyKinds.RenditionType), report, Name)
-            .Map(identity, target.AdminRoleId);
+            .Map(identity, target.AdminRoleId, definitionOf, listKeyOf);
         var rules = new RuleMapper(source.Rules ?? SourceRules.Empty, target.TenantId, report, Name).Map(
             typeOf.ToDictionary(t => t.Key, t => t.Value.Key), definitionOf,
             source.PropertyDefinitions.Where(d => definitionOf.ContainsKey(d.Id)).GroupBy(d => d.Identifier, StringComparer.OrdinalIgnoreCase)
@@ -355,9 +362,9 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             }
             else if (row.Semantic is CustomRelation or Licence)
             {
-                var type = Tenant(new EdgeType { Key = string.Empty, Name = Name(row.TranslationIdentifier, row.Identifier), Semantic = EdgeSemantic.Custom, IsDirected = row.IsDirected },
+                var type = Tenant(new EdgeType { Key = string.Empty, Name = Name(row.TranslationIdentifier, row.Identifier, RelationTypeObject), Semantic = EdgeSemantic.Custom, IsDirected = row.IsDirected },
                     "MAM.EdgeType", row.Id, row.Identifier);
-                type.Key = Key(KeyKinds.EdgeType, type.Id, row.Semantic == Licence ? "licence" : row.Identifier, Name(row.TranslationIdentifier, null), "relation", row.Id);
+                type.Key = Key(KeyKinds.EdgeType, type.Id, row.Semantic == Licence ? "licence" : row.Identifier, Name(row.TranslationIdentifier, null, RelationTypeObject), "relation", row.Id);
                 edgeTypeOf[row.Id] = type.Id;
                 created.Add(type);
             }
@@ -1004,11 +1011,14 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         return Unique((Guid.TryParse(identifier, out _) ? Slug(name) : Slug(identifier)) ?? $"{fallback}-{sourceId}", taken);
     }
 
-    private string Name(string? translationIdentifier, string? fallback) =>
-        Text(translationIdentifier, "Name") is { Length: > 0 } name ? (name.Length > 200 ? name[..200] : name) : fallback ?? "?";
+    private string Name(string? translationIdentifier, string? fallback) => Name(translationIdentifier, fallback, null);
 
-    private string? Text(string? translationIdentifier, string field) =>
-        translationIdentifier is not null && _translations.TryGetValue((translationIdentifier, field), out var texts)
+    private string Name(string? translationIdentifier, string? fallback, int? objectType) =>
+        Text(translationIdentifier, "Name", objectType) is { Length: > 0 } name ? (name.Length > 200 ? name[..200] : name) : fallback ?? "?";
+
+    private string? Text(string? translationIdentifier, string field, int? objectType = null) =>
+        translationIdentifier is not null
+        && (objectType is { } type && _typedTranslations.TryGetValue((type, translationIdentifier, field), out var texts) || _translations.TryGetValue((translationIdentifier, field), out texts))
             ? texts.GetValueOrDefault(_defaultLanguage) ?? texts.Values.FirstOrDefault()
             : null;
 

@@ -15,8 +15,12 @@ public sealed record DerivationJobRow(long DerivationTypeId, string? Definition)
 
 public sealed record DerivationRestrictionRow(long Id, long RoleId, int Action, long DerivationTypeId);
 
+/// <summary>One image of a Sharedien watermark: it applies when the definition's property holds the list value or the flag.</summary>
+public sealed record WatermarkTriggerRow(long Id, string Identifier, string Definition, long? DerivationTypeId, long? DefinitionId, long? ListValueId, bool? Flag, string? DataId, string? FileName);
+
 public sealed record SourceRenditions(
-    IReadOnlyList<DerivationTypeRow> Types, IReadOnlyList<AssetTypeDerivationRow> AssetTypes, IReadOnlyList<DerivationJobRow> Jobs, IReadOnlyList<DerivationRestrictionRow> Restrictions)
+    IReadOnlyList<DerivationTypeRow> Types, IReadOnlyList<AssetTypeDerivationRow> AssetTypes, IReadOnlyList<DerivationJobRow> Jobs, IReadOnlyList<DerivationRestrictionRow> Restrictions,
+    IReadOnlyList<WatermarkTriggerRow>? Watermarks = null)
 {
     public static readonly SourceRenditions Empty = new([], [], [], []);
 
@@ -47,13 +51,36 @@ public sealed record SourceRenditions(
             await Query("select DerivationTypeId, JobDefinition from MAM.DerivationJobDefinition order by DerivationJobDefinitionId",
                 r => new DerivationJobRow(r.GetInt64(0), r.Text(1))),
             await Query("select DerivationTypeRestrictionId, RoleId, Action, DerivationTypeId from Admin.DerivationTypeRestriction order by DerivationTypeRestrictionId",
-                r => new DerivationRestrictionRow(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetInt64(3))));
+                r => new DerivationRestrictionRow(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetInt64(3))),
+            await Query(
+                """
+                select t.WatermarkTriggerId, t.Identifier, d.Identifier, j.DerivationTypeId, d.PropertyDefinitionId, t.PropertyListValueId, t.ValueBool, f.DataIdentifier, f.FileName
+                from MAM.WatermarkTrigger t
+                join MAM.WatermarkDefinition d on d.WatermarkDefinitionId = t.WatermarkDefinitionId
+                left join MAM.DerivationJobDefinition j on j.DerivationJobDefinitionId = d.DerivationJobDefinitionId
+                left join MAM.FileReference f on f.FileReferenceId = t.FileReferenceId
+                order by t.WatermarkTriggerId
+                """,
+                r => new WatermarkTriggerRow(r.GetInt64(0), r.GetString(1), r.GetString(2), r.Long(3), r.Long(4), r.Long(5), r.IsDBNull(6) ? null : r.GetBoolean(6), r.Text(7), r.Text(8))));
     }
 }
 
-public sealed record RenditionTypePlan(IReadOnlyList<DerivationType> Types, IReadOnlyList<Restriction> Restrictions)
+/// <param name="Images">Source file of each watermark, copied with the files; a type keeps its watermark only once the image arrived.</param>
+public sealed record RenditionTypePlan(
+    IReadOnlyList<DerivationType> Types, IReadOnlyList<Restriction> Restrictions, IReadOnlyList<WatermarkDefinition> Watermarks, IReadOnlyDictionary<Guid, (long TriggerId, string DataId, string FileName)> Images)
 {
-    public static readonly RenditionTypePlan Empty = new([], []);
+    public static readonly RenditionTypePlan Empty = new([], [], [], new Dictionary<Guid, (long, string, string)>());
+
+    /// <summary>Unlinks watermarks without image: a rendition with a watermark it cannot read fails instead of going out unprotected.</summary>
+    public void DropWatermarksWithoutImage(ImportReport report)
+    {
+        var ready = Watermarks.Where(w => w.BlobKey is not null).Select(w => w.Id).ToHashSet();
+        foreach (var type in Types.Where(t => t.WatermarkId is { } id && !ready.Contains(id)))
+        {
+            type.WatermarkId = null;
+            report.Skip("watermarks of rendition types without image (link them in admin > renditions)");
+        }
+    }
 }
 
 /// <summary>
@@ -88,7 +115,7 @@ public sealed partial class RenditionMapper(SourceRenditions source, Guid tenant
         ["Unknown"] = AssetTypeKeys.Other,
     };
 
-    public RenditionTypePlan Map(IdentityPlan identity, Guid? adminRoleId)
+    public RenditionTypePlan Map(IdentityPlan identity, Guid? adminRoleId, IReadOnlyDictionary<long, Shareme.Metadata.PropertyDefinition> definitions, IReadOnlyDictionary<long, string> listKeys)
     {
         var keyOf = new Dictionary<long, string?>();
         var types = new List<DerivationType>();
@@ -155,9 +182,77 @@ public sealed partial class RenditionMapper(SourceRenditions source, Guid tenant
             }
         }
 
+        var (watermarks, images) = MapWatermarks(definitions, listKeys, types);
         report.Mapped["rendition types"] = types.Count;
         report.Mapped["rendition restrictions"] = restrictions.Count;
-        return new RenditionTypePlan(types, [.. restrictions.Values]);
+        report.Mapped["watermarks"] = watermarks.Count;
+        return new RenditionTypePlan(types, [.. restrictions.Values], watermarks, images);
+    }
+
+    /// <summary>
+    /// Sharedien lays one of several images over a type's renditions, chosen by a property; Shareme has one image per watermark
+    /// and one watermark per type. Every image becomes a watermark with its trigger; a type gets it only when it is its only one.
+    /// </summary>
+    private (List<WatermarkDefinition>, Dictionary<Guid, (long, string, string)>) MapWatermarks(
+        IReadOnlyDictionary<long, Shareme.Metadata.PropertyDefinition> definitions, IReadOnlyDictionary<long, string> listKeys, List<DerivationType> types)
+    {
+        var watermarks = new List<WatermarkDefinition>();
+        var images = new Dictionary<Guid, (long, string, string)>();
+        var typeOf = new Dictionary<Guid, long?>();
+        var rows = source.Watermarks ?? [];
+        foreach (var row in rows)
+        {
+            if (row.DefinitionId is not { } definitionId || !definitions.TryGetValue(definitionId, out var property))
+            {
+                report.Problem("watermark_without_property", "MAM.WatermarkTrigger", row.Id);
+                continue;
+            }
+
+            var value = row.ListValueId is { } listValue ? listKeys.GetValueOrDefault(listValue) : row.Flag is { } flag ? (flag ? "true" : "false") : null;
+            if (value is null)
+            {
+                report.Problem("watermark_without_value", "MAM.WatermarkTrigger", row.Id);
+                continue;
+            }
+
+            var title = rows.Count(r => r.Definition == row.Definition) > 1 ? $"{row.Definition} ({value})" : row.Definition;
+            var watermark = new WatermarkDefinition { Name = title.Length > 200 ? title[..200] : title, TriggerProperty = property.Key, TriggerValue = value, TenantId = tenantId, CreatedAt = DateTimeOffset.UtcNow };
+            Ids.Set(watermark, SourceIds.For(tenantId, "MAM.WatermarkTrigger", row.Id, row.Identifier));
+            watermarks.Add(watermark);
+            typeOf[watermark.Id] = row.DerivationTypeId;
+            if (row.DataId is { Length: > 0 } dataId)
+            {
+                images[watermark.Id] = (row.Id, dataId, row.FileName ?? string.Empty);
+            }
+            else
+            {
+                report.Problem("watermark_without_image", "MAM.WatermarkTrigger", row.Id);
+            }
+        }
+
+        foreach (var group in watermarks.GroupBy(w => typeOf[w.Id]))
+        {
+            if (group.Key is not { } typeId)
+            {
+                continue;
+            }
+
+            var type = types.FirstOrDefault(t => t.Id == SourceIds.Derived(tenantId, "MAM.DerivationType", typeId));
+            if (type is null)
+            {
+                report.Skip("watermarks of built in or deleted rendition types"); // thumbnails and previews stay unmarked in Shareme
+            }
+            else if (group.Count() == 1)
+            {
+                type.WatermarkId = group.Single().Id;
+            }
+            else
+            {
+                report.Problem("rendition_type_with_several_watermarks", "MAM.DerivationType", typeId); // admin > renditions picks one
+            }
+        }
+
+        return (watermarks, images);
     }
 
     /// <summary>The target size of an ImageMagick resize ("-resize 800x600" or "-thumbnail 400x400>"), if the job has one.</summary>
