@@ -147,13 +147,7 @@ public sealed partial class RenditionMapper(SourceRenditions source, Guid tenant
                 continue;
             }
 
-            if (!identity.TenantRoleIds.TryGetValue(row.RoleId, out var role) || role == adminRoleId)
-            {
-                report.Skip("rendition restrictions of roles without tenant rights or of admins");
-                continue;
-            }
-
-            if (!restrictions.ContainsKey((role, key)))
+            if (SharedienMapper.RestrictedRole(identity, adminRoleId, row.RoleId, "Admin.DerivationTypeRestriction", row.Id, report) is { } role && !restrictions.ContainsKey((role, key)))
             {
                 var restriction = new Restriction { RoleId = role, Kind = RestrictionKinds.BlockedRendition, Value = key, TenantId = tenantId, CreatedAt = DateTimeOffset.UtcNow };
                 Ids.Set(restriction, SourceIds.Derived(tenantId, "Admin.DerivationTypeRestriction:" + key, BitConverter.ToInt64(role.ToByteArray())));
