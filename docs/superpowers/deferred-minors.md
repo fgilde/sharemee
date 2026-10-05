@@ -331,3 +331,4 @@ See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 o
 - Geheimnisse in `cw.ConfigurationEntries` sind nicht verschlüsselt (DataProtection-Schlüssel liegen selbst in der DB und sind beim Laden der Konfiguration noch nicht verfügbar).
 - Nextended.CodeGen leitet `int` auch für Zahlen über `int.MaxValue` ab (`Archives.MaxUnpackedBytes` ist deshalb per `Ignore` ausgenommen und von Hand `long`).
 - Feldnamen erscheinen roh (`RequestsPerMinute`); lesbare Beschriftungen über `MetaConfiguration` oder Attribute im Generator.
+- Nextended.CodeGen meldet nichts, wenn `SourceFile` nicht gefunden wird (z. B. führender `/` unter Linux = absoluter Pfad): es entsteht still keine Klasse. Ein Diagnostic wäre hilfreich.
