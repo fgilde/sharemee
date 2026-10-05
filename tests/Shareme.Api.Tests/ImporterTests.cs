@@ -27,6 +27,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         await connection.OpenAsync(Ct);
         Blob("aaaa0000old", "the old photo"u8.ToArray());
         Blob("bbbb1111new", NewFile);
+        Blob("cccc2222mark", "a watermark"u8.ToArray());
 
         // the importer writes into the same storage as the API under test
         Environment.SetEnvironmentVariable("Coworkee__Storage__FileSystem__Root", Path.Combine(Path.GetTempPath(), "shareme-api-tests-blobs"));
@@ -84,7 +85,8 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
                 ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2), ("checksum_mismatch", "MAM.AssetVersion", 21), ("missing_blob", "MAM.AssetVersion", 59),
                 ("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", 1), ("restriction_on_original", "Admin.DerivationTypeRestriction", 2),
                 ("restriction_not_on_item_role", "Admin.PropertyValueRestriction", 1), ("restriction_not_on_item_role", "Admin.DerivationTypeRestriction", 1),
-                ("rule_condition_not_mapped", "Admin.RuleTrigger", 3), ("rule_action_not_mapped", "Admin.RuleAction", 2)], ignoreOrder: true);
+                ("rule_condition_not_mapped", "Admin.RuleTrigger", 3), ("rule_action_not_mapped", "Admin.RuleAction", 2),
+                ("rendition_type_with_several_watermarks", "MAM.DerivationType", 4), ("missing_watermark_image", "MAM.WatermarkTrigger", 2)], ignoreOrder: true);
         run.Written["files"].ShouldBe(2);
         run.Skipped["workspace containers"].ShouldBe(1);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
@@ -188,6 +190,14 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
             (web.Width, web.Height, web.IsDefault, web.IsOnDemand, web.AllowManualUpload).ShouldBe((800, 600, true, false, true));
             web.AssetTypeKeys.ShouldBe(["image", "document"], ignoreOrder: true);
             (types.Single(t => t.Key == "print").Width, types.Count).ShouldBe((1600, 2));
+            // watermarks: one per Sharedien image; a type with a single one gets it, with the image in storage
+            var watermarks = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.WatermarkDefinition>()), Ct);
+            watermarks.Select(w => (w.Name, w.TriggerValue)).ShouldBe([("brand (beach)", "beach"), ("brand (night)", "night"), ("print-mark", "beach")], ignoreOrder: true);
+            var mark = watermarks.Single(w => w.Name == "print-mark");
+            (types.Single(t => t.Key == "print").WatermarkId, web.WatermarkId).ShouldBe(((Guid?)mark.Id, (Guid?)null));
+            mark.BlobKey.ShouldNotBeNull();
+            watermarks.Single(w => w.Name == "brand (night)").BlobKey.ShouldBeNull();
             var blocked = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Graph.Restriction>()),
                 x => x.Kind == Shareme.Contracts.Graph.RestrictionKinds.BlockedRendition, Ct);
@@ -308,6 +318,9 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table Admin.RuleNodeType (RuleNodeTypeId bigint identity primary key, RuleId bigint not null, NodeTypeId bigint not null);
         create table Admin.RuleTrigger (RuleTriggerId bigint primary key, RuleId bigint not null, IsFilter bit not null, TriggerOperator int not null, PropertyId bigint null, AdditionalData varchar(max) null);
         create table Admin.RuleAction (RuleActionId bigint primary key, RuleId bigint not null, PropertyId bigint null, OnTriggerMatched bit not null, Template varchar(max) null);
+        create table MAM.WatermarkDefinition (WatermarkDefinitionId bigint primary key, Identifier nvarchar(200) not null, DerivationJobDefinitionId bigint null, PropertyDefinitionId bigint null);
+        create table MAM.WatermarkTrigger (WatermarkTriggerId bigint primary key, Identifier nvarchar(200) not null, WatermarkDefinitionId bigint not null, PropertyListValueId bigint null, ValueBool bit null, FileReferenceId bigint null);
+        create table MAM.FileReference (FileReferenceId bigint primary key, Identifier nvarchar(200) not null, DataIdentifier nvarchar(200) null, FileName nvarchar(200) null);
         create table Admin.DerivationTypeRestriction (DerivationTypeRestrictionId bigint primary key, RoleId bigint not null, Action int not null, DerivationTypeId bigint not null);
         create table MAM.AssetDerivation (AssetDerivationId bigint identity primary key, AssetVersionId bigint not null, DerivationTypeId bigint not null, DataId nvarchar(200) null, FileSize bigint null, FileHash nvarchar(850) null);
         create table MAM.Workspace (WorkspaceId bigint identity primary key, WorkspaceNodeId bigint not null, TranslationIdentifier nvarchar(80) null, IsTemplate bit not null default 0,
@@ -374,7 +387,10 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.DerivationType (DerivationTypeId, Identifier, IsSystem, IsDeleted) values (6, 'Old', 0, 1);
         insert MAM.AssetType values (1, 'Image'), (2, 'PDF');
         insert MAM.AssetTypeDerivationType (AssetTypeId, DerivationTypeId, IsDefaultDerivation, AllowManualUpload, IsOnDemand) values (1, 4, 1, 0, 0), (2, 4, 0, 1, 0);
-        insert MAM.DerivationJobDefinition (DerivationTypeId, JobDefinition) values (4, '{"Steps":[{"Type":"ImageMagickConvert","Arguments":"-resize 800x600 -quality 80"}]}');
+        insert MAM.DerivationJobDefinition (DerivationTypeId, JobDefinition) values (4, '{"Steps":[{"Type":"ImageMagickConvert","Arguments":"-resize 800x600 -quality 80"}]}'), (5, null);
+        insert MAM.WatermarkDefinition values (1, 'brand', 1, 2), (2, 'print-mark', 2, 2);
+        insert MAM.WatermarkTrigger values (1, 'wt1', 1, 1, null, 1), (2, 'wt2', 1, 3, null, 2), (3, 'wt3', 2, 1, null, 1);
+        insert MAM.FileReference values (1, 'f1', 'cccc2222mark', 'mark.png'), (2, 'f2', 'dddd3333gone', 'gone.png');
         insert Admin.DerivationTypeRestriction values (1, 2, 0, 4), (2, 2, 0, 1), (3, 3, 0, 4), (4, 2, 1, 3), (5, 2, 0, 6);
         insert MAM.AssetDerivation (AssetVersionId, DerivationTypeId, DataId, FileHash) values
             (1, 1, 'aaaa0000old', 'not-the-md5'), (2, 1, 'bbbb1111new', '__MD5__'), (2, 2, 'cccc2222thumb', null), (3, 1, 'dddd3333missing', null);

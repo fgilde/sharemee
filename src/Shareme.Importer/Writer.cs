@@ -56,13 +56,18 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
         return await db.Set<Shareme.Assets.FileType>().ToDictionaryAsync(t => t.Extension, t => (t.MimeType, t.AssetTypeKey), cancellationToken);
     }
 
-    public async Task<HashSet<Guid>> ExistingVersionsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken)
+    public Task<HashSet<Guid>> ExistingVersionsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken) =>
+        ExistingAsync<Shareme.Assets.AssetVersion>(ids, cancellationToken);
+
+    /// <summary>Rows of the given ids already in the target, in any tenant.</summary>
+    public async Task<HashSet<Guid>> ExistingAsync<T>(IEnumerable<Guid> ids, CancellationToken cancellationToken)
+        where T : Coworkee.Domain.Entity
     {
         await using var db = CreateContext();
         var existing = new HashSet<Guid>();
         foreach (var chunk in ids.Chunk(Batch))
         {
-            existing.UnionWith(await db.Set<Shareme.Assets.AssetVersion>().IgnoreQueryFilters().Where(v => chunk.Contains(v.Id)).Select(v => v.Id).ToListAsync(cancellationToken));
+            existing.UnionWith(await db.Set<T>().IgnoreQueryFilters().Where(v => chunk.Contains(v.Id)).Select(v => v.Id).ToListAsync(cancellationToken));
         }
 
         return existing;
@@ -216,6 +221,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("comments", plan.Comments, report, cancellationToken);
             await InsertNewAsync("node permissions", plan.NodePermissions, report, cancellationToken);
             await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
+            await InsertNewAsync("watermarks", plan.Renditions.Watermarks, report, cancellationToken);
             await InsertNewAsync("rendition types", plan.Renditions.Types, report, cancellationToken);
             await InsertNewAsync("rendition restrictions", plan.Renditions.Restrictions, report, cancellationToken);
             await InsertNewAsync("rules", plan.Rules, report, cancellationToken);

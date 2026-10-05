@@ -95,6 +95,44 @@ public sealed class BlobCopier(ISourceBlobs source, IBlobStorage target, IReadOn
         return versions;
     }
 
+    /// <summary>Watermark images (Sharedien file references) into the storage; a watermark keeps no image when its file is missing.</summary>
+    public async Task CopyWatermarksAsync(RenditionTypePlan plan, IReadOnlySet<Guid> existing, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var copied = 0;
+        foreach (var watermark in plan.Watermarks)
+        {
+            if (existing.Contains(watermark.Id) || !plan.Images.TryGetValue(watermark.Id, out var image))
+            {
+                continue;
+            }
+
+            try
+            {
+                await using var content = await source.OpenAsync(image.DataId, cancellationToken);
+                if (content is null)
+                {
+                    report.Problem("missing_watermark_image", "MAM.WatermarkTrigger", image.TriggerId);
+                    continue;
+                }
+
+                var extension = Path.GetExtension(image.FileName) is { Length: > 1 } dotted ? dotted[1..].ToLowerInvariant() : string.Empty;
+                var key = $"{tenantId:N}/import/watermark-{watermark.Id:N}";
+                await target.PutAsync(key, content, fileTypes.TryGetValue(extension, out var type) ? type.MimeType : "application/octet-stream", cancellationToken);
+                watermark.BlobKey = key;
+                copied++;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                report.Problem("watermark_image_failed", "MAM.WatermarkTrigger", image.TriggerId);
+            }
+        }
+
+        if (copied > 0)
+        {
+            report.Written["watermark images"] = copied;
+        }
+    }
+
     private async Task<AssetVersion?> CopyOneAsync(VersionCandidate candidate, Guid tenantId, CancellationToken cancellationToken)
     {
         await using var content = await source.OpenAsync(candidate.DataId, cancellationToken);

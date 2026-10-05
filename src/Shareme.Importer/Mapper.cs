@@ -136,7 +136,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             target.KeysOf(KeyKinds.UserContext).Count + contexts.Count == 0 ? [VirtualDefaultContext] : [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf, listKeyOf);
         var renditions = new RenditionMapper(source.Renditions ?? SourceRenditions.Empty, target.TenantId, target.KeysOf(KeyKinds.RenditionType), report, Name)
-            .Map(identity, target.AdminRoleId);
+            .Map(identity, target.AdminRoleId, definitionOf, listKeyOf);
         var rules = new RuleMapper(source.Rules ?? SourceRules.Empty, target.TenantId, report, Name).Map(
             typeOf.ToDictionary(t => t.Key, t => t.Value.Key), definitionOf,
             source.PropertyDefinitions.Where(d => definitionOf.ContainsKey(d.Id)).GroupBy(d => d.Identifier, StringComparer.OrdinalIgnoreCase)
