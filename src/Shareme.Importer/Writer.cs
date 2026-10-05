@@ -207,6 +207,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
             await InsertNewAsync("rendition types", plan.Renditions.Types, report, cancellationToken);
             await InsertNewAsync("rendition restrictions", plan.Renditions.Restrictions, report, cancellationToken);
+            await InsertNewAsync("rules", plan.Rules, report, cancellationToken);
             await InsertNewAsync("billing contacts", plan.Drm.BillingContacts, report, cancellationToken);
             await InsertNewAsync("rights owners", plan.Drm.RightsOwners, report, cancellationToken);
             await InsertNewAsync("licenses", plan.Drm.Licenses, report, cancellationToken);

@@ -25,7 +25,8 @@ public sealed record ImportPlan(
     IReadOnlyList<Shareme.Workspaces.Comment> Comments,
     IReadOnlyList<VersionCandidate> Versions,
     DrmPlan Drm,
-    RenditionTypePlan Renditions);
+    RenditionTypePlan Renditions,
+    IReadOnlyList<Shareme.Automation.Rule> Rules);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -136,6 +137,11 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         var restrictions = MapRestrictions(identity, definitionOf, listKeyOf);
         var renditions = new RenditionMapper(source.Renditions ?? SourceRenditions.Empty, target.TenantId, target.KeysOf(KeyKinds.RenditionType), report, Name)
             .Map(identity, target.AdminRoleId);
+        var rules = new RuleMapper(source.Rules ?? SourceRules.Empty, target.TenantId, report, Name).Map(
+            typeOf.ToDictionary(t => t.Key, t => t.Value.Key), definitionOf,
+            source.PropertyDefinitions.Where(d => definitionOf.ContainsKey(d.Id)).GroupBy(d => d.Identifier, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => definitionOf[g.First().Id].Key, StringComparer.OrdinalIgnoreCase),
+            listKeyOf);
 
         report.Mapped["languages"] = languages.Count;
         report.Mapped["node types"] = nodeTypes.Count;
@@ -148,7 +154,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["comments"] = comments.Count;
         report.Mapped["user contexts"] = contexts.Count;
         report.Mapped["restrictions"] = restrictions.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm, renditions);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm, renditions, rules);
     }
 
     private List<DataLanguage> MapLanguages()

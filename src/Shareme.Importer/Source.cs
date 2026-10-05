@@ -104,7 +104,8 @@ public sealed record SourceData(
     SourceWorkspaces? Workspaces = null,
     IReadOnlyList<OriginalRow>? Originals = null,
     SourceDrm? Drm = null,
-    SourceRenditions? Renditions = null);
+    SourceRenditions? Renditions = null,
+    SourceRules? Rules = null);
 
 /// <summary>Reads one source tenant, read only. Deleted rows and system property definitions stay behind.</summary>
 public sealed class SharedienSource(string connectionString)
@@ -224,8 +225,8 @@ public sealed class SharedienSource(string connectionString)
                     """
                     select r.PropertyValueRestrictionId, r.RoleId, r.Action, p.PropertyDefinitionId, v.PropertyListValueId
                     from Admin.PropertyValueRestriction r
-                    join MAM.Property p on p.PropertyId = r.PropertyId
-                    left join MAM.PropertyValue v on v.PropertyId = p.PropertyId
+                    join MAM.Property p on p.PropertyId = r.PropertyId and p.IsDeleted = 0
+                    left join MAM.PropertyValue v on v.PropertyId = p.PropertyId and v.IsDeleted = 0
                     order by r.PropertyValueRestrictionId, v.PropertyValueId
                     """,
                     r => new ListValueRestrictionRow(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetInt64(3), r.Long(4)))),
@@ -256,7 +257,8 @@ public sealed class SharedienSource(string connectionString)
                 """,
                 r => new OriginalRow(r.GetInt64(0), r.Text(1), r.Text(2))),
             await SourceDrm.LoadAsync(connection, tenantId, cancellationToken),
-            await SourceRenditions.LoadAsync(connection, cancellationToken));
+            await SourceRenditions.LoadAsync(connection, cancellationToken),
+            await SourceRules.LoadAsync(connection, cancellationToken));
     }
 }
 

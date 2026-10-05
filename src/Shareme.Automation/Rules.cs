@@ -216,6 +216,14 @@ internal sealed record RuleContext(Node Node, string TypeKey, IReadOnlySet<strin
 internal sealed record RuleOutcome(bool FiltersMatched, bool TriggersMatched, Dictionary<string, string> Values, List<string> Problems, List<Guid> Extractions);
 
 /// <summary>Evaluates conditions, renders templates and writes through the regular metadata command, so the same checks and permissions apply.</summary>
+/// <summary>The template checks of <see cref="SaveRule"/>, for code that stores rules without it (the importer).</summary>
+public static class RuleTemplates
+{
+    public static IEnumerable<string> Problems(string template) => RuleEngine.TemplateProblems(template);
+
+    public static bool ValidPattern(string pattern) => RuleEngine.ValidPattern(pattern);
+}
+
 internal sealed partial class RuleEngine(CoworkeeDbContext db, MetadataCatalog catalog, NodeAccess access, IServiceScopeFactory scopes, TimeProvider clock)
 {
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(200);
