@@ -158,6 +158,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
                 [KeyKinds.Group] = await db.Set<PropertyGroup>().ToDictionaryAsync(g => g.Id, g => g.Key, cancellationToken),
                 [KeyKinds.Definition] = await db.Set<PropertyDefinition>().ToDictionaryAsync(d => d.Id, d => d.Key, cancellationToken),
                 [KeyKinds.UserContext] = await db.Set<UserContext>().ToDictionaryAsync(c => c.Id, c => c.Key, cancellationToken),
+                [KeyKinds.RenditionType] = await db.Set<Shareme.Assets.DerivationType>().ToDictionaryAsync(t => t.Id, t => t.Key, cancellationToken),
             },
             ListValues = listValues.ToDictionary(v => v.Id, v => (v.DefinitionId, v.Key)),
             LanguageCodes = languages.Select(l => l.Code).ToHashSet(),
@@ -204,6 +205,8 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("comments", plan.Comments, report, cancellationToken);
             await InsertNewAsync("node permissions", plan.NodePermissions, report, cancellationToken);
             await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
+            await InsertNewAsync("rendition types", plan.Renditions.Types, report, cancellationToken);
+            await InsertNewAsync("rendition restrictions", plan.Renditions.Restrictions, report, cancellationToken);
             await InsertNewAsync("billing contacts", plan.Drm.BillingContacts, report, cancellationToken);
             await InsertNewAsync("rights owners", plan.Drm.RightsOwners, report, cancellationToken);
             await InsertNewAsync("licenses", plan.Drm.Licenses, report, cancellationToken);

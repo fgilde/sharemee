@@ -24,7 +24,8 @@ public sealed record ImportPlan(
     IReadOnlyList<Shareme.Workspaces.WorkflowState> States,
     IReadOnlyList<Shareme.Workspaces.Comment> Comments,
     IReadOnlyList<VersionCandidate> Versions,
-    DrmPlan Drm);
+    DrmPlan Drm,
+    RenditionTypePlan Renditions);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -64,6 +65,7 @@ public static class KeyKinds
     public const string Group = "property group";
     public const string Definition = "property definition";
     public const string UserContext = "user context";
+    public const string RenditionType = "rendition type";
 }
 
 /// <summary>Maps Sharedien rows to Shareme entities. Pure: no database, so every rule is testable with synthetic rows.</summary>
@@ -132,6 +134,8 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
             target.KeysOf(KeyKinds.UserContext).Count + contexts.Count == 0 ? [VirtualDefaultContext] : [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
         var restrictions = MapRestrictions(identity, definitionOf);
+        var renditions = new RenditionMapper(source.Renditions ?? SourceRenditions.Empty, target.TenantId, target.KeysOf(KeyKinds.RenditionType), report, Name)
+            .Map(identity, target.AdminRoleId);
 
         report.Mapped["languages"] = languages.Count;
         report.Mapped["node types"] = nodeTypes.Count;
@@ -144,7 +148,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["comments"] = comments.Count;
         report.Mapped["user contexts"] = contexts.Count;
         report.Mapped["restrictions"] = restrictions.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm, renditions);
     }
 
     private List<DataLanguage> MapLanguages()
