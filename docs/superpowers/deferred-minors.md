@@ -320,3 +320,7 @@ See the review notes in the P0.2a and P0.1 ledgers: tenant claim handling, 201 o
 - Shareme.Web sendet jetzt Content-Security-Policy, nosniff und Referrer-Policy; der E2E-Test wertet jede CSP-Verletzung im Browser als Fehler.
 - `'unsafe-eval'` bleibt nötig, solange BlazorJS (MudBlazor.Extensions) Skript-Strings auswertet – in der Lib ablösen, dann streichen.
 - Der Auth-Server (Login-Seiten) hat noch keine CSP: `form-action` muss dort die Redirects zu den Client-Callbacks erlauben, erst im Browser prüfen.
+
+## Importer-Wasserzeichen
+
+- Ein Rendition-Typ, den Sharedien zwischen zwei Läufen neu bekommt und dessen Wasserzeichen schon in einem früheren Lauf kam, bleibt unverknüpft (die Plan-Kopie des Wasserzeichens hat bei Folgeläufen keinen `BlobKey`); der Bericht zählt ihn unter den übersprungenen Wasserzeichen. Lösung: vorhandene Wasserzeichen mit gespeichertem Bild in `DropWatermarksWithoutImage` als bereit werten.
