@@ -3,8 +3,6 @@
 @using Coworkee.Client.Blazor.Api
 @using Shareme.Contracts.Automation
 @using Shareme.Web.Client.Metadata
-@inject IDataApi Api
-@inject ISnackbar Snackbar
 
 <PageTitle>My runs</PageTitle>
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
@@ -34,32 +32,3 @@
         }
     </tbody>
 </MudSimpleTable>
-
-@code {
-    private JobsOverviewDto? _overview;
-
-    protected override Task OnInitializedAsync() => LoadAsync();
-
-    private async Task LoadAsync()
-    {
-        try
-        {
-            _overview = await Api.GetOverviewAsync();
-        }
-        catch (ApiException exception)
-        {
-            Snackbar.Add(exception.Message, Severity.Warning);
-        }
-    }
-
-    private static string Kind(string kind) => kind switch
-    {
-        DataJobKinds.MassEdit => "Mass edit",
-        DataJobKinds.Import => "Import",
-        DataJobKinds.Extraction => "AI tagging",
-        JobKinds.Rules => "Rule run",
-        JobKinds.Archive => "Archive extraction",
-        JobKinds.Reindex => "Search reindex",
-        _ => kind,
-    };
-}

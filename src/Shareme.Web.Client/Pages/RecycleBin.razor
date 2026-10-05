@@ -4,8 +4,6 @@
 @using Coworkee.Contracts
 @using Shareme.Contracts.Graph
 @using Shareme.Web.Client.Graph
-@inject ISharemeApi Api
-@inject ISnackbar Snackbar
 
 <PageTitle>Recycle bin</PageTitle>
 <MudText Typo="Typo.h4" Class="mb-4">Recycle bin</MudText>
@@ -31,26 +29,4 @@
 @if (_items.Count == 0)
 {
     <MudText Typo="Typo.body2" Class="mt-2">The recycle bin is empty.</MudText>
-}
-
-@code {
-    private IReadOnlyList<RecycleBinItemDto> _items = [];
-
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
-
-    private async Task ReloadAsync() => _items = (await Api.GetRecycleBinAsync(new PageRequest(1, 200))).Items;
-
-    private async Task RunAsync(Func<Task> action)
-    {
-        try
-        {
-            await action();
-        }
-        catch (ApiException exception)
-        {
-            Snackbar.Add(exception.Message, Severity.Error);
-        }
-
-        await ReloadAsync();
-    }
 }

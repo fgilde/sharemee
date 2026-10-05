@@ -11,9 +11,3 @@
         <MudLink Href="@NodeLinks.For(node)">@node.Name</MudLink>
     </div>
 }
-
-@code {
-    [Parameter, EditorRequired] public IReadOnlyList<NodeDto> Nodes { get; set; } = [];
-
-    [Parameter] public string? Empty { get; set; }
-}
