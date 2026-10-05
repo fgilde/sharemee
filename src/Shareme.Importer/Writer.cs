@@ -112,6 +112,17 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
         return requested;
     }
 
+    /// <summary>Queues a search rebuild of the tenant through the outbox: the import wrote past the indexing events.</summary>
+    public async Task RequestReindexAsync(CancellationToken cancellationToken)
+    {
+        using var actor = CurrentUserScope.Begin(new ImpersonatedUser(null, tenantId));
+        await using var scope = _services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ShareMeDbContext>();
+        var root = await db.Set<Folder>().SingleAsync(f => f.ParentId == null, cancellationToken);
+        root.Publish(new Shareme.Search.ReindexRequested());
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>Nodes of the plan that are already in the target.</summary>
     public async Task<HashSet<Guid>> ExistingNodesAsync(IEnumerable<Guid> nodeIds, CancellationToken cancellationToken)
     {
@@ -207,6 +218,7 @@ public sealed class ImportWriter(string targetConnectionString, Guid tenantId) :
             await InsertNewAsync("restrictions", plan.Restrictions, report, cancellationToken);
             await InsertNewAsync("rendition types", plan.Renditions.Types, report, cancellationToken);
             await InsertNewAsync("rendition restrictions", plan.Renditions.Restrictions, report, cancellationToken);
+            await InsertNewAsync("rules", plan.Rules, report, cancellationToken);
             await InsertNewAsync("billing contacts", plan.Drm.BillingContacts, report, cancellationToken);
             await InsertNewAsync("rights owners", plan.Drm.RightsOwners, report, cancellationToken);
             await InsertNewAsync("licenses", plan.Drm.Licenses, report, cancellationToken);

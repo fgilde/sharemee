@@ -82,7 +82,9 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         run.Problems.Select(p => (p.Code, p.Table, p.SourceId)).ShouldBe(
             [("multi_parent", "MAM.Edge", 106), ("invalid_value", "MAM.PropertyValue", 9), ("user_merged", "Admin.User", 2),
                 ("unmapped_permission", "Admin.RoleObjectTypePermission", 9999), ("definition_without_types", "MAM.PropertyDefinition", 6), ("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", 2), ("checksum_mismatch", "MAM.AssetVersion", 21), ("missing_blob", "MAM.AssetVersion", 59),
-                ("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", 1), ("restriction_on_original", "Admin.DerivationTypeRestriction", 2)], ignoreOrder: true);
+                ("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", 1), ("restriction_on_original", "Admin.DerivationTypeRestriction", 2),
+                ("restriction_not_on_item_role", "Admin.PropertyValueRestriction", 1), ("restriction_not_on_item_role", "Admin.DerivationTypeRestriction", 1),
+                ("rule_condition_not_mapped", "Admin.RuleTrigger", 3), ("rule_action_not_mapped", "Admin.RuleAction", 2)], ignoreOrder: true);
         run.Written["files"].ShouldBe(2);
         run.Skipped["workspace containers"].ShouldBe(1);
         var languages = (await Admin.GetFromJsonAsync<DataLanguageDto[]>("/api/v1/metadata/languages", Ct))!;
@@ -155,6 +157,14 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.Derivation>()), Ct);
             derivations.Select(d => d.VersionId).Distinct().ShouldBe([SourceIds.Derived(_setup.TenantId, "MAM.Node", 22)]);
 
+            // the import wrote past the indexing events: a search rebuild is queued through the outbox
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while ((await Admin.GetFromJsonAsync<Shareme.Contracts.Search.ReindexRunDto[]>("/api/v1/search/reindex", Ct))!.Length == 0)
+            {
+                DateTime.UtcNow.ShouldBeLessThan(deadline, "no rebuild was queued");
+                await Task.Delay(250, Ct);
+            }
+
             // licensing: the license with its rights and period covers the photo; the buyout prices it through the partners' group
             var license = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Drm.License>()), Ct);
@@ -182,6 +192,26 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Graph.Restriction>()),
                 x => x.Kind == Shareme.Contracts.Graph.RestrictionKinds.BlockedRendition, Ct);
             blocked.Value.ShouldBe("web-large");
+
+            // the value blacklist hides nodes with "night" from the tenant readers
+            var night = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Metadata.PropertyListValue>()), v => v.Key == "night", Ct);
+            var hiddenValue = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Graph.Restriction>()),
+                x => x.Kind == Shareme.Contracts.Graph.RestrictionKinds.HiddenListValue, Ct);
+            (hiddenValue.RoleId, hiddenValue.Value).ShouldBe((blocked.RoleId, "night"));
+            // rules arrive switched off, with template arguments renamed; what does not map is left out and the rule marked
+            var rules = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Automation.Rule>()), Ct);
+            rules.ShouldAllBe(x => !x.IsActive);
+            var credit = rules.Single(x => x.Name == "credit");
+            credit.NodeTypeKeys.ShouldHaveSingleItem();
+            credit.Conditions.ShouldBe([new("filter", "isNewVersion"), new("trigger", "equals", "rating", "5")]);
+            credit.Actions.ShouldBe([new("shot-by", "{fnc.findInAscendants(category)} {var.year}")]);
+            var counter = rules.Single(x => x.Name == "counter (import incomplete)");
+            (counter.Conditions.Count, counter.Actions.Count).ShouldBe((0, 0));
+            hiddenValue.PropertyKey.ShouldBe((await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Metadata.PropertyDefinition>()), d => d.Id == night.DefinitionId, Ct)).Key);
         }
 
         (await reader.GetAsync($"/api/v1/nodes/{workspaceId}", Ct)).StatusCode.ShouldBe(HttpStatusCode.OK); // owner through the workspace role
@@ -273,6 +303,11 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table MAM.AssetTypeDerivationType (AssetTypeDerivationTypeId bigint identity primary key, AssetTypeId bigint not null, DerivationTypeId bigint not null,
             IsDefaultDerivation bit not null, AllowManualUpload bit not null, IsOnDemand bit not null);
         create table MAM.DerivationJobDefinition (DerivationJobDefinitionId bigint identity primary key, DerivationTypeId bigint not null, JobDefinition nvarchar(max) null);
+        create table Admin.PropertyValueRestriction (PropertyValueRestrictionId bigint primary key, RoleId bigint not null, Action int not null, PropertyId bigint not null);
+        create table Admin.[Rule] (RuleId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null);
+        create table Admin.RuleNodeType (RuleNodeTypeId bigint identity primary key, RuleId bigint not null, NodeTypeId bigint not null);
+        create table Admin.RuleTrigger (RuleTriggerId bigint primary key, RuleId bigint not null, IsFilter bit not null, TriggerOperator int not null, PropertyId bigint null, AdditionalData varchar(max) null);
+        create table Admin.RuleAction (RuleActionId bigint primary key, RuleId bigint not null, PropertyId bigint null, OnTriggerMatched bit not null, Template varchar(max) null);
         create table Admin.DerivationTypeRestriction (DerivationTypeRestrictionId bigint primary key, RoleId bigint not null, Action int not null, DerivationTypeId bigint not null);
         create table MAM.AssetDerivation (AssetDerivationId bigint identity primary key, AssetVersionId bigint not null, DerivationTypeId bigint not null, DataId nvarchar(200) null, FileSize bigint null, FileHash nvarchar(850) null);
         create table MAM.Workspace (WorkspaceId bigint identity primary key, WorkspaceNodeId bigint not null, TranslationIdentifier nvarchar(80) null, IsTemplate bit not null default 0,
@@ -350,11 +385,17 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
             (1, 'caption', 1, null, 0, 0, 1, 0), (2, '7c9e6679-7425-40de-944b-e07fc1f90ae7', 1, 'pd2', 0, 1, 0, 0), (3, 'rating', 1, null, 5, 0, 0, 0), (4, 'file_size', null, null, 5, 0, 0, 1), (5, 'shot-by', 1, null, 0, 0, 0, 0), (6, 'licence-note', null, null, 0, 0, 0, 0), (7, 'claim', 1, null, 0, 0, 0, 0), (8, 'license_rights', null, null, 0, 1, 0, 1);
         update MAM.PropertyDefinition set HasUserContext = 1 where PropertyDefinitionId = 7;
         insert MAM.PropertyDefinitionNodeType (PropertyDefinitionId, NodeTypeId) values (1, 2), (2, 2), (3, 2), (3, 1), (5, 3), (6, 6), (7, 3);
-        insert MAM.PropertyListValue (PropertyListValueId, Identifier, PropertyDefinitionId, SortKey, TranslationIdentifier) values (1, 'beach', 2, 1, 'lv1'), (2, 'print', 8, 1, null);
-        insert MAM.Property values (1, 22, 1, 0), (2, 22, 2, 0), (3, 22, 3, 0), (4, 21, 3, 0), (5, 10, 3, 0), (6, 22, 4, 0), (7, 22, 5, 0), (8, 22, 7, 0), (9, 72, 8, 0);
+        insert MAM.PropertyListValue (PropertyListValueId, Identifier, PropertyDefinitionId, SortKey, TranslationIdentifier) values (1, 'beach', 2, 1, 'lv1'), (2, 'print', 8, 1, null), (3, 'night', 2, 2, null);
+        insert MAM.Property values (1, 22, 1, 0), (2, 22, 2, 0), (3, 22, 3, 0), (4, 21, 3, 0), (5, 10, 3, 0), (6, 22, 4, 0), (7, 22, 5, 0), (8, 22, 7, 0), (9, 72, 8, 0), (10, null, 2, 0), (11, null, 3, 0), (12, null, 5, 0), (13, null, 3, 0);
         insert MAM.PropertyValue (PropertyValueId, PropertyId, PropertyListValueId, ValueInt, ValueText, TranslationIdentifier) values
             (1, 1, null, null, null, 'pv1'), (2, 2, 1, null, null, null), (3, 3, null, 5, null, null), (4, 4, null, 3, null, null), (9, 5, null, null, 'not a number', null), (6, 6, null, 1234, null, null), (7, 7, null, null, 'Ansel', null);
         insert MAM.PropertyValue (PropertyValueId, PropertyId, ValueText, UserContextId) values (8, 8, 'Best in class', 1);
-        insert MAM.PropertyValue (PropertyValueId, PropertyId, PropertyListValueId) values (10, 9, 2);
+        insert MAM.PropertyValue (PropertyValueId, PropertyId, PropertyListValueId) values (10, 9, 2), (11, 10, 3);
+        insert MAM.PropertyValue (PropertyValueId, PropertyId, ValueInt) values (12, 11, 5);
+        insert Admin.[Rule] values (1, 'credit', null), (2, 'counter', null);
+        insert Admin.RuleNodeType (RuleId, NodeTypeId) values (1, 2);
+        insert Admin.RuleTrigger values (1, 1, 1, 8, null, null), (2, 1, 0, 0, 11, null), (3, 2, 0, 7, null, 'x');
+        insert Admin.RuleAction values (1, 1, 12, 1, '{fnc.findInAscendants(7c9e6679-7425-40de-944b-e07fc1f90ae7)} {var.year}'), (2, 2, 13, 1, '{fnc.find(rating).increment}');
+        insert Admin.PropertyValueRestriction values (1, 2, 0, 10), (2, 2, 2, 10), (3, 3, 0, 10);
         """;
 }

@@ -25,7 +25,8 @@ public sealed record ImportPlan(
     IReadOnlyList<Shareme.Workspaces.Comment> Comments,
     IReadOnlyList<VersionCandidate> Versions,
     DrmPlan Drm,
-    RenditionTypePlan Renditions);
+    RenditionTypePlan Renditions,
+    IReadOnlyList<Shareme.Automation.Rule> Rules);
 
 /// <summary>What the target tenant already holds, so a run reuses keys and names instead of inventing new ones.</summary>
 public sealed record MapTarget(Guid TenantId, Folder Root)
@@ -133,9 +134,14 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             [.. source.Edges.Where(e => SemanticOf(e) == LicenseDrm).Select(e => (e.FromNodeId, e.ToNodeId))], nodeOf, contextKeyOf);
         MapValues(nodeOf, typeOf, definitionOf, listKeyOf, contextKeyOf, [.. target.LanguageCodes, .. languages.Select(l => l.Code)],
             target.KeysOf(KeyKinds.UserContext).Count + contexts.Count == 0 ? [VirtualDefaultContext] : [.. target.KeysOf(KeyKinds.UserContext).Values, .. contexts.Select(c => c.Key)]);
-        var restrictions = MapRestrictions(identity, definitionOf);
+        var restrictions = MapRestrictions(identity, definitionOf, listKeyOf);
         var renditions = new RenditionMapper(source.Renditions ?? SourceRenditions.Empty, target.TenantId, target.KeysOf(KeyKinds.RenditionType), report, Name)
             .Map(identity, target.AdminRoleId);
+        var rules = new RuleMapper(source.Rules ?? SourceRules.Empty, target.TenantId, report, Name).Map(
+            typeOf.ToDictionary(t => t.Key, t => t.Value.Key), definitionOf,
+            source.PropertyDefinitions.Where(d => definitionOf.ContainsKey(d.Id)).GroupBy(d => d.Identifier, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => definitionOf[g.First().Id].Key, StringComparer.OrdinalIgnoreCase),
+            listKeyOf);
 
         report.Mapped["languages"] = languages.Count;
         report.Mapped["node types"] = nodeTypes.Count;
@@ -148,7 +154,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
         report.Mapped["comments"] = comments.Count;
         report.Mapped["user contexts"] = contexts.Count;
         report.Mapped["restrictions"] = restrictions.Count;
-        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm, renditions);
+        return new ImportPlan(languages, nodeTypes, edgeTypes, groups, definitions, nodes, edges, identity, nodePermissions, contexts, restrictions, states, comments, versions, drm, renditions, rules);
     }
 
     private List<DataLanguage> MapLanguages()
@@ -200,7 +206,7 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
     /// Property blacklists of roles: reading forbidden hides the property, changing forbidden makes it read only. Shareme
     /// applies restrictions through tenant roles; a role used only on nodes cannot carry one (reported).
     /// </summary>
-    private List<Restriction> MapRestrictions(IdentityPlan identity, Dictionary<long, PropertyDefinition> definitionOf)
+    private List<Restriction> MapRestrictions(IdentityPlan identity, Dictionary<long, PropertyDefinition> definitionOf, Dictionary<long, string> listKeyOf)
     {
         var restrictions = new Dictionary<(Guid Role, string Key), Restriction>();
         foreach (var row in source.Identity?.PropertyRestrictions ?? [])
@@ -211,28 +217,8 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
                 continue;
             }
 
-            if (!identity.TenantRoleIds.TryGetValue(row.RoleId, out var role))
+            if (RestrictedRole(identity, target.AdminRoleId, row.RoleId, "Admin.PropertyDefinitionRestriction", row.Id, report) is not { } role)
             {
-                if (identity.NodeRoleIds.ContainsKey(row.RoleId))
-                {
-                    report.Problem("restriction_on_item_role", "Admin.PropertyDefinitionRestriction", row.Id);
-                }
-                else
-                {
-                    report.Skip("restrictions of roles without rights");
-                }
-
-                continue;
-            }
-
-            if (identity.NodeRoleIds.ContainsKey(row.RoleId))
-            {
-                report.Problem("restriction_not_on_item_role", "Admin.PropertyDefinitionRestriction", row.Id); // members through node assignments stay unrestricted
-            }
-
-            if (role == target.AdminRoleId)
-            {
-                report.Skip("restrictions of global admin roles"); // GlobalAdmin passes every check in Sharedien
                 continue;
             }
 
@@ -248,7 +234,71 @@ public sealed class SharedienMapper(SourceData source, MapTarget target, ImportR
             restrictions[(role, definition.Key)] = restriction;
         }
 
-        return [.. restrictions.Values];
+        // value blacklists: Sharedien keeps the list value on a property without node; a role must not see nodes carrying it
+        var hidden = new Dictionary<(Guid Role, string Key, string Value), Restriction>();
+        foreach (var row in source.Identity?.ListValueRestrictions ?? [])
+        {
+            if (row.Action is not (0 or 4 or 5))
+            {
+                report.Skip("list value restrictions on changing");
+                continue;
+            }
+
+            if (!definitionOf.TryGetValue(row.DefinitionId, out var definition) || row.ListValueId is not { } valueId || !listKeyOf.TryGetValue(valueId, out var value))
+            {
+                report.Problem("value_restriction_without_list_value", "Admin.PropertyValueRestriction", row.Id);
+                continue;
+            }
+
+            if (RestrictedRole(identity, target.AdminRoleId, row.RoleId, "Admin.PropertyValueRestriction", row.Id, report) is not { } role || hidden.ContainsKey((role, definition.Key, value)))
+            {
+                continue;
+            }
+
+            var restriction = new Restriction
+            {
+                RoleId = role, Kind = Shareme.Contracts.Graph.RestrictionKinds.HiddenListValue, PropertyKey = definition.Key, Value = value, TenantId = target.TenantId, CreatedAt = DateTimeOffset.UtcNow,
+            };
+            Ids.Set(restriction, SourceIds.Derived(Scope, $"Admin.PropertyValueRestriction:{definition.Key}={value}", BitConverter.ToInt64(role.ToByteArray())));
+            hidden[(role, definition.Key, value)] = restriction;
+        }
+
+        return [.. restrictions.Values, .. hidden.Values];
+    }
+
+    /// <summary>
+    /// The tenant role a Sharedien restriction applies to. Shareme applies restrictions through tenant roles only: a role used
+    /// only on nodes cannot carry one, and members through node assignments stay unrestricted (both reported); GlobalAdmin
+    /// passes every check in Sharedien.
+    /// </summary>
+    internal static Guid? RestrictedRole(IdentityPlan identity, Guid? adminRoleId, long roleId, string table, long sourceId, ImportReport report)
+    {
+        if (!identity.TenantRoleIds.TryGetValue(roleId, out var role))
+        {
+            if (identity.NodeRoleIds.ContainsKey(roleId))
+            {
+                report.Problem("restriction_on_item_role", table, sourceId);
+            }
+            else
+            {
+                report.Skip("restrictions of roles without rights");
+            }
+
+            return null;
+        }
+
+        if (role == adminRoleId)
+        {
+            report.Skip("restrictions of global admin roles");
+            return null;
+        }
+
+        if (identity.NodeRoleIds.ContainsKey(roleId))
+        {
+            report.Problem("restriction_not_on_item_role", table, sourceId);
+        }
+
+        return role;
     }
 
     private List<NodeType> MapNodeTypes(out Dictionary<long, (Guid Id, string Key, int Semantic)> typeOf)

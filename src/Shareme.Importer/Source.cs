@@ -70,6 +70,8 @@ public sealed record UserContextRow(long Id, string Identifier, string? Translat
 
 public sealed record PropertyRestrictionRow(long Id, string Identifier, long RoleId, int Action, long DefinitionId);
 
+public sealed record ListValueRestrictionRow(long Id, long RoleId, int Action, long DefinitionId, long? ListValueId);
+
 public sealed record SourceIdentity(
     IReadOnlyList<UserRow> Users,
     IReadOnlyList<GroupRow> Groups,
@@ -78,7 +80,8 @@ public sealed record SourceIdentity(
     IReadOnlyList<RolePermissionRow> RolePermissions,
     IReadOnlyList<GroupRoleRow> GroupRoles,
     IReadOnlyList<NodePermissionRow> NodePermissions,
-    IReadOnlyList<PropertyRestrictionRow>? PropertyRestrictions = null)
+    IReadOnlyList<PropertyRestrictionRow>? PropertyRestrictions = null,
+    IReadOnlyList<ListValueRestrictionRow>? ListValueRestrictions = null)
 {
     public static readonly SourceIdentity Empty = new([], [], [], [], [], [], []);
 }
@@ -101,7 +104,8 @@ public sealed record SourceData(
     SourceWorkspaces? Workspaces = null,
     IReadOnlyList<OriginalRow>? Originals = null,
     SourceDrm? Drm = null,
-    SourceRenditions? Renditions = null);
+    SourceRenditions? Renditions = null,
+    SourceRules? Rules = null);
 
 /// <summary>Reads one source tenant, read only. Deleted rows and system property definitions stay behind.</summary>
 public sealed class SharedienSource(string connectionString)
@@ -216,7 +220,16 @@ public sealed class SharedienSource(string connectionString)
                     select PropertyDefinitionRestrictionId, Identifier, RoleId, Action, PropertyDefinitionId
                     from Admin.PropertyDefinitionRestriction order by PropertyDefinitionRestrictionId
                     """,
-                    r => new PropertyRestrictionRow(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetInt32(3), r.GetInt64(4)))),
+                    r => new PropertyRestrictionRow(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetInt32(3), r.GetInt64(4))),
+                await Query(
+                    """
+                    select r.PropertyValueRestrictionId, r.RoleId, r.Action, p.PropertyDefinitionId, v.PropertyListValueId
+                    from Admin.PropertyValueRestriction r
+                    join MAM.Property p on p.PropertyId = r.PropertyId and p.IsDeleted = 0
+                    left join MAM.PropertyValue v on v.PropertyId = p.PropertyId and v.IsDeleted = 0
+                    order by r.PropertyValueRestrictionId, v.PropertyValueId
+                    """,
+                    r => new ListValueRestrictionRow(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetInt64(3), r.Long(4)))),
             await Query("select UserContextId, Identifier, TranslationIdentifier, SequenceNr, IsDefault from MAM.UserContext where IsDeleted = 0 order by UserContextId",
                 r => new UserContextRow(r.GetInt64(0), r.GetString(1), r.Text(2), r.Int(3) ?? 0, r.GetBoolean(4))),
             new SourceWorkspaces(
@@ -244,7 +257,8 @@ public sealed class SharedienSource(string connectionString)
                 """,
                 r => new OriginalRow(r.GetInt64(0), r.Text(1), r.Text(2))),
             await SourceDrm.LoadAsync(connection, tenantId, cancellationToken),
-            await SourceRenditions.LoadAsync(connection, cancellationToken));
+            await SourceRenditions.LoadAsync(connection, cancellationToken),
+            await SourceRules.LoadAsync(connection, cancellationToken));
     }
 }
 
