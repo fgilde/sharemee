@@ -105,22 +105,21 @@ public sealed class RuleTests(ApiFixture api) : IAsyncLifetime
         var label = await RuleAsync(new RuleRequest("Label", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status")], [new RuleAction("label", "{fnc.find(status)}!")], IsActive: false));
         var pages = await RuleAsync(new RuleRequest("Pages", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.EqualTo, "status", "bad")], [new RuleAction("pages", "abc")], IsActive: false, SortIndex: 1));
 
-        // live events may still write "changed"; only a run could write the "else" branch
-        await RuleAsync(new RuleRequest("Live only", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status"), new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.ValueChanged, "status")],
-            [new RuleAction("verdict", "changed"), new RuleAction("verdict", "not changed", OnMatch: false)]));
-        var active = await RunAsync(new RuleJobRequest(FolderId: root));
-        (active.Total, active.Executed).ShouldBe((3, 0));
-
         var job = await RunAsync(new RuleJobRequest(FolderId: root, RuleIds: [label.Id, pages.Id]));
         (job.Total, job.Matched, job.Executed, job.Skipped, job.Failed).ShouldBe((3, 2, 1, 1, 1));
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("pages");
         Get(await MetadataAsync(ok), "label").ShouldBe("fine!");
         Get(await MetadataAsync(empty), "label").ShouldBeNull();
-        // the run executes only the chosen rules; its writes may still trigger the live rule afterwards, which is fine
-        job.Entries.ShouldAllBe(e => e.Message == null || !e.Message.Contains("Live only"));
         Get(await MetadataAsync(bad), "label").ShouldBe("bad!");
         job.Entries.Single(e => e.NodeId == bad).Message!.ShouldContain("Written by Label");
         (await Admin.GetFromJsonAsync<RuleJobDto[]>("/api/v1/rule-jobs", Ct))!.Select(j => j.Id).ShouldContain(job.Id);
+
+        // a rule with a trigger reacts to changes only: a run of the active rules executes nothing; created after the
+        // run above, so its live reactions cannot race the writes checked there
+        await RuleAsync(new RuleRequest("Live only", [new RuleCondition(RuleConditionKinds.Filter, RuleOperators.HasValue, "status"), new RuleCondition(RuleConditionKinds.Trigger, RuleOperators.ValueChanged, "status")],
+            [new RuleAction("verdict", "changed"), new RuleAction("verdict", "not changed", OnMatch: false)]));
+        var active = await RunAsync(new RuleJobRequest(FolderId: root));
+        (active.Total, active.Executed).ShouldBe((3, 0));
     }
 
     [Fact]
