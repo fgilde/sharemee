@@ -6,7 +6,8 @@ namespace Shareme.Importer;
 
 public sealed record LanguageRow(long Id, string Identifier, bool IsDefault, string? TranslationIdentifier = null);
 
-public sealed record TranslationRow(string TranslationIdentifier, string FieldName, long LanguageId, string Value);
+/// <param name="ObjectType">Sharedien ObjectType: a translation identifier is only unique per object type (AssetSet 0, Workspace 15, RelationType 16, WorkspaceTemplate 23 share some).</param>
+public sealed record TranslationRow(string TranslationIdentifier, string FieldName, long LanguageId, string Value, int ObjectType = 0);
 
 public sealed record NodeTypeRow(long Id, string Identifier, int Semantic, string? TranslationIdentifier, bool IsSystem);
 
@@ -133,8 +134,8 @@ public sealed class SharedienSource(string connectionString)
         return new SourceData(
             await Query("select LanguageId, Identifier, IsDefaultLanguage, TranslationIdentifier from MAM.Language where IsDeleted = 0 order by LanguageId",
                 r => new LanguageRow(r.GetInt64(0), r.GetString(1), r.GetBoolean(2), r.Text(3))),
-            await Query("select TranslationIdentifier, FieldName, LanguageId, TranslatedValue from MAM.Translation where TranslatedValue is not null order by TranslationId",
-                r => new TranslationRow(r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetString(3))),
+            await Query("select TranslationIdentifier, FieldName, LanguageId, TranslatedValue, ObjectType from MAM.Translation where TranslatedValue is not null order by TranslationId",
+                r => new TranslationRow(r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetInt32(4))),
             await Query("select NodeTypeId, Identifier, NodeSemantic, TranslationIdentifier, IsSystem from MAM.NodeType where IsDeleted = 0 order by NodeTypeId",
                 r => new NodeTypeRow(r.GetInt64(0), r.GetString(1), r.GetInt32(2), r.Text(3), r.GetBoolean(4))),
             await Query("select EdgeTypeId, Identifier, EdgeSemantic, TranslationIdentifier, IsDirected, IsSystem from MAM.EdgeType where IsDeleted = 0 order by EdgeTypeId",

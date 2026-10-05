@@ -190,6 +190,11 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
             (web.Width, web.Height, web.IsDefault, web.IsOnDemand, web.AllowManualUpload).ShouldBe((800, 600, true, false, true));
             web.AssetTypeKeys.ShouldBe(["image", "document"], ignoreOrder: true);
             (types.Single(t => t.Key == "print").Width, types.Count).ShouldBe((1600, 2));
+            // translation identifiers repeat across object types: the relation type reads its own, the custom node keeps the asset set one
+            (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Graph.EdgeType>()), t => t.Key == "uses", Ct)).Name.ShouldBe("Uses");
+            nodes.ShouldContain(n => n.Name == "Widget");
+
             // watermarks: one per Sharedien image; a type with a single one gets it, with the image in storage
             var watermarks = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
                 Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Set<Shareme.Assets.WatermarkDefinition>()), Ct);
@@ -288,7 +293,7 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         create table MAM.UserContext (UserContextId bigint primary key, Identifier nvarchar(200) not null, TranslationIdentifier nvarchar(80) null, SequenceNr int not null default 0, IsDefault bit not null default 0, IsDeleted bit not null default 0);
         create table Admin.NodePermission (NodePermissionId bigint primary key, Identifier nvarchar(200) not null, NodeId bigint not null, RoleId bigint not null, Status int not null default 0, UserGroupId bigint null, UserId bigint null);
         create table MAM.Language (LanguageId bigint primary key, Identifier nvarchar(200) not null, IsDefaultLanguage bit not null, IsDeleted bit not null default 0, TranslationIdentifier nvarchar(80) null);
-        create table MAM.Translation (TranslationId bigint identity primary key, TranslationIdentifier nvarchar(80) not null, FieldName nvarchar(850) not null, LanguageId bigint not null, TranslatedValue nvarchar(max) null);
+        create table MAM.Translation (TranslationId bigint identity primary key, TranslationIdentifier nvarchar(80) not null, FieldName nvarchar(850) not null, LanguageId bigint not null, TranslatedValue nvarchar(max) null, ObjectType int not null default 0);
         create table MAM.NodeType (NodeTypeId bigint primary key, Identifier nvarchar(200) not null, NodeSemantic int not null, TranslationIdentifier nvarchar(200) null, IsSystem bit not null, IsDeleted bit not null default 0);
         create table MAM.EdgeType (EdgeTypeId bigint primary key, Identifier nvarchar(200) not null, EdgeSemantic int not null, TranslationIdentifier nvarchar(80) null, IsDirected bit not null, IsSystem bit not null, IsDeleted bit not null default 0);
         create table MAM.Node (NodeId bigint primary key, Identifier nvarchar(200) not null, NodeTypeId bigint not null, SequenceNr int not null default 0, TenantId bigint null, IsDeleted bit not null default 0,
@@ -359,10 +364,11 @@ public sealed class ImporterTests(ApiFixture api) : IAsyncLifetime
         insert MAM.Translation (TranslationIdentifier, FieldName, LanguageId, TranslatedValue) values
             ('cat1', 'Name', 1, 'Marketing'), ('cat1', 'Name', 2, 'Vertrieb'), ('cn1', 'Name', 1, 'Widget'), ('nt1', 'Name', 1, 'Product'),
             ('pd2', 'Name', 1, 'Category'), ('li1', 'Name', 1, 'Editorial'), ('ws1', 'Name', 1, 'Campaign'), ('st1', 'Name', 1, 'To do'), ('lv1', 'Name', 1, 'Beach'), ('pv1', 'TextValue', 1, 'Hello'), ('pv1', 'TextValue', 2, 'Hallo');
+        insert MAM.Translation (TranslationIdentifier, FieldName, LanguageId, TranslatedValue, ObjectType) values ('cn1', 'Name', 1, 'Uses', 16);
         insert MAM.NodeType (NodeTypeId, Identifier, NodeSemantic, TranslationIdentifier, IsSystem) values
             (1, 'Category', 1, null, 1), (2, 'AssetSet', 2, null, 1), (3, 'Version', 3, null, 1), (4, 'product', 1000, 'nt1', 0), (5, 'Workspace', 4, null, 1), (6, 'License', 10, null, 1), (7, 'State', 7, null, 1), (8, 'Task', 5, null, 1), (9, 'Comment', 6, null, 1), (10, 'BillingContact', 8, null, 1), (11, 'RightsOwner', 9, null, 1), (12, 'License', 10, null, 1);
         insert MAM.EdgeType (EdgeTypeId, Identifier, EdgeSemantic, TranslationIdentifier, IsDirected, IsSystem) values
-            (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, null, 1, 0), (5, 'Transition', 9, null, 1, 1), (6, 'LicenseDrm', 10, null, 1, 1);
+            (1, 'ParentChild', 1, null, 1, 1), (2, 'Version', 2, null, 0, 1), (3, 'Link', 3, null, 0, 1), (4, 'uses', 0, 'cn1', 1, 0), (5, 'Transition', 9, null, 1, 1), (6, 'LicenseDrm', 10, null, 1, 1);
         insert MAM.Node (NodeId, Identifier, NodeTypeId, TenantId) values
             (10, '1b0e5e34-2c4d-4f7a-9d1e-0a3b5c7d9e11', 1, 7), (11, 'sub', 1, 7), (20, 'asset', 2, 7), (21, 'v1', 3, 7), (22, 'v2', 3, 7), (30, 'widget', 4, 7), (40, 'foreign', 1, 8), (50, 'workspace', 5, 7), (51, 'in-workspace', 1, 7), (52, 'below', 1, 7), (53, 'todo', 7, 7), (54, 'done', 7, 7), (55, 'brief', 8, 7), (56, 'draft', 2, 7), (57, 'remark', 9, 7), (58, 'lost-file', 2, 7), (59, 'lost-v1', 3, 7), (61, 'container', 5, 7), (62, 'container-state', 7, 7), (70, 'billing', 10, 7), (71, 'owner', 11, 7), (72, 'licence', 12, 7);
         insert MAM.BillingContact values (1, 70, 'Accounts', 'billing@owner.test', 1);
