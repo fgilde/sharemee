@@ -14,6 +14,18 @@ public sealed class AdminJourneyTests
     [Fact]
     public async Task Setup_sign_in_create_user_assign_role_and_a_second_browser_sees_it_live()
     {
+        try
+        {
+            await JourneyAsync();
+        }
+        catch (TimeoutException) when (!_policyViolations.IsEmpty)
+        {
+            throw new InvalidOperationException("Blocked by the content security policy: " + string.Join(Environment.NewLine, _policyViolations));
+        }
+    }
+
+    private async Task JourneyAsync()
+    {
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>(
             [$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true", $"--Shareme:SetupToken={SetupToken}"], ct);
@@ -120,14 +132,7 @@ public sealed class AdminJourneyTests
         await first.Locator("tr[data-node]", new() { HasTextString = "pixel.png" }).GetByRole(AriaRole.Link, new() { Name = "pixel.png" }).ClickAsync();
         await first.Locator("[data-testid='asset-status']").WaitForAsync(new() { Timeout = Timeout });
         // MudExFileDisplay shows images in its zoomable canvas viewer
-        try
-        {
-            await first.Locator("[data-testid='preview'] .MudExImageView-container canvas").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
-        }
-        catch (TimeoutException) when (!_policyViolations.IsEmpty)
-        {
-            throw new InvalidOperationException("Blocked by the content security policy: " + string.Join(Environment.NewLine, _policyViolations));
-        }
+        await first.Locator("[data-testid='preview'] .MudExImageView-container canvas").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
 
         // indexing runs in the background, so the search is repeated until the upload shows up
         var deadline = DateTime.UtcNow.AddSeconds(60);
