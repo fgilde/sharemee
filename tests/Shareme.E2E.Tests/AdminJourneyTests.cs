@@ -120,7 +120,14 @@ public sealed class AdminJourneyTests
         await first.Locator("tr[data-node]", new() { HasTextString = "pixel.png" }).GetByRole(AriaRole.Link, new() { Name = "pixel.png" }).ClickAsync();
         await first.Locator("[data-testid='asset-status']").WaitForAsync(new() { Timeout = Timeout });
         // MudExFileDisplay shows images in its zoomable canvas viewer
-        await first.Locator("[data-testid='preview'] .MudExImageView-container canvas").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
+        try
+        {
+            await first.Locator("[data-testid='preview'] .MudExImageView-container canvas").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
+        }
+        catch (TimeoutException) when (!_policyViolations.IsEmpty)
+        {
+            throw new InvalidOperationException("Blocked by the content security policy: " + string.Join(Environment.NewLine, _policyViolations));
+        }
 
         // indexing runs in the background, so the search is repeated until the upload shows up
         var deadline = DateTime.UtcNow.AddSeconds(60);
@@ -136,13 +143,32 @@ public sealed class AdminJourneyTests
             DateTime.UtcNow.ShouldBeLessThan(deadline, "the upload was not found by the search");
             await first.WaitForTimeoutAsync(1000);
         }
+
+        foreach (var path in new[] { "/", "/people", "/find?q=pixel", "/assistant", "/admin/ai-tool-calls", "/jobs" })
+        {
+            await first.GotoAsync(web + path);
+            await first.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        }
+
+        _policyViolations.ShouldBeEmpty();
     }
 
-    private static async Task<IPage> NewPageAsync(IBrowser browser)
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _policyViolations = new();
+
+    private async Task<IPage> NewPageAsync(IBrowser browser)
     {
         var context = await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true });
         var page = await context.NewPageAsync();
         page.SetDefaultTimeout(Timeout);
+
+        // the content security policy must not block anything the app does
+        page.Console += (_, message) =>
+        {
+            if (message.Text.Contains("Content Security Policy", StringComparison.OrdinalIgnoreCase))
+            {
+                _policyViolations.Enqueue(message.Text);
+            }
+        };
         return page;
     }
 

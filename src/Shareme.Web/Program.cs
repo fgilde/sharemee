@@ -10,6 +10,21 @@ builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 
 builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
 
 var app = builder.Build();
+
+// Blazor WebAssembly needs wasm-unsafe-eval, BlazorJS (MudBlazor.Extensions) evaluates script strings (unsafe-eval), MudBlazor
+// positions with inline styles; previews use blob URLs; the browser talks only to this host (the BFF forwards the API and hub)
+const string ContentSecurityPolicy =
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+    + "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; worker-src 'self' blob:; "
+    + "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'";
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers.ContentSecurityPolicy = ContentSecurityPolicy;
+    headers.XContentTypeOptions = "nosniff";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
+});
 app.MapDefaultEndpoints();
 app.UseStaticFiles();
 app.UseAntiforgery();
