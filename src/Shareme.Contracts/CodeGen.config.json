@@ -2,7 +2,7 @@
   "StructureGenerations": [
     {
       "ModelType": "Class",
-      "SourceFile": "/Configuration/appconfig.json",
+      "SourceFile": "Configuration/appconfig.json",
       "RootClassName": "SharemeConfiguration",
       "Namespace": "Shareme.Contracts.Configuration",
       "Ignore": [
