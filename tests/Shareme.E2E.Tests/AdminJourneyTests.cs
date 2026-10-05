@@ -76,6 +76,15 @@ public sealed class AdminJourneyTests
         await first.GotoAsync(web + "/admin/configuration");
         await first.Locator("[data-section='Shareme']").GetByText("MaxNodes").WaitForAsync(new() { Timeout = Timeout });
         await ShotAsync(first, "configuration");
+
+        // the own profile, and a user's page from the list
+        await first.GotoAsync(web + "/profile");
+        await first.Locator("[data-testid='save-profile']").WaitForAsync(new() { Timeout = Timeout });
+        await ShotAsync(first, "profile");
+        await first.GotoAsync(web + "/admin/users");
+        await first.GetByRole(AriaRole.Link, new() { Name = AdminEmail }).ClickAsync(new() { Timeout = Timeout });
+        await first.Locator("[data-testid='user-name']").WaitForAsync(new() { Timeout = Timeout });
+        await ShotAsync(first, "user-detail");
         await first.GotoAsync(web + "/admin/users");
 
         await first.GotoAsync(web + "/admin/roles");

@@ -705,6 +705,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/identity/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProfileDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateProfileRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProfileDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/identity/users/{id}": {
         parameters: {
             query?: never;
@@ -712,7 +788,37 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UserDetailDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
         put: {
             parameters: {
                 query?: never;
@@ -747,6 +853,50 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/identity/users/{id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -11662,6 +11812,11 @@ export interface components {
             memberIds: string[];
             roleIds: string[];
         };
+        GroupRefDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         GroupRequest: {
             name: string;
             description: null | string;
@@ -12145,6 +12300,12 @@ export interface components {
         };
         /** @enum {unknown} */
         PrincipalType: "User" | "Group";
+        ProfileDto: {
+            email: string;
+            firstName: null | string;
+            lastName: null | string;
+            phoneNumber: null | string;
+        };
         ProfileRequest: {
             department?: null | string;
             position?: null | string;
@@ -12750,6 +12911,11 @@ export interface components {
             /** Format: int32 */
             sortIndex?: null | number | string;
         };
+        UpdateProfileRequest: {
+            firstName: null | string;
+            lastName: null | string;
+            phoneNumber: null | string;
+        };
         UpdateUserRequest: {
             firstName: null | string;
             lastName: null | string;
@@ -12793,6 +12959,23 @@ export interface components {
             key: string;
             name: string;
             isDefault: boolean;
+        };
+        UserDetailDto: {
+            /** Format: uuid */
+            id: string;
+            userName: string;
+            email: string;
+            firstName: null | string;
+            lastName: null | string;
+            isActive: boolean;
+            emailConfirmed: boolean;
+            twoFactorEnabled: boolean;
+            /** Format: date-time */
+            lockedUntil: null | string;
+            /** Format: date-time */
+            lastLoginAt: null | string;
+            roles: components["schemas"]["RoleRefDto"][];
+            groups: components["schemas"]["GroupRefDto"][];
         };
         UserDto: {
             /** Format: uuid */
