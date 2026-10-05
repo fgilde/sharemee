@@ -1,5 +1,6 @@
 using Coworkee.Core.Modularity;
 using Coworkee.Identity;
+using Coworkee.Application.Setup;
 using Coworkee.Identity.Setup;
 using Coworkee.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
