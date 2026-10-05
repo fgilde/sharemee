@@ -3,8 +3,6 @@
 @using Coworkee.Client.Blazor.Api
 @using Coworkee.Contracts.Ai
 @using Shareme.Web.Client.Assistant
-@inject IAssistantApi Api
-@inject ISnackbar Snackbar
 
 <PageTitle>AI tool calls</PageTitle>
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
@@ -34,37 +32,4 @@
 @if (_page is { } loaded && loaded.TotalCount > PageSize)
 {
     <MudPagination Count="@((loaded.TotalCount + PageSize - 1) / PageSize)" Selected="_pageNumber" SelectedChanged="PageAsync" Class="mt-2" />
-}
-
-@code {
-    private const int PageSize = 50;
-    private Coworkee.Contracts.PagedResult<AiToolCallDto>? _page;
-    private int _pageNumber = 1;
-    private string? _search;
-
-    protected override Task OnInitializedAsync() => LoadAsync();
-
-    private Task ReloadAsync()
-    {
-        _pageNumber = 1;
-        return LoadAsync();
-    }
-
-    private Task PageAsync(int page)
-    {
-        _pageNumber = page;
-        return LoadAsync();
-    }
-
-    private async Task LoadAsync()
-    {
-        try
-        {
-            _page = await Api.GetToolCallsAsync(_pageNumber, PageSize, _search);
-        }
-        catch (ApiException exception)
-        {
-            Snackbar.Add(exception.Message, Severity.Warning);
-        }
-    }
 }

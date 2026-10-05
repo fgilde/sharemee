@@ -1,42 +1,4 @@
 @using Coworkee.Client.Blazor.Api
-@inject IIntranetApi Api
-@inject ISnackbar Snackbar
 
 <MudToggleIconButton Toggled="_on" ToggledChanged="ToggleAsync" Icon="@Icons.Material.Outlined.StarBorder" ToggledIcon="@Icons.Material.Filled.Star" ToggledColor="Color.Warning"
                      aria-label="@(_on ? "Remove from favorites" : "Add to favorites")" data-testid="favorite" />
-
-@code {
-    private bool _on;
-
-    [Parameter, EditorRequired] public Guid NodeId { get; set; }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        try
-        {
-            var asked = NodeId;
-            var on = await Api.IsFavoriteAsync(asked);
-            if (asked == NodeId)
-            {
-                _on = on;
-            }
-        }
-        catch (ApiException)
-        {
-            _on = false;
-        }
-    }
-
-    private async Task ToggleAsync(bool on)
-    {
-        try
-        {
-            await Api.SetFavoriteAsync(NodeId, on);
-            _on = on;
-        }
-        catch (ApiException exception)
-        {
-            Snackbar.Add(exception.Message, Severity.Warning);
-        }
-    }
-}

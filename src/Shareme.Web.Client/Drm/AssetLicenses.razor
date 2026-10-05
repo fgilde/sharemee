@@ -1,6 +1,5 @@
 @using Coworkee.Client.Blazor.Api
 @using Shareme.Contracts.Drm
-@inject IDrmApi Api
 
 <div data-testid="asset-licenses">
     @if (_licenses.Count == 0)
@@ -25,21 +24,3 @@
         <MudButton Class="mt-2" Size="Size.Small" Href="@($"/licenses?asset={AssetId}")" StartIcon="@Icons.Material.Outlined.ShoppingCart">Offers for this file</MudButton>
     }
 </div>
-
-@code {
-    private IReadOnlyList<LicenseDto> _licenses = [];
-
-    [Parameter, EditorRequired] public Guid AssetId { get; set; }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        try
-        {
-            _licenses = await Api.GetAssetLicensesAsync(AssetId);
-        }
-        catch (ApiException)
-        {
-            _licenses = [];
-        }
-    }
-}

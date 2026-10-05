@@ -4,9 +4,6 @@
 @using Coworkee.Contracts.Identity
 @using Shareme.Contracts.Graph
 @using Shareme.Web.Client.Graph
-@inject IRestrictionsApi Api
-@inject ICoworkeeApi Identity
-@inject ISnackbar Snackbar
 
 <PageTitle>Restrictions</PageTitle>
 <MudText Typo="Typo.h4" Class="mb-2">Restrictions</MudText>
@@ -55,64 +52,3 @@
     </MudGrid>
     <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="AddAsync" Disabled="_roleId is null" data-testid="add-restriction">Add</MudButton>
 </MudPaper>
-
-@code {
-    private IReadOnlyList<RestrictionDto> _restrictions = [];
-    private IReadOnlyList<RoleDto> _roles = [];
-    private Guid? _roleId;
-    private string _kind = RestrictionKinds.HiddenProperty;
-    private string? _propertyKey, _value;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadAsync();
-        try
-        {
-            _roles = await Identity.GetRolesAsync();
-        }
-        catch (ApiException)
-        {
-        }
-    }
-
-    private static string Label(string kind) => kind switch
-    {
-        RestrictionKinds.HiddenProperty => "Hide property",
-        RestrictionKinds.ReadOnlyProperty => "Property read only",
-        RestrictionKinds.HiddenListValue => "Hide nodes with list value",
-        _ => "Block rendition",
-    };
-
-    private async Task LoadAsync()
-    {
-        try
-        {
-            _restrictions = await Api.GetAsync();
-        }
-        catch (ApiException exception)
-        {
-            Snackbar.Add(exception.Status == 403 ? "You may not manage restrictions." : exception.Message, Severity.Warning);
-        }
-    }
-
-    private Task AddAsync() => RunAsync(async () =>
-    {
-        await Api.AddAsync(new RestrictionRequest(_roleId!.Value, _kind,
-            _kind == RestrictionKinds.BlockedRendition ? null : _propertyKey,
-            _kind is RestrictionKinds.HiddenProperty or RestrictionKinds.ReadOnlyProperty ? null : _value));
-        _propertyKey = _value = null;
-    });
-
-    private async Task RunAsync(Func<Task> action)
-    {
-        try
-        {
-            await action();
-            await LoadAsync();
-        }
-        catch (ApiException exception)
-        {
-            Snackbar.Add(exception.Message, Severity.Error);
-        }
-    }
-}
