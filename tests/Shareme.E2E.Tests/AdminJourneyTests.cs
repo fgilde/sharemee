@@ -83,7 +83,7 @@ public sealed class AdminJourneyTests
 
             // the own profile, and a user's page from the list
             await first.GotoAsync(web + "/profile");
-            await first.Locator("[data-testid='save-profile']").WaitForAsync(new() { Timeout = Timeout });
+            await first.Locator("[data-testid='profile-card']").WaitForAsync(new() { Timeout = Timeout });
             await ShotAsync(first, "profile");
             await first.GotoAsync(web + "/admin/users");
             await first.GetByRole(AriaRole.Link, new() { Name = AdminEmail }).ClickAsync(new() { Timeout = Timeout });
