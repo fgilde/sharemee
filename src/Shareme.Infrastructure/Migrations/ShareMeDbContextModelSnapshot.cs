@@ -1070,6 +1070,9 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("LayoutProperties")
                         .HasColumnType("jsonb");
 
@@ -1087,6 +1090,9 @@ namespace Shareme.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("Options")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("PaletteDark")
                         .IsRequired()
                         .HasColumnType("jsonb");
@@ -1097,6 +1103,9 @@ namespace Shareme.Infrastructure.Migrations
 
                     b.Property<int>("Revision")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Shadows")
+                        .HasColumnType("jsonb");
 
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uuid");

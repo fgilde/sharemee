@@ -78,7 +78,7 @@ public sealed class AdminJourneyTests
             await first.WaitForURLAsync(web + "/", new() { Timeout = Timeout });
             // the generated app configuration is editable by the system admin
             await first.GotoAsync(web + "/admin/configuration");
-            await first.Locator("[data-section='Shareme']").GetByText("MaxNodes").WaitForAsync(new() { Timeout = Timeout });
+            await first.Locator("[data-section='Shareme']").GetByText("Max nodes").WaitForAsync(new() { Timeout = Timeout });
             await ShotAsync(first, "configuration");
 
             // the own profile, and a user's page from the list
