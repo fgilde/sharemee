@@ -17,6 +17,7 @@
     <CoworkeePackage Include="Coworkee.Mailing" />
     <CoworkeePackage Include="Coworkee.Auditing" />
     <CoworkeePackage Include="Coworkee.Theming" />
+    <CoworkeePackage Include="Coworkee.Localization" />
     <CoworkeePackage Include="Coworkee.Realtime" />
     <CoworkeePackage Include="Coworkee.Notifications" />
     <CoworkeePackage Include="Coworkee.Account" />
