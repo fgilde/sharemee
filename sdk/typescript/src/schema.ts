@@ -13486,6 +13486,12 @@ export interface components {
             hasAvatar: boolean;
             avatarVersion?: null | string;
         };
+        PostalAddress: {
+            street: null | string;
+            zipCode: null | string;
+            city: null | string;
+            country: null | string;
+        };
         PriceDto: {
             currency: string;
             /** Format: double */
@@ -13521,6 +13527,7 @@ export interface components {
             lastName: null | string;
             phoneNumber: null | string;
             avatarUrl?: null | string;
+            address?: null | components["schemas"]["PostalAddress"];
         };
         ProfileRequest: {
             department?: null | string;
@@ -14161,6 +14168,7 @@ export interface components {
             firstName: null | string;
             lastName: null | string;
             phoneNumber: null | string;
+            address?: null | components["schemas"]["PostalAddress"];
         };
         UpdateUserRequest: {
             firstName: null | string;

@@ -16080,6 +16080,41 @@
           }
         }
       },
+      "PostalAddress": {
+        "required": [
+          "street",
+          "zipCode",
+          "city",
+          "country"
+        ],
+        "type": "object",
+        "properties": {
+          "street": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "zipCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "city": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "country": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PriceDto": {
         "required": [
           "currency",
@@ -16235,6 +16270,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PostalAddress"
+              }
             ]
           }
         }
@@ -18742,6 +18787,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PostalAddress"
+              }
             ]
           }
         }
