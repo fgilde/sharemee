@@ -11,7 +11,7 @@ public sealed class AppHostTests
     public async Task Api_starts_after_migrations_and_serves_system_info()
     {
         var ct = TestContext.Current.CancellationToken;
-        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true"], ct);
+        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeAppExtensions.EphemeralSetting}=true"], ct);
         var app = await appHost.BuildAsync(ct);
         await using var stop = AppHostDiagnostics.Guard(app);
         await app.StartAsync(ct);
@@ -27,7 +27,7 @@ public sealed class AppHostTests
     public async Task Web_and_auth_start_and_serve()
     {
         var ct = TestContext.Current.CancellationToken;
-        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true"], ct);
+        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>([$"--{CoworkeeAppExtensions.EphemeralSetting}=true"], ct);
         var app = await appHost.BuildAsync(ct);
         await using var stop = AppHostDiagnostics.Guard(app);
         await app.StartAsync(ct);

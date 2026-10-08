@@ -12,13 +12,14 @@ Stand: Oktober 2026 (Branch `feat/p9a-importer`). Alles hier ist gegen den Code 
 | `shareme-processing` | `src/Shareme.Processing.Host` | Hangfire-Worker nur für die Queue `processing` (Renditions, Vorschauen, technische Metadaten); keine Endpunkte außer Health | Postgres, Redis (Pflicht), Blob-Storage (derselbe wie die API), Render-Tools |
 | `shareme-web` | `src/Shareme.Web` | Blazor-WebAssembly-Host und BFF: Cookie-Login per OIDC, leitet `/api`, `/admin/jobs` und `/hubs` mit Access-Token an die API weiter | Auth, API |
 
-Infrastruktur (aus `AddCoworkeeInfrastructure` in `Coworkee.Aspire`):
+Infrastruktur (aus `AddCoworkeeApp` in `Coworkee.Aspire`; jeder Dienst bekommt, was seine Coworkee-Pakete brauchen):
 
 - **PostgreSQL** – eine Datenbank (`shareme`) für alles: Fachdaten, Identity, Einstellungen, Audit, Data-Protection-Keys (Schema `cw`), Hangfire (Schema `hangfire`). Migrationshistorie in `cw."__EFMigrationsHistory"`.
 - **Redis** – nur SignalR-Backplane (Channel-Präfix `coworkee`). Der Processing-Host meldet fertige Renditions darüber an die Browser; ohne `redis`-Connection-String startet er nicht.
 - **Elasticsearch** – Volltextsuche, Alias `shareme-nodes` (konfigurierbar), physische Indizes werden beim Reindex getauscht.
 - **SMTP** – lokal Mailpit, produktiv ein beliebiger SMTP-Server (konfiguriert über Admin-Einstellungen).
 - **Blob-Storage** – FileSystem, S3 (auch MinIO) oder Azure Blob. API und Processing-Host müssen denselben Speicher sehen.
+- **Keycloak** – lokal als externer Login am Auth-Dienst (Realm `shareme`, Client `shareme-auth`, Benutzer `demo@sharemee.local`). Passwort und Client-Secret erzeugt der AppHost als Parameter (`shareme-keycloak-user-password`, `shareme-keycloak-client-secret`, in den User-Secrets und im Dashboard). Neue Keycloak-Benutzer werden beim ersten Login angelegt (ohne Rollen); bestehende werden über die bestätigte E-Mail-Adresse verknüpft.
 
 ## 2. Lokal starten (Aspire)
 
@@ -34,13 +35,25 @@ Mit `-p:CoworkeeReferenceMode=Project` wird gegen die Coworkee-Quellen statt geg
 
 Was der AppHost (`src/Shareme.AppHost/AppHost.cs`) tut:
 
-- Postgres, Redis und Elasticsearch laufen mit Daten-Volume und `ContainerLifetime.Persistent`. Mit `Coworkee:EphemeralInfrastructure=true` in der AppHost-Konfiguration werden sie flüchtig.
+```csharp
+var app = builder.AddCoworkeeApp("shareme", options =>
+{
+    options.DisplayName = "Sharemee";
+    options.UseKeycloak(keycloak => keycloak.Users.Add(new KeycloakUser("demo@sharemee.local", "Demo", "User")));
+});
+
+app.AddMigrations<Projects.Shareme_Migrations>();
+app.AddAuthServer<Projects.Shareme_Auth>();
+app.AddApi<Projects.Shareme_Api>();
+app.AddWorker<Projects.Shareme_Processing_Host>("processing");
+app.AddWeb<Projects.Shareme_Web>();
+```
+
+- Welche Infrastruktur ein Dienst bekommt, liest `AddCoworkeeApp` aus dessen `obj/project.assets.json`: `Coworkee.Infrastructure` → Datenbank und Warten auf die Migrationen, `Coworkee.Realtime` → Redis, `Coworkee.Mailing` → Mailpit als Einstellungs-Default, `Coworkee.Storage` → `.data/blobs`, `Coworkee.Search.Elasticsearch` → Elasticsearch.
+- Postgres, Redis, Elasticsearch und Keycloak laufen mit Daten-Volume. Mit `Coworkee:EphemeralInfrastructure=true` in der AppHost-Konfiguration werden sie flüchtig.
 - Elasticsearch läuft lokal mit `-Xms512m -Xmx512m -XX:TieredStopAtLevel=1` und `cluster.routing.allocation.disk.threshold_enabled=false` (volle Entwicklerplatten blockieren keine Shards). Produktiv gilt das nicht.
-- Dateien liegen unter `.data/blobs` im Repository-Root (`Coworkee__Storage__FileSystem__Root` für API und Processing).
-- Auth, API und Processing warten auf den erfolgreichen Abschluss von `shareme-migrations`.
-- SMTP-Host/-Port von Mailpit werden als Einstellungs-Defaults gesetzt (`Coworkee__Settings__Defaults__Mail.Smtp.Host`/`...Port`).
-- Der OIDC-Client `shareme-web` (öffentlicher Client, PKCE) und der API-Scope `shareme_api` werden per Umgebungsvariablen am Auth-Dienst angelegt; Auth läuft ohne Hangfire-Server (`Coworkee__Jobs__RunServer=false`).
-- Optionales festes Setup-Token: `dotnet user-secrets set Shareme:SetupToken <wert> --project src/Shareme.AppHost` (wird als `Coworkee__SetupToken` an die API gereicht).
+- Der OIDC-Client `shareme-web` (öffentlicher Client, PKCE) und der API-Scope `shareme_api` werden am Auth-Dienst angelegt; Auth läuft ohne Hangfire-Server.
+- Optionales festes Setup-Token: `dotnet user-secrets set Coworkee:SetupToken <wert> --project src/Shareme.AppHost`.
 
 ## 3. Produktion betreiben
 

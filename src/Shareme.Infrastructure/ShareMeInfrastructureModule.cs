@@ -24,6 +24,6 @@ public sealed class ShareMeInfrastructureModule : CoworkeeModule
         context.Services.AddCoworkeeAppConfiguration<Shareme.Contracts.Configuration.SharemeConfiguration>(
             context.Configuration, Shareme.Contracts.Configuration.SharemeConfiguration.Section, Shareme.Contracts.Configuration.SharemeConfiguration.Title);
         context.Services.Configure<SetupGateOptions>(options => options.AllowedPrefixes.Add("/api/v1/system"));
-        context.Services.PostConfigure<Coworkee.BackgroundJobs.BackgroundJobOptions>(options => options.ConnectionStringName = ConnectionStringName);
+        context.Services.PostConfigure<Coworkee.Contracts.Configuration.BackgroundJobOptions>(options => options.ConnectionStringName = ConnectionStringName);
     }
 }

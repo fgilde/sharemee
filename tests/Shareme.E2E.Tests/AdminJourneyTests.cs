@@ -28,7 +28,7 @@ public sealed class AdminJourneyTests
     {
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>(
-            [$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true", $"--Shareme:SetupToken={SetupToken}"], ct);
+            [$"--{CoworkeeAppExtensions.EphemeralSetting}=true", $"--Coworkee:SetupToken={SetupToken}"], ct);
         await using var app = await appHost.BuildAsync(ct);
         await app.StartAsync(ct);
         foreach (var resource in new[] { "shareme-web", "shareme-auth", "shareme-api" })
@@ -221,6 +221,6 @@ public sealed class AdminJourneyTests
     {
         await page.Locator("#email").FillAsync(AdminEmail);
         await page.Locator("#password").FillAsync(AdminPassword);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
     }
 }

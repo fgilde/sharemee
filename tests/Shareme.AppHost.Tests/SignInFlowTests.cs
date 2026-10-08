@@ -17,7 +17,7 @@ public sealed partial class SignInFlowTests
     {
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>(
-            [$"--{CoworkeeInfrastructureExtensions.EphemeralSetting}=true", $"--Shareme:SetupToken={SetupToken}"], ct);
+            [$"--{CoworkeeAppExtensions.EphemeralSetting}=true", $"--Coworkee:SetupToken={SetupToken}"], ct);
         var app = await appHost.BuildAsync(ct);
         await using var stop = AppHostDiagnostics.Guard(app);
         await app.StartAsync(ct);
