@@ -6,7 +6,11 @@ using Shareme.Web.Client.Metadata;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
-builder.Services.AddCoworkeeClient(baseAddress, options => options.AppTitle = "Sharemee");
+builder.Services.AddCoworkeeClient(baseAddress, options =>
+{
+    options.AppTitle = "Sharemee";
+    options.AssistantHint = "Ask for something, for example \"Create a folder Summer 2026 in Marketing\" or \"Find the brochures tagged campaign\".";
+});
 builder.Services.AddCoworkeeAppConfiguration<Shareme.Contracts.Configuration.SharemeConfiguration>(
     Shareme.Contracts.Configuration.SharemeConfiguration.Section, Shareme.Contracts.Configuration.SharemeConfiguration.Title);
 builder.Services.AddHttpClient<ISharemeApi, SharemeApi>(client =>
@@ -22,11 +26,6 @@ builder.Services.AddHttpClient<Shareme.Web.Client.Drm.IDrmApi, Shareme.Web.Clien
 builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IPagesApi, Shareme.Web.Client.Knowledge.PagesApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IIntranetApi, Shareme.Web.Client.Knowledge.IntranetApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddHttpClient<Shareme.Web.Client.Knowledge.IPeopleApi, Shareme.Web.Client.Knowledge.PeopleApi>(client => client.BaseAddress = baseAddress);
-builder.Services.AddHttpClient<Shareme.Web.Client.Assistant.IAssistantApi, Shareme.Web.Client.Assistant.AssistantApi>(client =>
-{
-    client.BaseAddress = baseAddress;
-    client.Timeout = TimeSpan.FromMinutes(11);
-});
 builder.Services.AddHttpClient<IDataApi, DataApi>(client =>
 {
     client.BaseAddress = baseAddress;
@@ -46,4 +45,6 @@ builder.Services.AddHttpClient<Shareme.Web.Client.Assets.IRenditionsApi, Shareme
 builder.Services.AddHttpClient<Shareme.Web.Client.Search.ISearchApi, Shareme.Web.Client.Search.SearchApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddScoped<UploadQueue>();
 builder.Services.AddSingleton<INavigationContributor, SharemeNavigation>();
-await builder.Build().RunAsync();
+var host = builder.Build();
+await host.Services.InitializeCoworkeeClientAsync();
+await host.RunAsync();
