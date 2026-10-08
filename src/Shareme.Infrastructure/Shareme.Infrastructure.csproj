@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <EmbeddedResource Include="Localization\*.json" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Shareme.Application\Shareme.Application.csproj" />
     <ProjectReference Include="..\Shareme.Graph\Shareme.Graph.csproj" />
     <ProjectReference Include="..\Shareme.Metadata\Shareme.Metadata.csproj" />

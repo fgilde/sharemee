@@ -6,8 +6,7 @@
 @using Shareme.Contracts.Search
 @using Shareme.Web.Client.Search
 
-<PageTitle>Search</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Search@(FolderId is null ? null : " in folder")</MudText>
+<PageHeader Title="@(FolderId is null ? "File search" : "File search in this folder")" Description="Search files and folders by name, content and properties, then narrow the hits with the filters on the left. Save a search to reuse it or share it." />
 
 <MudStack Row="true" AlignItems="AlignItems.Start" Class="mb-2">
     <div style="flex:1;position:relative">
@@ -30,8 +29,8 @@
 </MudStack>
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-    <MudSwitch T="bool" @bind-Value="_exact" Label="Exact phrase" Color="Color.Primary" />
-    <MudSwitch T="bool" @bind-Value="_allWords" Label="All words" Color="Color.Primary" />
+    <MudSwitch T="bool" @bind-Value="_exact" Label="@L["Exact phrase"]" Color="Color.Primary" />
+    <MudSwitch T="bool" @bind-Value="_allWords" Label="@L["All words"]" Color="Color.Primary" />
     <MudSelect T="string" @bind-Value="_sort" Label="Sort" Dense="true" Style="max-width:220px">
         <MudSelectItem Value="@("relevance")">Relevance</MudSelectItem>
         <MudSelectItem Value="@SearchFields.Name">Name</MudSelectItem>
@@ -52,7 +51,9 @@
     <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.BookmarkAdd" OnClick="SaveAsync" Disabled="@string.IsNullOrWhiteSpace(_saveName)" data-testid="save-search">Save</MudButton>
     @if (_saved is { IsOwner: true })
     {
-        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete saved search" OnClick="DeleteSavedAsync" />
+        <MudTooltip Text="@L["Delete saved search"]">
+            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete saved search" OnClick="DeleteSavedAsync" />
+        </MudTooltip>
     }
 </MudStack>
 
@@ -110,6 +111,10 @@
                             <td>@item.Type</td>
                             <td>@((item.ModifiedAt ?? item.CreatedAt).ToLocalTime().ToString("g"))</td>
                         </tr>
+                    }
+                    @if (_items.Count == 0)
+                    {
+                        <tr><td colspan="4">@L["Nothing found. Try fewer or other words, switch off Exact phrase and All words, or clear the filters."]</td></tr>
                     }
                 </tbody>
             </MudSimpleTable>

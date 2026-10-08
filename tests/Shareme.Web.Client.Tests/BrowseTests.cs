@@ -29,6 +29,8 @@ public sealed class BrowseTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Coworkee.Client.Blazor.Localization.ILocalizationApi>());
+        Services.AddScoped<Coworkee.Client.Blazor.Localization.CoworkeeLocalizer>();
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Knowledge.IIntranetApi>());
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Drm.IDrmApi>());
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Knowledge.IPagesApi>());
@@ -147,6 +149,18 @@ public sealed class BrowseTests : BunitContext
         picker.WaitForAssertion(() => picker.Markup.ShouldContain("Move here: Root"));
         picker.Markup.ShouldContain("Marketing");
         picker.Markup.ShouldNotContain("Campaigns");
+    }
+
+    [Fact]
+    public void A_file_opened_through_browse_goes_to_its_own_page()
+    {
+        var asset = Guid.CreateVersion7();
+        _api.GetNodeAsync(asset, Arg.Any<CancellationToken>())
+            .Returns(new NodeDetailDto(Node(asset, "logo.png", _folder) with { Type = NodeTypeKeys.Asset, Semantic = "asset" }, [new(asset, "logo.png")], false));
+
+        Render<Browse>(p => p.Add(b => b.Id, asset));
+
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.ShouldEndWith($"/assets/{asset}");
     }
 
     private static NodeDto Node(Guid id, string name, Guid? parent) =>

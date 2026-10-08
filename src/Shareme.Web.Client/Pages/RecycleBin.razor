@@ -5,8 +5,7 @@
 @using Shareme.Contracts.Graph
 @using Shareme.Web.Client.Graph
 
-<PageTitle>Recycle bin</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Recycle bin</MudText>
+<PageHeader Title="Recycle bin" Description="Deleted folders, files and pages stay here until they are deleted for good. Restore puts an item back where it was." />
 <MudSimpleTable Dense="true" Hover="true">
     <thead><tr><th>Name</th><th>Type</th><th>Deleted</th><th></th></tr></thead>
     <tbody>
@@ -24,9 +23,9 @@
                 </td>
             </tr>
         }
+        @if (_items.Count == 0)
+        {
+            <tr><td colspan="4">@L["The recycle bin is empty. Items you delete in Browse land here."]</td></tr>
+        }
     </tbody>
 </MudSimpleTable>
-@if (_items.Count == 0)
-{
-    <MudText Typo="Typo.body2" Class="mt-2">The recycle bin is empty.</MudText>
-}

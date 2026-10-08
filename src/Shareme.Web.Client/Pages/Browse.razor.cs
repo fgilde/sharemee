@@ -134,8 +134,8 @@ public partial class Browse
     {
         _detail = await Api.GetNodeAsync(id);
 
-        // pages have their own view
-        if (_detail.Node.Semantic is "page" or "news")
+        // files and pages have their own view
+        if (_detail.Node.Semantic is "asset" or "page" or "news")
         {
             Nav.NavigateTo(Shareme.Web.Client.Knowledge.NodeLinks.For(_detail.Node), replace: true);
             return;

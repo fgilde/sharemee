@@ -5,8 +5,7 @@
 @using Shareme.Contracts.Automation
 @using Shareme.Web.Client.Metadata
 
-<PageTitle>Data runs</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Mass edits, imports and AI tagging</MudText>
+<PageHeader Title="Mass edits, imports and AI tagging" Description="Results of your mass edits, imports and AI tagging. Pick a run to see row by row what was changed, skipped or failed." />
 
 @if (_job is { } job)
 {
@@ -14,17 +13,21 @@
         <MudText Typo="Typo.h6">@Kind(job) @(job.DryRun ? "(dry run)" : null): @job.State</MudText>
         <MudText Typo="Typo.body2">@job.Total in total, @job.Executed @(job.DryRun ? "would change" : "changed"), @job.Skipped skipped, @job.Failed failed. @job.Error</MudText>
         <MudSimpleTable Dense="true" Class="mt-2" data-testid="data-job-entries">
-            <thead><tr><th>Row</th><th>Column</th><th>Node</th><th>Result</th><th>Message</th></tr></thead>
+            <thead><tr><th>Row</th><th>Column</th><th>@L["Item"]</th><th>Result</th><th>Message</th></tr></thead>
             <tbody>
                 @foreach (var entry in job.Entries)
                 {
                     <tr data-result="@entry.Result">
                         <td>@entry.Row</td>
                         <td>@entry.Column</td>
-                        <td>@if (entry.NodeId is { } node) { <MudLink Href="@($"/nodes/{node}")">@node.ToString()[..8]</MudLink> }</td>
+                        <td>@if (entry.NodeId is { } node) { <MudLink Href="@($"/browse/{node}")">@node.ToString()[..8]</MudLink> }</td>
                         <td>@entry.Result</td>
                         <td>@entry.Message</td>
                     </tr>
+                }
+                @if (job.Entries.Count == 0)
+                {
+                    <tr><td colspan="5">@L["No rows to show yet."]</td></tr>
                 }
             </tbody>
         </MudSimpleTable>
@@ -32,7 +35,7 @@
 }
 
 <MudSimpleTable Dense="true" Hover="true" data-testid="data-jobs">
-    <thead><tr><th>Started</th><th>Kind</th><th>State</th><th>Total</th><th>Changed</th><th>Skipped</th><th>Failed</th></tr></thead>
+    <thead><tr><th>Started</th><th>@L["Task"]</th><th>State</th><th>Total</th><th>Changed</th><th>Skipped</th><th>Failed</th></tr></thead>
     <tbody>
         @foreach (var run in _jobs)
         {
@@ -45,6 +48,10 @@
                 <td>@run.Skipped</td>
                 <td>@run.Failed</td>
             </tr>
+        }
+        @if (_jobs.Count == 0)
+        {
+            <tr><td colspan="7">@L["Nothing yet. Select files in Browse to edit their metadata, import a file or start AI tagging."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>

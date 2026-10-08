@@ -11,13 +11,17 @@
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
         @if (current.ParentId is { } parent)
         {
-            <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Href="@($"/browse/{parent}")" aria-label="Up to the folder" />
+            <MudTooltip Text="@L["Up to the folder"]">
+                <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Href="@($"/browse/{parent}")" aria-label="Up to the folder" />
+            </MudTooltip>
         }
         <MudText Typo="Typo.h4" data-testid="page-title">@current.Title</MudText>
         <MudSpacer />
         <MudText Typo="Typo.caption">Version @current.Version · @current.ModifiedAt.ToLocalTime().ToString("g")</MudText>
         <FavoriteButton NodeId="current.Id" />
-        <MudToggleIconButton @bind-Toggled="_history" Icon="@Icons.Material.Outlined.History" ToggledIcon="@Icons.Material.Filled.History" aria-label="Versions" data-testid="toggle-history" />
+        <MudTooltip Text="@L["Version history"]">
+            <MudToggleIconButton @bind-Toggled="_history" Icon="@Icons.Material.Outlined.History" ToggledIcon="@Icons.Material.Filled.History" aria-label="Versions" data-testid="toggle-history" />
+        </MudTooltip>
         @if (current.CanEdit && !_editing)
         {
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Edit" OnClick="Edit" data-testid="edit-page">Edit</MudButton>

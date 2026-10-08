@@ -4,8 +4,8 @@
 @using Shareme.Contracts.Drm
 @using Shareme.Web.Client.Drm
 
-<PageTitle>Licensing</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Licensing</MudText>
+<PageHeader Title="License management" Description="Set up the licenses people can buy for files: who owns the rights, what they cost and for whom." />
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Billing contacts 2. Rights owners 3. Audience groups (optional) 4. Price lists 5. Licenses with a price per rights owner 6. Add files: select them in Browse and choose Add to license."]</MudAlert>
 
 <MudTabs Outlined="true">
     <MudTabPanel Text="Licenses">
@@ -22,10 +22,14 @@
                         <td>@license.PurchaseDays</td>
                         <td>@license.AssetCount</td>
                         <td style="text-align:right">
-                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => EditLicenseAsync(license)" />
-                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(License, license.Id))" />
+                            <MudTooltip Text="@L["Edit"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => EditLicenseAsync(license)" /></MudTooltip>
+                            <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(License, license.Id))" /></MudTooltip>
                         </td>
                     </tr>
+                }
+                @if (_licenses.Count == 0)
+                {
+                    <tr><td colspan="7">@L["No licenses yet. Set up billing contacts, rights owners and price lists first, then create a license below."]</td></tr>
                 }
             </tbody>
         </MudSimpleTable>
@@ -37,7 +41,7 @@
                 <MudItem xs="12" sm="4"><MudTextField @bind-Value="_license.Rights" Label="Rights (comma separated)" /></MudItem>
                 <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="_license.From" Label="Valid from" /></MudItem>
                 <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="_license.Until" Label="Valid until" /></MudItem>
-                <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_license.Days" Label="Purchase days" Min="1" /></MudItem>
+                <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_license.Days" Label="@L["Days of use per purchase"]" Min="1" /></MudItem>
                 <MudItem xs="6" sm="2">
                     <MudSelect T="string" @bind-Value="_license.Status" Label="Status">
                         @foreach (var status in LicenseStatuses.All)
@@ -57,8 +61,8 @@
 
             @if (_licenseId is { } licenseId)
             {
-                <MudText Typo="Typo.subtitle1" Class="mt-4">Buyouts</MudText>
-                <MudText Typo="Typo.body2">Price = basis × (1 + fee %) × the percentage of the price list for the context or group. Files are added from the selection in Browse.</MudText>
+                <MudText Typo="Typo.subtitle1" Class="mt-4">@L["Prices per rights owner"]</MudText>
+                <MudText Typo="Typo.body2">@L["Price = basis × (1 + fee %) × the percentage of the price list for the audience or audience group. Files are added from the selection in Browse."]</MudText>
                 <MudSimpleTable Dense="true" data-testid="buyouts">
                     <thead><tr><th>Rights owner</th><th>Price list</th><th>Basis</th><th>Fee</th><th>Valid</th><th></th></tr></thead>
                     <tbody>
@@ -70,8 +74,12 @@
                                 <td>@buyout.Basis.ToString("N2") @buyout.Currency</td>
                                 <td>@buyout.FeePercentage %</td>
                                 <td>@buyout.ValidFrom – @buyout.ValidUntil</td>
-                                <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete buyout" OnClick="() => RunAsync(() => Api.DeleteBuyoutAsync(licenseId, buyout.Id))" /></td>
+                                <td style="text-align:right"><MudTooltip Text="@L["Delete price"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete buyout" OnClick="() => RunAsync(() => Api.DeleteBuyoutAsync(licenseId, buyout.Id))" /></MudTooltip></td>
                             </tr>
+                        }
+                        @if (_buyouts.Count == 0)
+                        {
+                            <tr><td colspan="6">@L["No prices yet. Add one per rights owner below."]</td></tr>
                         }
                     </tbody>
                 </MudSimpleTable>
@@ -95,7 +103,7 @@
                     <MudItem xs="4" sm="2"><MudNumericField @bind-Value="_buyout.Basis" Label="Basis" Min="0" /></MudItem>
                     <MudItem xs="4" sm="1"><MudTextField @bind-Value="_buyout.Currency" Label="Currency" MaxLength="3" /></MudItem>
                     <MudItem xs="4" sm="1"><MudNumericField @bind-Value="_buyout.Fee" Label="Fee %" Min="0" /></MudItem>
-                    <MudItem xs="12" sm="2"><MudButton Variant="Variant.Outlined" OnClick="() => AddBuyoutAsync(licenseId)" Disabled="_buyout.OwnerId is null || _buyout.PriceListId is null">Add buyout</MudButton></MudItem>
+                    <MudItem xs="12" sm="2"><MudButton Variant="Variant.Outlined" OnClick="() => AddBuyoutAsync(licenseId)" Disabled="_buyout.OwnerId is null || _buyout.PriceListId is null">@L["Add price"]</MudButton></MudItem>
                 </MudGrid>
             }
         </MudPaper>
@@ -112,8 +120,12 @@
                         <td>@owner.Kind</td>
                         <td>@_contacts.FirstOrDefault(c => c.Id == owner.BillingContactId)?.Name</td>
                         <td>@(owner.IsActive ? "yes" : "no")</td>
-                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Owners, owner.Id))" /></td>
+                        <td style="text-align:right"><MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Owners, owner.Id))" /></MudTooltip></td>
                     </tr>
+                }
+                @if (_owners.Count == 0)
+                {
+                    <tr><td colspan="5">@L["No rights owners yet. Add the people or agencies that own the rights to your files."]</td></tr>
                 }
             </tbody>
         </MudSimpleTable>
@@ -140,8 +152,12 @@
                         <td>@contact.Name</td>
                         <td>@contact.Email</td>
                         <td>@contact.Iban</td>
-                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Contacts, contact.Id))" /></td>
+                        <td style="text-align:right"><MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Contacts, contact.Id))" /></MudTooltip></td>
                     </tr>
+                }
+                @if (_contacts.Count == 0)
+                {
+                    <tr><td colspan="4">@L["No billing contacts yet. Start here: rights owners are paid through them."]</td></tr>
                 }
             </tbody>
         </MudSimpleTable>
@@ -162,35 +178,43 @@
                     <tr>
                         <td>@list.Name</td>
                         <td>@string.Join(", ", list.Entries.Select(e => $"{e.ContextKey ?? _groups.FirstOrDefault(g => g.Id == e.GroupId)?.Name} {e.Percentage} %"))</td>
-                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(PriceLists, list.Id))" /></td>
+                        <td style="text-align:right"><MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(PriceLists, list.Id))" /></MudTooltip></td>
                     </tr>
+                }
+                @if (_priceLists.Count == 0)
+                {
+                    <tr><td colspan="3">@L["No price lists yet. A price list sets the percentage of the base price per audience or audience group."]</td></tr>
                 }
             </tbody>
         </MudSimpleTable>
         <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
             <MudTextField @bind-Value="_priceListName" Label="Name" />
-            <MudTextField @bind-Value="_priceListEntries" Label="Percentages (context=120, group name=80; one per line)" Lines="3" />
+            <MudTextField @bind-Value="_priceListEntries" Label="@L["Percentages (audience=120, group name=80; one per line)"]" Lines="3" />
             <MudButton Variant="Variant.Outlined" OnClick="AddPriceListAsync">Add</MudButton>
         </MudStack>
     </MudTabPanel>
 
-    <MudTabPanel Text="Context groups">
+    <MudTabPanel Text="@L["Audience groups"]">
         <MudSimpleTable Dense="true" Hover="true">
-            <thead><tr><th>Name</th><th>Contexts</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>@L["Audiences"]</th><th></th></tr></thead>
             <tbody>
                 @foreach (var group in _groups)
                 {
                     <tr>
                         <td>@group.Name</td>
                         <td>@string.Join(", ", group.ContextKeys)</td>
-                        <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Groups, group.Id))" /></td>
+                        <td style="text-align:right"><MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(Groups, group.Id))" /></MudTooltip></td>
                     </tr>
+                }
+                @if (_groups.Count == 0)
+                {
+                    <tr><td colspan="3">@L["No audience groups yet. They are optional and bundle audiences that share a price."]</td></tr>
                 }
             </tbody>
         </MudSimpleTable>
         <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
             <MudTextField @bind-Value="_groupName" Label="Name" />
-            <MudTextField @bind-Value="_groupContexts" Label="Context keys (comma separated)" />
+            <MudTextField @bind-Value="_groupContexts" Label="@L["Audience keys (comma separated)"]" />
             <MudButton Variant="Variant.Outlined" OnClick="() => RunAsync(() => Api.SaveGroupAsync(null, new ContextGroupRequest(_groupName ?? string.Empty, Split(_groupContexts))))">Add</MudButton>
         </MudStack>
     </MudTabPanel>

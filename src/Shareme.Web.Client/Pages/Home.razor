@@ -12,11 +12,11 @@
         <MudText Class="mt-2">Assets, documents, knowledge and intranet. Sign in to start.</MudText>
     </NotAuthorized>
     <Authorized>
-        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-            <MudText Typo="Typo.h4">Welcome</MudText>
-            <MudSpacer />
-            <MudToggleIconButton @bind-Toggled="_customizing" Icon="@Icons.Material.Outlined.Dashboard" ToggledIcon="@Icons.Material.Filled.Dashboard" aria-label="Customize the start page" data-testid="customize-home" />
-        </MudStack>
+        <PageHeader Title="Welcome" Description="Your start page with news, favorites, recent changes and your tasks. Search for anything here, or open Browse in the menu to work with folders and files.">
+            <MudTooltip Text="@L["Customize the start page"]">
+                <MudToggleIconButton @bind-Toggled="_customizing" Icon="@Icons.Material.Outlined.Dashboard" ToggledIcon="@Icons.Material.Filled.Dashboard" aria-label="Customize the start page" data-testid="customize-home" />
+            </MudTooltip>
+        </PageHeader>
 
         @if (_customizing)
         {
@@ -27,8 +27,8 @@
                         <MudCheckBox T="bool" Value="_widgets.Contains(widget)" ValueChanged="on => Toggle(widget, on)" Label="@Title(widget)" />
                         @if (_widgets.Contains(widget))
                         {
-                            <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Size="Size.Small" aria-label="Move up" OnClick="() => Move(widget, -1)" />
-                            <MudIconButton Icon="@Icons.Material.Outlined.ArrowDownward" Size="Size.Small" aria-label="Move down" OnClick="() => Move(widget, 1)" />
+                            <MudTooltip Text="@L["Move up"]"><MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Size="Size.Small" aria-label="Move up" OnClick="() => Move(widget, -1)" /></MudTooltip>
+                            <MudTooltip Text="@L["Move down"]"><MudIconButton Icon="@Icons.Material.Outlined.ArrowDownward" Size="Size.Small" aria-label="Move down" OnClick="() => Move(widget, 1)" /></MudTooltip>
                         }
                     </MudStack>
                 }
@@ -65,7 +65,7 @@
                                         <MudText Typo="Typo.body2">@news.Teaser</MudText>
                                     </div>
                                 }
-                                @if (_news.Count == 0) { <MudText Typo="Typo.body2">No news.</MudText> }
+                                @if (_news.Count == 0) { <MudText Typo="Typo.body2">@L["No news yet. Editors publish news with New news in a folder in Browse."]</MudText> }
                                 break;
                             case HomeWidgets.Favorites:
                                 <NodeList Nodes="_favorites" Empty="Mark folders, files and pages with the star to find them here." />
@@ -80,7 +80,7 @@
                                 {
                                     <div><MudLink Href="@($"/workspaces/{task.WorkspaceId}")">@task.Title</MudLink> <MudText Typo="Typo.caption" Inline="true">@task.WorkspaceName @task.DueDate</MudText></div>
                                 }
-                                @if (tasks.Count == 0) { <MudText Typo="Typo.body2">@(widget == HomeWidgets.Due ? "Nothing due in the next two weeks." : "No open tasks.")</MudText> }
+                                @if (tasks.Count == 0) { <MudText Typo="Typo.body2">@(widget == HomeWidgets.Due ? "Nothing due in the next two weeks." : L["No open tasks. Tasks come from the boards of your collaboration workspaces."])</MudText> }
                                 break;
                         }
                     </MudPaper>

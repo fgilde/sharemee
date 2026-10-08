@@ -5,12 +5,11 @@
 @using Shareme.Contracts.Assets
 @using Shareme.Web.Client.Assets
 
-<PageTitle>Renditions</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Renditions</MudText>
+<PageHeader Title="Previews & formats" Description="Define the image sizes created from files (previews, web and print versions), their watermarks and how downloads are named." />
 
-<MudText Typo="Typo.h6">Rendition types</MudText>
+<MudText Typo="Typo.h6">@L["Formats"]</MudText>
 <MudSimpleTable Dense="true" Hover="true" data-testid="types">
-    <thead><tr><th>Key</th><th>Name</th><th>Size</th><th>Format</th><th>Mode</th><th>Watermark</th><th>Asset types</th><th></th></tr></thead>
+    <thead><tr><th>Key</th><th>Name</th><th>Size</th><th>Format</th><th>Mode</th><th>Watermark</th><th>@L["File types"]</th><th></th></tr></thead>
     <tbody>
         @foreach (var type in _types)
         {
@@ -23,16 +22,20 @@
                 <td>@_watermarks.FirstOrDefault(w => w.Id == type.WatermarkId)?.Name</td>
                 <td>@(type.AssetTypeKeys.Count == 0 ? "all" : string.Join(", ", type.AssetTypeKeys))</td>
                 <td style="text-align:right">
-                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(type)" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteTypeAsync(type.Id))" />
+                    <MudTooltip Text="@L["Edit"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(type)" /></MudTooltip>
+                    <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteTypeAsync(type.Id))" /></MudTooltip>
                 </td>
             </tr>
+        }
+        @if (_types.Count == 0)
+        {
+            <tr><td colspan="8">@L["No formats yet. Create one below."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>
 
 <MudPaper Outlined="true" Class="pa-4 mt-4">
-    <MudText Typo="Typo.h6">@(_typeId is null ? "New rendition type" : "Edit rendition type")</MudText>
+    <MudText Typo="Typo.h6">@L[_typeId is null ? "New format" : "Edit format"]</MudText>
     <MudGrid>
         <MudItem xs="12" sm="4"><MudTextField @bind-Value="_type.Key" Label="Key" Disabled="_typeId is not null" data-testid="type-key" /></MudItem>
         <MudItem xs="12" sm="8"><MudTextField @bind-Value="_type.Name" Label="Name" data-testid="type-name" /></MudItem>
@@ -55,7 +58,7 @@
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_type.AssetTypes" Label="Asset types (comma separated, empty for all)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_type.AssetTypes" Label="@L["File types (comma separated, empty for all)"]" /></MudItem>
         <MudItem xs="12">
             <MudCheckBox @bind-Value="_type.IsDefault" Label="Render for every new file" data-testid="type-default" />
             <MudCheckBox @bind-Value="_type.IsOnDemand" Label="Render on request" />
@@ -91,10 +94,14 @@
                     </MudFileUpload>
                 </td>
                 <td style="text-align:right">
-                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(watermark)" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteWatermarkAsync(watermark.Id))" />
+                    <MudTooltip Text="@L["Edit"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(watermark)" /></MudTooltip>
+                    <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteWatermarkAsync(watermark.Id))" /></MudTooltip>
                 </td>
             </tr>
+        }
+        @if (_watermarks.Count == 0)
+        {
+            <tr><td colspan="7">@L["No watermarks yet. Create one below, upload its PNG and pick it for a format."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>
@@ -138,10 +145,14 @@
                 <td>@naming.Casing</td>
                 <td>@(naming.IsDefault ? "default" : null)</td>
                 <td style="text-align:right">
-                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => { _namingId = naming.Id; _naming = new NamingForm { Name = naming.Name, Format = naming.Format, Casing = naming.Casing, IsDefault = naming.IsDefault }; }" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Downloads.DeleteNamingAsync(naming.Id))" />
+                    <MudTooltip Text="@L["Edit"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => { _namingId = naming.Id; _naming = new NamingForm { Name = naming.Name, Format = naming.Format, Casing = naming.Casing, IsDefault = naming.IsDefault }; }" /></MudTooltip>
+                    <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Downloads.DeleteNamingAsync(naming.Id))" /></MudTooltip>
                 </td>
             </tr>
+        }
+        @if (_namings.Count == 0)
+        {
+            <tr><td colspan="5">@L["No naming rules yet. Downloads keep their original file names."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>

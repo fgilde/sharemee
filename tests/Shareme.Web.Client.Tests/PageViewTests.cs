@@ -17,6 +17,8 @@ public sealed class PageViewTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Coworkee.Client.Blazor.Localization.ILocalizationApi>());
+        Services.AddScoped<Coworkee.Client.Blazor.Localization.CoworkeeLocalizer>();
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Knowledge.IIntranetApi>());
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
         Services.AddSingleton(_api);

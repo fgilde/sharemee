@@ -21,6 +21,8 @@ public sealed class LicensesTests : BunitContext
         System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Coworkee.Client.Blazor.Localization.ILocalizationApi>());
+        Services.AddScoped<Coworkee.Client.Blazor.Localization.CoworkeeLocalizer>();
         Services.AddSingleton(_api);
         var metadata = Substitute.For<IMetadataApi>();
         metadata.GetContextsAsync(default).ReturnsForAnyArgs([new UserContextDto("dach", "DACH", false)]);

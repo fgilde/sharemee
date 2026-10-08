@@ -16,17 +16,19 @@ else
 {
     <RealtimeSubscription @key="_workspace.Id" Topic="@($"children:{_workspace.Id}")" OnEvent="_ => LoadAsync()" />
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-        <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack" Href="/workspaces" aria-label="Back to workspaces" />
+        <MudTooltip Text="@L["Back to workspaces"]">
+            <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack" Href="/workspaces" aria-label="Back to workspaces" />
+        </MudTooltip>
         <MudIcon Icon="@Workspaces.Icon(_workspace.Kind)" />
         <MudText Typo="Typo.h4" data-testid="workspace-title">@_workspace.Name</MudText>
-        <MudChip T="string" Size="Size.Small">@_workspace.Kind</MudChip>
+        <MudChip T="string" Size="Size.Small">@L[Workspaces.KindName(_workspace.Kind)]</MudChip>
         @if (_workspace.IsTemplate)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Secondary">template</MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Secondary">@L["Template"]</MudChip>
         }
         @if (_workspace.FinalizedAt is { } finalized)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Success">finalised @finalized.ToLocalTime().ToString("d")</MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Success">@L["Finalised"] @finalized.ToLocalTime().ToString("d")</MudChip>
         }
         <MudSpacer />
         <MudTooltip Text="@(_subscribed ? "Stop notifications" : "Notify me about changes")">
@@ -34,7 +36,9 @@ else
         </MudTooltip>
         @if (_workspace is { CanFinalize: true, IsTemplate: false, FinalizedAt: null } && _workspace.Kind != WorkspaceKinds.Collection)
         {
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.TaskAlt" OnClick="FinalizeAsync" data-testid="finalize">Finalise</MudButton>
+            <MudTooltip Text="@L[FinalizeHelp]">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.TaskAlt" OnClick="FinalizeAsync" data-testid="finalize">@L["Finalise"]</MudButton>
+            </MudTooltip>
         }
     </MudStack>
 
@@ -64,21 +68,23 @@ else
                                     }
                                 </td>
                                 <td><MudLink Href="@(item.Node.Semantic switch { "asset" => $"/assets/{item.Node.Id}", "page" => $"/pages/{item.Node.Id}", _ => $"/browse/{item.Node.Id}" })">@item.Node.Name</MudLink></td>
-                                <td>@(item.IsLinked ? "linked" : item.Node.Semantic)</td>
+                                <td>@L[item.IsLinked ? "Linked" : TypeName(item.Node.Semantic)]</td>
                                 <td style="text-align:right">
                                     @if (item.IsLinked)
                                     {
-                                        <MudIconButton Icon="@Icons.Material.Outlined.LinkOff" Size="Size.Small" aria-label="Remove link" OnClick="() => RunAsync(() => Api.UnlinkAsync(_workspace.Id, item.Node.Id))" />
+                                        <MudTooltip Text="@L["Remove from this workspace"]">
+                                            <MudIconButton Icon="@Icons.Material.Outlined.LinkOff" Size="Size.Small" aria-label="Remove link" OnClick="() => RunAsync(() => Api.UnlinkAsync(_workspace.Id, item.Node.Id))" />
+                                        </MudTooltip>
                                     }
                                 </td>
                             </tr>
                         }
+                        @if (_items.Count == 0)
+                        {
+                            <tr><td colspan="4">@L["Nothing here yet. Upload files above, or select files in Browse and choose Add to collection."]</td></tr>
+                        }
                     </tbody>
                 </MudSimpleTable>
-                @if (_items.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Class="mt-2">Nothing here yet.</MudText>
-                }
             </div>
         </MudTabPanel>
         <MudTabPanel Text="Members">
@@ -89,11 +95,13 @@ else
                         {
                             <tr data-member="@member.Email">
                                 <td>@(string.IsNullOrWhiteSpace(member.Name) ? member.Email : $"{member.Name} ({member.Email})")</td>
-                                <td>@member.Role</td>
+                                <td>@L[Workspaces.RoleName(member.Role)]</td>
                                 <td style="text-align:right">
                                     @if (IsOwner)
                                     {
-                                        <MudIconButton Icon="@Icons.Material.Outlined.PersonRemove" Size="Size.Small" aria-label="Remove member" OnClick="() => RunAsync(() => Api.RemoveMemberAsync(_workspace.Id, member.UserId))" />
+                                        <MudTooltip Text="@L["Remove member"]">
+                                            <MudIconButton Icon="@Icons.Material.Outlined.PersonRemove" Size="Size.Small" aria-label="Remove member" OnClick="() => RunAsync(() => Api.RemoveMemberAsync(_workspace.Id, member.UserId))" />
+                                        </MudTooltip>
                                     }
                                 </td>
                             </tr>
@@ -107,7 +115,7 @@ else
                         <MudSelect T="string" @bind-Value="_role" Label="Role" Style="max-width:160px">
                             @foreach (var role in WorkspaceRoles.All)
                             {
-                                <MudSelectItem Value="@role">@role</MudSelectItem>
+                                <MudSelectItem Value="@role">@L[Workspaces.RoleName(role)]</MudSelectItem>
                             }
                         </MudSelect>
                         <MudButton Variant="Variant.Filled" Disabled="_candidate is null" OnClick="AddMemberAsync" data-testid="add-member">Add</MudButton>
@@ -123,13 +131,14 @@ else
         </MudTabPanel>
         @if (IsOwner)
         {
-            <MudTabPanel Text="Settings">
+            <MudTabPanel Text="@L["Settings"]">
                 <div class="pa-4">
                     <MudTextField @bind-Value="_name" Label="Name" />
                     @if (_workspace.Kind != WorkspaceKinds.Collection)
                     {
                         <MudText Typo="Typo.subtitle2" Class="mt-4">Finalise into</MudText>
-                        <MudText Typo="Typo.body2">@(_folderName ?? "No folder chosen")</MudText>
+                        <MudText Typo="Typo.caption" Class="d-block">@L[FinalizeHelp]</MudText>
+                        <MudText Typo="Typo.body2">@(_folderName ?? L["No folder chosen"])</MudText>
                         @if (_rootId is { } root)
                         {
                             <Shareme.Web.Client.Graph.FolderPicker StartId="root" OnPicked="PickFolderAsync" />
@@ -142,7 +151,7 @@ else
         }
         @if (IsOwner && !_workspace.IsTemplate)
         {
-            <MudTabPanel Text="Shares">
+            <MudTabPanel Text="@L["Share links"]">
                 <div class="pa-4"><SharesPanel WorkspaceId="_workspace.Id" /></div>
             </MudTabPanel>
         }

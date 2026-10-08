@@ -71,4 +71,20 @@ public partial class Workspaces
         WorkspaceKinds.Collection => Icons.Material.Outlined.CollectionsBookmark,
         _ => Icons.Material.Outlined.Groups,
     };
+
+    internal static string KindName(string kind) => kind switch
+    {
+        WorkspaceKinds.Upload => "Upload",
+        WorkspaceKinds.Collection => "Collection",
+        _ => "Collaboration",
+    };
+
+    private static string KindHelp(string kind) => kind switch
+    {
+        WorkspaceKinds.Upload => "Members upload files here. Finalise moves them into a folder when the work is done.",
+        WorkspaceKinds.Collection => "Collects links to files that stay where they are, for example a selection for a campaign.",
+        _ => "Upload and collect files together, with a task board and comments.",
+    };
+
+    internal static string RoleName(string role) => role == WorkspaceRoles.Owner ? "Owner" : "Collaborator";
 }

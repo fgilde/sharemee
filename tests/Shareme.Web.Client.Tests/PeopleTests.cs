@@ -16,6 +16,8 @@ public sealed class PeopleTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Coworkee.Client.Blazor.Localization.ILocalizationApi>());
+        Services.AddScoped<Coworkee.Client.Blazor.Localization.CoworkeeLocalizer>();
         Services.AddSingleton(_api);
         AddAuthorization().SetAuthorized("Ada");
         _api.FindAsync(default, default, default, default).ReturnsForAnyArgs([new PersonDto(Guid.CreateVersion7(), "Grace Hopper", "grace@acme.test", "Research", "Rear admiral", null, "Arlington", null, false)]);

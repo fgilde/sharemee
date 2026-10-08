@@ -6,12 +6,11 @@
 @using Shareme.Web.Client.Drm
 @using Shareme.Web.Client.Metadata
 
-<PageTitle>Licenses</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Licenses</MudText>
+<PageHeader Title="License shop" Description="Buy the rights to use files. Choose whom the license is for under License for, then pick an offer and buy it." />
 
 <MudStack Row="true" AlignItems="AlignItems.End" Class="mb-4">
     <MudTextField @bind-Value="_term" Label="Search" Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => SearchAsync()" Style="max-width:260px" />
-    <MudSelect T="string" Value="_target" ValueChanged="TargetChanged" Label="For" Style="max-width:240px" data-testid="offer-target">
+    <MudSelect T="string" Value="_target" ValueChanged="TargetChanged" Label="@L["License for"]" Style="max-width:240px" data-testid="offer-target">
         @foreach (var context in _contexts)
         {
             <MudSelectItem Value="@("c:" + context.Key)">@context.Name</MudSelectItem>
@@ -48,5 +47,9 @@
                 </MudCardActions>
             </MudCard>
         </MudItem>
+    }
+    @if (_offers.Count == 0)
+    {
+        <MudItem xs="12"><MudText Typo="Typo.body2">@L["No offers match. Clear the search or the rights, or ask your license managers to publish licenses."]</MudText></MudItem>
     }
 </MudGrid>

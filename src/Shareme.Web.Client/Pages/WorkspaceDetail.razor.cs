@@ -129,4 +129,15 @@ public partial class WorkspaceDetail
             Snackbar.Add(exception.Status == 403 ? "You do not have permission for this." : exception.Message, Severity.Warning);
         }
     }
+
+    private const string FinalizeHelp = "Finalise moves the files into the folder chosen under Settings when the work is done. After that, nothing more can be uploaded here.";
+
+    private static string TypeName(string semantic) => semantic switch
+    {
+        "asset" => "File",
+        "folder" => "Folder",
+        "page" => "Page",
+        "news" => "News",
+        _ => semantic,
+    };
 }

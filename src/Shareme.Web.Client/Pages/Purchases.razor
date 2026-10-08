@@ -4,8 +4,7 @@
 @using Shareme.Contracts.Drm
 @using Shareme.Web.Client.Drm
 
-<PageTitle>Purchases</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Purchases</MudText>
+<PageHeader Title="My purchases" Description="Licenses you have bought, with the period they are valid and how many files they cover. Buy more in the License shop." />
 
 <MudSimpleTable Dense="true" Hover="true" data-testid="purchases">
     <thead><tr><th>Order</th><th>License</th><th>For</th><th>From</th><th>Until</th><th>Files</th><th>Price</th></tr></thead>
@@ -21,6 +20,10 @@
                 <td>@purchase.AssetIds.Count</td>
                 <td>@Licenses.Format(purchase.Prices)</td>
             </tr>
+        }
+        @if (_purchases.Count == 0)
+        {
+            <tr><td colspan="7">@L["No purchases yet. Licenses you buy in the License shop show up here."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>

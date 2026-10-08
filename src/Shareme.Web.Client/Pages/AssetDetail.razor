@@ -32,7 +32,7 @@ else
         }
         @if (CanView)
         {
-            <MudToggleIconButton @bind-Toggled="_showOriginal" Icon="@Icons.Material.Outlined.Preview" ToggledIcon="@Icons.Material.Filled.Preview" title="Show the original" data-testid="show-original" />
+            <MudToggleIconButton @bind-Toggled="_showOriginal" Icon="@Icons.Material.Outlined.Preview" ToggledIcon="@Icons.Material.Filled.Preview" title="@L["Show the original"]" data-testid="show-original" />
         }
         @if (_asset is { CurrentVersion: not null, CanDownload: true })
         {
@@ -116,10 +116,10 @@ else
                 }
             </div>
         </MudTabPanel>
-        <MudTabPanel Text="Renditions">
+        <MudTabPanel Text="@L["Formats"]">
             <div class="pa-4">
                 <MudSimpleTable Dense="true" Hover="true" data-testid="renditions">
-                    <thead><tr><th>Rendition</th><th>State</th><th>Size</th><th></th></tr></thead>
+                    <thead><tr><th>@L["Format"]</th><th>State</th><th>Size</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var (kind, name, type) in RenditionRows)
                         {
@@ -131,7 +131,7 @@ else
                                 <td style="text-align:right">
                                     @if (derivation is { State: DerivationStates.Ready })
                                     {
-                                        <MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.DownloadDerivation(_asset.Id, kind)" aria-label="Download rendition" />
+                                        <MudTooltip Text="@L["Download this format"]"><MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.DownloadDerivation(_asset.Id, kind)" aria-label="Download rendition" /></MudTooltip>
                                     }
                                     else if (type is { IsOnDemand: true } && _asset.CanDownload && derivation?.State is not (DerivationStates.Pending or DerivationStates.NotSupported))
                                     {
@@ -141,7 +141,7 @@ else
                                     {
                                         <MudFileUpload T="IBrowserFile" Accept=".png,.jpg,.jpeg,.webp" FilesChanged="file => UploadRenditionAsync(kind, file)">
                                             <CustomContent>
-                                                <MudIconButton Icon="@Icons.Material.Outlined.Upload" Size="Size.Small" aria-label="Upload rendition" OnClick="context.OpenFilePickerAsync" />
+                                                <MudTooltip Text="@L["Upload your own version of this format"]"><MudIconButton Icon="@Icons.Material.Outlined.Upload" Size="Size.Small" aria-label="Upload rendition" OnClick="context.OpenFilePickerAsync" /></MudTooltip>
                                             </CustomContent>
                                         </MudFileUpload>
                                     }
@@ -164,7 +164,7 @@ else
                                 <td>@version.FileName</td>
                                 <td>@FormatSize(version.Size)</td>
                                 <td>@version.CreatedAt.ToLocalTime().ToString("g")</td>
-                                <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.Download(_asset.Id, version.Number)" aria-label="Download version" /></td>
+                                <td style="text-align:right"><MudTooltip Text="@L["Download version"]"><MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@AssetUrls.Download(_asset.Id, version.Number)" aria-label="Download version" /></MudTooltip></td>
                             </tr>
                         }
                     </tbody>
@@ -176,7 +176,7 @@ else
             <div class="pa-4">
                 @if (_edges.Count == 0)
                 {
-                    <MudText Typo="Typo.body2">No relations.</MudText>
+                    <MudText Typo="Typo.body2">@L["Not linked to other items."]</MudText>
                 }
                 @foreach (var edge in _edges)
                 {
@@ -184,7 +184,7 @@ else
                     <MudStack Row="true" AlignItems="AlignItems.Center" data-edge="@edge.Type">
                         <MudChip T="string" Size="Size.Small">@edge.Type</MudChip>
                         <MudLink Href="@($"/browse/{other.Item1}")">@other.Item2</MudLink>
-                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove relation" OnClick="() => RunAsync(() => Api.DeleteEdgeAsync(edge.Id))" />
+                        <MudTooltip Text="@L["Remove relation"]"><MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove relation" OnClick="() => RunAsync(() => Api.DeleteEdgeAsync(edge.Id))" /></MudTooltip>
                     </MudStack>
                 }
             </div>

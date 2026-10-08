@@ -4,19 +4,18 @@
 @using Shareme.Contracts.Automation
 @using Shareme.Web.Client.Metadata
 
-<PageTitle>My runs</PageTitle>
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">My runs</MudText>
-    <MudSpacer />
-    <MudIconButton Icon="@Icons.Material.Outlined.Refresh" aria-label="Refresh" OnClick="LoadAsync" />
+<PageHeader Title="My background tasks" Description="Mass edits, imports, AI tagging and rule runs you started. They run in the background; open a report to see what was changed.">
+    <MudTooltip Text="@L["Refresh"]">
+        <MudIconButton Icon="@Icons.Material.Outlined.Refresh" aria-label="Refresh" OnClick="LoadAsync" />
+    </MudTooltip>
     @if (_overview?.DashboardUrl is { } dashboard)
     {
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Schedule" Href="@dashboard" Target="_blank" data-testid="hangfire">Background jobs</MudButton>
     }
-</MudStack>
+</PageHeader>
 
 <MudSimpleTable Dense="true" Hover="true" data-testid="runs">
-    <thead><tr><th>Started</th><th>Kind</th><th>State</th><th>Total</th><th>Done</th><th>Failed</th><th></th></tr></thead>
+    <thead><tr><th>Started</th><th>@L["Task"]</th><th>State</th><th>Total</th><th>Done</th><th>Failed</th><th></th></tr></thead>
     <tbody>
         @foreach (var run in _overview?.Runs ?? [])
         {
@@ -29,6 +28,10 @@
                 <td>@run.Failed</td>
                 <td style="text-align:right"><MudLink Href="@run.Link">Report</MudLink></td>
             </tr>
+        }
+        @if (_overview is { Runs.Count: 0 })
+        {
+            <tr><td colspan="7">@L["No background tasks yet. They appear when you edit the metadata of many files, import a file or start AI tagging in Browse."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>

@@ -4,7 +4,7 @@
 @using Shareme.Contracts.Knowledge
 @using Shareme.Web.Client.Knowledge
 
-<PageTitle>Find</PageTitle>
+<PageHeader Title="Quick search" Description="Find files, pages, news and people in one go. For filters, sorting and saved searches use File search." />
 <MudTextField T="string" @bind-Value="_term" Placeholder="Search files, pages, news and people" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
               OnKeyDown="KeyAsync" Immediate="true" Class="mb-4" data-testid="find-term" />
 
@@ -13,10 +13,10 @@
     <MudGrid>
         <MudItem xs="12" md="8">
             <MudText Typo="Typo.h6">Content (@result.NodeTotal)</MudText>
-            <NodeList Nodes="result.Nodes" Empty="Nothing found." />
+            <NodeList Nodes="result.Nodes" Empty="@L["Nothing found. Try another or a shorter word."]" />
             @if (result.NodeTotal > result.Nodes.Count)
             {
-                <MudButton Size="Size.Small" Href="@($"/search?q={Uri.EscapeDataString(Term ?? string.Empty)}")">All results with filters</MudButton>
+                <MudButton Size="Size.Small" Href="@($"/search?q={Uri.EscapeDataString(Term ?? string.Empty)}")">@L["All results in File search"]</MudButton>
             }
         </MudItem>
         <MudItem xs="12" md="4">
@@ -29,7 +29,7 @@
                     @if (IPeopleApi.MailTo(person.Email) is { } mail) { <MudLink Href="@mail" Typo="Typo.caption">@person.Email</MudLink> }
                 </div>
             }
-            @if (result.People.Count == 0) { <MudText Typo="Typo.body2">Nobody found.</MudText> }
+            @if (result.People.Count == 0) { <MudText Typo="Typo.body2">@L["Nobody found. Try a name, department or place."]</MudText> }
         </MudItem>
     </MudGrid>
 }

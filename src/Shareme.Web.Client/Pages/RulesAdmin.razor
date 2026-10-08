@@ -4,11 +4,11 @@
 @using Shareme.Contracts.Automation
 @using Shareme.Web.Client.Metadata
 
-<PageTitle>Rules</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Rules</MudText>
+<PageHeader Title="Rules" Description="Rules fill in properties automatically when files and folders are created or changed, for example a status or a year." />
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Create the properties under Metadata. 2. For values found by AI, set up AI tagging. 3. Create a rule below and try it with Dry run. 4. Run it on existing content at the bottom of this page."]</MudAlert>
 
 <MudSimpleTable Dense="true" Hover="true" data-testid="rules">
-    <thead><tr><th>Name</th><th>Active</th><th>Node types</th><th>Conditions</th><th>Writes</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Active</th><th>@L["Item types"]</th><th>Conditions</th><th>Writes</th><th></th></tr></thead>
     <tbody>
         @foreach (var rule in _rules)
         {
@@ -19,10 +19,14 @@
                 <td>@string.Join("; ", rule.Conditions.Select(c => $"{c.Kind}: {c.PropertyKey} {c.Operator} {c.Value}".Trim()))</td>
                 <td>@string.Join(", ", rule.Actions.Select(a => a.PropertyKey).Distinct())</td>
                 <td style="text-align:right">
-                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(rule)" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(rule.Id))" />
+                    <MudTooltip Text="@L["Edit"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(rule)" /></MudTooltip>
+                    <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(rule.Id))" /></MudTooltip>
                 </td>
             </tr>
+        }
+        @if (_rules.Count == 0)
+        {
+            <tr><td colspan="6">@L["No rules yet. Create the first one below."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>
@@ -31,7 +35,7 @@
     <MudText Typo="Typo.h6">@(_ruleId is null ? "New rule" : "Edit rule")</MudText>
     <MudGrid>
         <MudItem xs="12" sm="5"><MudTextField @bind-Value="_name" Label="Name" data-testid="rule-name" /></MudItem>
-        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_nodeTypes" Label="Node types (comma separated, empty for all)" /></MudItem>
+        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_nodeTypes" Label="@L["Item types (keys from Item types, comma separated, empty for all)"]" /></MudItem>
         <MudItem xs="6" sm="1"><MudNumericField @bind-Value="_sortIndex" Label="Order" /></MudItem>
         <MudItem xs="6" sm="1"><MudCheckBox @bind-Value="_isActive" Label="Active" /></MudItem>
     </MudGrid>
@@ -54,7 +58,7 @@
             </MudSelect>
             <MudTextField @bind-Value="condition.Value" Label="@(condition.Operator == RuleOperators.HasRelation ? "Relation type key" : "Value")"
                           Disabled="!RuleOperators.WithValue.Contains(condition.Operator) && condition.Operator != RuleOperators.HasRelation" />
-            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove condition" OnClick="() => _conditions.Remove(condition)" />
+            <MudTooltip Text="@L["Remove condition"]"><MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove condition" OnClick="() => _conditions.Remove(condition)" /></MudTooltip>
         </MudStack>
     }
     <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Add" OnClick="() => _conditions.Add(new())" data-testid="add-condition">Condition</MudButton>
@@ -78,7 +82,7 @@
             <MudTextField @bind-Value="action.PropertyKey" Label="Property key" Style="max-width:220px" Disabled="action.ExtractionId is not null" />
             <MudTextField @bind-Value="action.Template" Label="Template" Disabled="action.ExtractionId is not null" />
             <MudCheckBox @bind-Value="action.OnlyIfEmpty" Label="only if empty" />
-            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove action" OnClick="() => _actions.Remove(action)" />
+            <MudTooltip Text="@L["Remove action"]"><MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove action" OnClick="() => _actions.Remove(action)" /></MudTooltip>
         </MudStack>
     }
     <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Add" OnClick="() => _actions.Add(new())" data-testid="add-action">Action</MudButton>
@@ -94,8 +98,8 @@
     @if (_ruleId is { } ruleId)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-4">
-            <MudTextField @bind-Value="_testNode" Label="Try on node (id)" data-testid="test-node" />
-            <MudButton Variant="Variant.Outlined" OnClick="() => TestAsync(ruleId)" data-testid="test-rule">Dry run</MudButton>
+            <MudTextField @bind-Value="_testNode" Label="@L["Try on an item (its id from the address bar)"]" data-testid="test-node" />
+            <MudButton Variant="Variant.Outlined" OnClick="() => TestAsync(ruleId)" data-testid="test-rule">@L["Dry run"]</MudButton>
         </MudStack>
         @if (_test is { } test)
         {
@@ -115,13 +119,13 @@
 </MudPaper>
 
 <MudText Typo="Typo.h6" Class="mt-6">Run rules on existing content</MudText>
-<MudText Typo="Typo.body2" Class="mb-2">Rules whose triggers only react to changes, new versions or new nodes run live only. The first version of a file counts as a new version and a new node.</MudText>
+<MudText Typo="Typo.body2" Class="mb-2">@L["Rules whose triggers only react to changes, new versions or new items run live only. The first version of a file counts as a new version and a new item."]</MudText>
 <MudStack Row="true" AlignItems="AlignItems.Center">
-    <MudTextField @bind-Value="_jobFolder" Label="Folder (id), everything below it" data-testid="job-folder" />
+    <MudTextField @bind-Value="_jobFolder" Label="@L["Folder id (from the address bar), everything below it"]" data-testid="job-folder" />
     <MudButton Variant="Variant.Outlined" OnClick="StartJobAsync" data-testid="start-job">Run active rules</MudButton>
 </MudStack>
 <MudSimpleTable Dense="true" Hover="true" Class="mt-2" data-testid="jobs">
-    <thead><tr><th>Started</th><th>State</th><th>Nodes</th><th>Matched</th><th>Written</th><th>Skipped</th><th>Failed</th><th></th></tr></thead>
+    <thead><tr><th>Started</th><th>State</th><th>@L["Items"]</th><th>Matched</th><th>Written</th><th>Skipped</th><th>Failed</th><th></th></tr></thead>
     <tbody>
         @foreach (var job in _jobs)
         {
@@ -135,6 +139,10 @@
                 <td>@job.Failed</td>
                 <td style="text-align:right"><MudButton Size="Size.Small" OnClick="() => ReportAsync(job.Id)">Report</MudButton></td>
             </tr>
+        }
+        @if (_jobs.Count == 0)
+        {
+            <tr><td colspan="8">@L["No runs yet."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>

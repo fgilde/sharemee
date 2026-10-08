@@ -5,14 +5,13 @@
 @using Shareme.Contracts.Knowledge
 @using Shareme.Web.Client.Knowledge
 
-<PageTitle>People</PageTitle>
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">People</MudText>
-    <MudSpacer />
+<PageHeader Title="People" Description="Find colleagues by name, department or place. Use the profile button to fill in your own profile and picture.">
     <MudTextField T="string" @bind-Value="_search" Placeholder="Name, department, place" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                   Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadAsync()" Style="max-width:300px" data-testid="people-search" />
-    <MudToggleIconButton @bind-Toggled="_editing" Icon="@Icons.Material.Outlined.ManageAccounts" ToggledIcon="@Icons.Material.Filled.ManageAccounts" aria-label="My profile" data-testid="edit-profile" />
-</MudStack>
+    <MudTooltip Text="@L["Edit my profile"]">
+        <MudToggleIconButton @bind-Toggled="_editing" Icon="@Icons.Material.Outlined.ManageAccounts" ToggledIcon="@Icons.Material.Filled.ManageAccounts" aria-label="My profile" data-testid="edit-profile" />
+    </MudTooltip>
+</PageHeader>
 
 @if (_editing)
 {
@@ -66,6 +65,10 @@
                 </MudCardContent>
             </MudCard>
         </MudItem>
+    }
+    @if (_people.Count == 0)
+    {
+        <MudItem xs="12"><MudText Typo="Typo.body2">@L["Nobody found. Try another name, department or place."]</MudText></MudItem>
     }
 </MudGrid>
 @if (_people.Count > 0 && _people.Count % 50 == 0)

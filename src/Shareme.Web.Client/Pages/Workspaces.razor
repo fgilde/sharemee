@@ -4,8 +4,7 @@
 @using Shareme.Contracts.Workspaces
 @using Shareme.Web.Client.Workspaces
 
-<PageTitle>Workspaces</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Workspaces</MudText>
+<PageHeader Title="Workspaces" Description="Shared spaces to upload, collect and work on files together. Create one below, add members, and finalise it into a folder when the work is done." />
 
 <MudTabs Elevation="0" Outlined="true" ActivePanelIndexChanged="TabAsync">
     <MudTabPanel Text="My workspaces" />
@@ -25,14 +24,14 @@
                         <MudText Typo="Typo.h6">@workspace.Name</MudText>
                     </MudStack>
                     <MudStack Row="true" Class="mt-2" Spacing="1">
-                        <MudChip T="string" Size="Size.Small">@workspace.Kind</MudChip>
+                        <MudChip T="string" Size="Size.Small">@L[KindName(workspace.Kind)]</MudChip>
                         @if (workspace.MyRole is { } role)
                         {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@role</MudChip>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@L[RoleName(role)]</MudChip>
                         }
                         @if (workspace.FinalizedAt is not null)
                         {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Success">finalised</MudChip>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">@L["Finalised"]</MudChip>
                         }
                     </MudStack>
                     <MudText Typo="Typo.caption">@workspace.ItemCount items · @workspace.CreatedAt.ToLocalTime().ToString("d")</MudText>
@@ -42,7 +41,7 @@
     }
     @if (_workspaces.Count == 0)
     {
-        <MudItem xs="12"><MudText Typo="Typo.body2">@(_templates ? "No templates yet." : "You are not a member of any workspace yet.")</MudText></MudItem>
+        <MudItem xs="12"><MudText Typo="Typo.body2">@(_templates ? L["No templates yet. Create one below; new workspaces can then start from it."] : L["You are not a member of any workspace yet. Ask a colleague to add you, or create a new one below."])</MudText></MudItem>
     }
 </MudGrid>
 
@@ -62,10 +61,10 @@
             }
             @if (_templateId is null)
             {
-                <MudSelect T="string" @bind-Value="_kind" Label="Kind" Style="min-width:180px">
+                <MudSelect T="string" @bind-Value="_kind" Label="@L["Kind"]" HelperText="@L[KindHelp(_kind)]" Style="min-width:260px;max-width:360px">
                     @foreach (var kind in WorkspaceKinds.All)
                     {
-                        <MudSelectItem Value="@kind">@kind</MudSelectItem>
+                        <MudSelectItem Value="@kind">@L[KindName(kind)]</MudSelectItem>
                     }
                 </MudSelect>
             }

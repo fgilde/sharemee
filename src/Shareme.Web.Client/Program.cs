@@ -45,6 +45,7 @@ builder.Services.AddHttpClient<Shareme.Web.Client.Assets.IRenditionsApi, Shareme
 builder.Services.AddHttpClient<Shareme.Web.Client.Search.ISearchApi, Shareme.Web.Client.Search.SearchApi>(client => client.BaseAddress = baseAddress);
 builder.Services.AddScoped<UploadQueue>();
 builder.Services.AddSingleton<INavigationContributor, SharemeNavigation>();
+builder.Services.Configure<Coworkee.Client.Blazor.Navigation.NavigationMenuOptions>(SharemeNavigation.Order);
 var host = builder.Build();
 await host.Services.InitializeCoworkeeClientAsync();
 await host.RunAsync();

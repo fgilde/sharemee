@@ -5,6 +5,7 @@ using Coworkee.Core.Modularity;
 using Coworkee.Mailing;
 using Coworkee.Notifications;
 using Coworkee.Theming;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Shareme.Infrastructure;
 
@@ -15,5 +16,6 @@ public sealed class ShareMeDatabaseModule : CoworkeeModule
     {
         context.Services.AddMessagingFromAssembly(typeof(ShareMeDatabaseModule).Assembly);
         context.Services.AddAssistantTools();
+        context.Services.AddSingleton<Coworkee.Localization.Resources.ILocalizationResourceContributor, Localization.SharemeTexts>();
     }
 }

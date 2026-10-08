@@ -11,7 +11,9 @@
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
         @if (item.ParentId is { } parent)
         {
-            <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Href="@($"/browse/{parent}")" aria-label="Up to the folder" />
+            <MudTooltip Text="@L["Up to the folder"]">
+                <MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Href="@($"/browse/{parent}")" aria-label="Up to the folder" />
+            </MudTooltip>
         }
         <MudText Typo="Typo.h4" data-testid="news-title">@item.Title</MudText>
         @if (item.Pinned)

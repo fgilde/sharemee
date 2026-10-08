@@ -18,6 +18,8 @@ public sealed class MetadataEditorTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Coworkee.Client.Blazor.Localization.ILocalizationApi>());
+        Services.AddScoped<Coworkee.Client.Blazor.Localization.CoworkeeLocalizer>();
         Services.AddSingleton(_api);
         _api.GetDefinitionsAsync("folder", Arg.Any<CancellationToken>()).Returns(
         [

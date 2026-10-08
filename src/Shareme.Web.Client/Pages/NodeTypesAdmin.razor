@@ -3,11 +3,10 @@
 @using Coworkee.Client.Blazor.Api
 @using Shareme.Contracts.Graph
 
-<PageTitle>Node types</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">Node types</MudText>
+<PageHeader Title="Item types" Description="The kinds of items content can be: folders, files, pages and your own types. Properties, rules, formats and AI tagging can be limited to certain types." />
 
 <MudSimpleTable Dense="true" Hover="true">
-    <thead><tr><th>Key</th><th>Name</th><th>Kind</th><th>Icon</th><th></th></tr></thead>
+    <thead><tr><th>Key</th><th>Name</th><th>@L["Based on"]</th><th>Icon</th><th></th></tr></thead>
     <tbody>
         @foreach (var type in _types)
         {
@@ -16,8 +15,12 @@
                 <td>@type.Name</td>
                 <td>@type.Semantic</td>
                 <td>@type.Icon</td>
-                <td>@(type.IsSystem ? "system" : null)</td>
+                <td>@(type.IsSystem ? L["built in"] : null)</td>
             </tr>
+        }
+        @if (_types.Count == 0)
+        {
+            <tr><td colspan="5">@L["No item types yet. Create your own type below."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>

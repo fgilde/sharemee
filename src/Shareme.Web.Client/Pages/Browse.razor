@@ -11,10 +11,10 @@
 
 @if (_entryPoints is not null)
 {
-    <MudText Typo="Typo.h4" Class="mb-4">Browse</MudText>
+    <PageHeader Title="Browse" Description="Your folders and files. Open a folder to upload files into it, or to create subfolders, pages and news." />
     @if (_entryPoints.Count == 0)
     {
-        <MudText>You do not have access to any folder yet.</MudText>
+        <MudText>@L["You do not have access to any folder yet. Ask an administrator to give you access to a folder."]</MudText>
     }
     @foreach (var entry in _entryPoints)
     {
@@ -33,29 +33,42 @@ else if (_detail is not null)
         <MudText Typo="Typo.h4">@_detail.Node.Name</MudText>
         <MudSpacer />
         <Shareme.Web.Client.Knowledge.FavoriteButton NodeId="_detail.Node.Id" />
-        <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch" Href="@($"/search?folder={_detail.Node.Id}")" aria-label="Search in this folder" data-testid="search-here" />
-        <MudIconButton Icon="@Icons.Material.Outlined.FolderZip" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(FolderId: _detail.Node.Id))" aria-label="Download this folder as zip" data-testid="download-folder" />
-        <MudIconButton Icon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(FolderId: _detail.Node.Id, Title: _detail.Node.Name))" aria-label="Contact sheet of this folder" data-testid="contact-sheet-folder" />
-        <MudIconButton Icon="@Icons.Material.Outlined.TableView" OnClick="() => ExportAsync(new Shareme.Contracts.Automation.ExportRequest(FolderId: _detail.Node.Id), _detail.Node.Name)" aria-label="Export the metadata of this folder" data-testid="export-folder" />
-        <MudMenu Icon="@Icons.Material.Outlined.UploadFile" AriaLabel="Import metadata" data-testid="import-menu">
-            <MudMenuItem OnClick="() => _importDryRun = true">Dry run with a file…</MudMenuItem>
-            <MudMenuItem OnClick="() => _importDryRun = false">Import a file…</MudMenuItem>
-        </MudMenu>
+        <MudTooltip Text="@L["Search in this folder"]">
+            <MudIconButton Icon="@Icons.Material.Outlined.ManageSearch" Href="@($"/search?folder={_detail.Node.Id}")" aria-label="Search in this folder" data-testid="search-here" />
+        </MudTooltip>
+        <MudTooltip Text="@L["Download this folder as zip"]">
+            <MudIconButton Icon="@Icons.Material.Outlined.FolderZip" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(FolderId: _detail.Node.Id))" aria-label="Download this folder as zip" data-testid="download-folder" />
+        </MudTooltip>
+        <MudTooltip Text="@L["Contact sheet (PDF) of this folder"]">
+            <MudIconButton Icon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(FolderId: _detail.Node.Id, Title: _detail.Node.Name))" aria-label="Contact sheet of this folder" data-testid="contact-sheet-folder" />
+        </MudTooltip>
+        <MudTooltip Text="@L["Export the metadata of this folder to Excel"]">
+            <MudIconButton Icon="@Icons.Material.Outlined.TableView" OnClick="() => ExportAsync(new Shareme.Contracts.Automation.ExportRequest(FolderId: _detail.Node.Id), _detail.Node.Name)" aria-label="Export the metadata of this folder" data-testid="export-folder" />
+        </MudTooltip>
+        <MudTooltip Text="@L["Import metadata from Excel or CSV"]">
+            <MudMenu Icon="@Icons.Material.Outlined.UploadFile" AriaLabel="Import metadata" data-testid="import-menu">
+                <MudMenuItem OnClick="() => _importDryRun = true">@L["Check a file first (changes nothing)…"]</MudMenuItem>
+                <MudMenuItem OnClick="() => _importDryRun = false">Import a file…</MudMenuItem>
+            </MudMenu>
+        </MudTooltip>
         <MudTooltip Text="@(_detail.IsSubscribed ? "Stop notifications" : "Notify me about changes")">
             <MudIconButton Icon="@(_detail.IsSubscribed ? Icons.Material.Filled.NotificationsActive : Icons.Material.Outlined.NotificationsNone)"
                            OnClick="ToggleSubscriptionAsync" aria-label="Notifications for this folder" data-testid="subscribe" />
         </MudTooltip>
     </MudStack>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">@L["Drop files on the upload area to add them here. Type a name under New folder to create a folder, page or news. Tick items to move, download, tag or license them."]</MudText>
 
     <MudStack Row="true" AlignItems="AlignItems.End" Class="mb-2">
-        <MudTextField T="string" @bind-Value="_newName" Label="New folder" Immediate="true" data-testid="new-folder-name" Style="max-width:320px" />
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateFolderAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-folder">Create</MudButton>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Article" OnClick="CreatePageAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-page">New page</MudButton>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Newspaper" OnClick="CreateNewsAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-news">New news</MudButton>
+        <MudTextField T="string" @bind-Value="_newName" Label="@L["New folder"]" Immediate="true" data-testid="new-folder-name" Style="max-width:320px" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateFolderAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-folder">@L["Create"]</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Article" OnClick="CreatePageAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-page">@L["New page"]</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Newspaper" OnClick="CreateNewsAsync" Disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="create-news">@L["New news"]</MudButton>
         <MudSpacer />
         <MudTextField T="string" @bind-Value="_search" Placeholder="Filter" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadChildrenAsync()" Style="max-width:240px" />
-        <MudToggleIconButton @bind-Toggled="_gallery" Icon="@Icons.Material.Outlined.GridView" ToggledIcon="@Icons.Material.Outlined.ViewList" aria-label="Toggle gallery" data-testid="toggle-gallery" />
+        <MudTooltip Text="@L["Switch between list and gallery"]">
+            <MudToggleIconButton @bind-Toggled="_gallery" Icon="@Icons.Material.Outlined.GridView" ToggledIcon="@Icons.Material.Outlined.ViewList" aria-label="Toggle gallery" data-testid="toggle-gallery" />
+        </MudTooltip>
     </MudStack>
 
     <div class="mb-4"><UploadPanel FolderId="_detail.Node.Id" /></div>
@@ -84,13 +97,13 @@ else if (_detail is not null)
             <MudText Typo="Typo.body2">@_selected.Count selected</MudText>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.DriveFileMove" OnClick="() => _moving = _children.Where(c => _selected.Contains(c.Id)).ToList()">Move</MudButton>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" OnClick="() => DownloadAsync(new Shareme.Contracts.Assets.DownloadPackageRequest(SelectedAssets))" Disabled="SelectedAssets.Count == 0" data-testid="download-selected">Download</MudButton>
-            <MudMenu Size="Size.Small" Label="Add to license" StartIcon="@Icons.Material.Outlined.Gavel" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadLicensesAsync() : Task.CompletedTask" data-testid="add-to-license">
+            <MudMenu Size="Size.Small" Label="@L["Add to license"]" StartIcon="@Icons.Material.Outlined.Gavel" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadLicensesAsync() : Task.CompletedTask" data-testid="add-to-license">
                 @foreach (var license in _licenses)
                 {
                     <MudMenuItem OnClick="() => AddToLicenseAsync(license.Id)">@license.Name</MudMenuItem>
                 }
             </MudMenu>
-            <MudMenu Size="Size.Small" Label="Add to collection" StartIcon="@Icons.Material.Outlined.CollectionsBookmark" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadCollectionsAsync() : Task.CompletedTask" data-testid="add-to-collection">
+            <MudMenu Size="Size.Small" Label="@L["Add to collection"]" StartIcon="@Icons.Material.Outlined.CollectionsBookmark" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadCollectionsAsync() : Task.CompletedTask" data-testid="add-to-collection">
                 @foreach (var collection in _collections)
                 {
                     <MudMenuItem OnClick="() => LinkAsync(collection.Id)">@collection.Name</MudMenuItem>
@@ -102,7 +115,7 @@ else if (_detail is not null)
             </MudMenu>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.PictureAsPdf" OnClick="() => ContactSheetAsync(new Shareme.Contracts.Assets.ContactSheetRequest(SelectedAssets, Title: _detail.Node.Name))" Disabled="SelectedAssets.Count == 0" data-testid="contact-sheet-selected">Contact sheet</MudButton>
             <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.EditNote" OnClick="() => _massEdit = !_massEdit" data-testid="edit-selected">Edit metadata</MudButton>
-            <MudMenu Size="Size.Small" Label="AI tagging" StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadExtractionsAsync() : Task.CompletedTask" data-testid="ai-tagging">
+            <MudMenu Size="Size.Small" Label="@L["AI tagging"]" StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="SelectedAssets.Count == 0" Variant="Variant.Text" OpenChanged="open => open ? LoadExtractionsAsync() : Task.CompletedTask" data-testid="ai-tagging">
                 @foreach (var extraction in _extractions)
                 {
                     <MudMenuItem OnClick="() => ExtractAsync(extraction.Id)">@extraction.Name</MudMenuItem>
@@ -177,9 +190,9 @@ else if (_detail is not null)
                     <td>@child.Type</td>
                     <td>@child.CreatedAt.ToLocalTime().ToString("g")</td>
                     <td style="text-align:right;white-space:nowrap">
-                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Rename" OnClick="() => StartRename(child)" data-testid="@($"rename-{child.Id}")" />
-                        <MudIconButton Icon="@Icons.Material.Outlined.DriveFileMove" Size="Size.Small" aria-label="Move" OnClick="() => _moving = [child]" data-testid="@($"move-{child.Id}")" />
-                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => DeleteAsync(child)" data-testid="@($"delete-{child.Id}")" />
+                        <MudTooltip Text="@L["Rename"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Rename" OnClick="() => StartRename(child)" data-testid="@($"rename-{child.Id}")" /></MudTooltip>
+                        <MudTooltip Text="@L["Move"]"><MudIconButton Icon="@Icons.Material.Outlined.DriveFileMove" Size="Size.Small" aria-label="Move" OnClick="() => _moving = [child]" data-testid="@($"move-{child.Id}")" /></MudTooltip>
+                        <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => DeleteAsync(child)" data-testid="@($"delete-{child.Id}")" /></MudTooltip>
                     </td>
                 </tr>
             }
@@ -188,7 +201,7 @@ else if (_detail is not null)
     }
     @if (_children.Count == 0)
     {
-        <MudText Typo="Typo.body2" Class="mt-2">This folder is empty.</MudText>
+        <MudText Typo="Typo.body2" Class="mt-2">@L["This folder is empty. Drop files on the upload area above, or type a name under New folder and choose Create, New page or New news."]</MudText>
     }
 
     @if (_moving is not null)

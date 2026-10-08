@@ -26,6 +26,8 @@ public sealed class AssetDetailTests : BunitContext
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
+        Services.AddSingleton(NSubstitute.Substitute.For<Coworkee.Client.Blazor.Localization.ILocalizationApi>());
+        Services.AddScoped<Coworkee.Client.Blazor.Localization.CoworkeeLocalizer>();
         Services.AddSingleton(NSubstitute.Substitute.For<Shareme.Web.Client.Drm.IDrmApi>());
         Services.AddSingleton(NSubstitute.Substitute.For<IDownloadsApi>());
         MudBlazor.Extensions.ServiceCollectionExtensions.AddMudExtensions(Services);
@@ -115,7 +117,7 @@ public sealed class AssetDetailTests : BunitContext
     {
         var page = Render<AssetDetail>(p => p.Add(a => a.Id, _asset));
         page.WaitForAssertion(() => page.FindAll(".mud-tab").Count.ShouldBeGreaterThan(2));
-        await page.FindAll(".mud-tab").First(t => t.TextContent.Contains("Renditions")).ClickAsync(new());
+        await page.FindAll(".mud-tab").First(t => t.TextContent.Contains("Formats")).ClickAsync(new());
 
         page.WaitForAssertion(() => page.Find("[data-rendition='social']"));
         page.FindAll("[data-rendition='slides']").ShouldBeEmpty();

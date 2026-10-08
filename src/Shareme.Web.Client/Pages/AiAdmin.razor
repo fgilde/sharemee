@@ -5,12 +5,12 @@
 @using Shareme.Contracts.Metadata
 @using Shareme.Web.Client.Metadata
 
-<PageTitle>AI tagging</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-4">AI tagging</MudText>
+<PageHeader Title="AI tagging" Description="Let an AI service suggest tags or descriptions for files and write them into a property. Review the suggestions here before they are saved." />
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Create the target property under Metadata (a choice list for tags). 2. Check that previews are created for files (Previews & formats). 3. Create a tagging setup below with the AI service and its key. 4. In Browse, select files and choose AI tagging, then review the suggestions here."]</MudAlert>
 
 <MudText Typo="Typo.h6">Suggestions to review</MudText>
 <MudSimpleTable Dense="true" Hover="true" data-testid="suggestions">
-    <thead><tr><th>File</th><th>Extraction</th><th>Property</th><th>Found</th><th>Writes</th><th></th></tr></thead>
+    <thead><tr><th>File</th><th>@L["Tagging setup"]</th><th>Property</th><th>Found</th><th>Writes</th><th></th></tr></thead>
     <tbody>
         @foreach (var suggestion in _suggestions)
         {
@@ -26,12 +26,16 @@
                 </td>
             </tr>
         }
+        @if (_suggestions.Count == 0)
+        {
+            <tr><td colspan="6">@L["No suggestions to review. Select files in Browse and choose AI tagging to get some."]</td></tr>
+        }
     </tbody>
 </MudSimpleTable>
 
-<MudText Typo="Typo.h6" Class="mt-6">Extractions</MudText>
+<MudText Typo="Typo.h6" Class="mt-6">@L["Tagging setups"]</MudText>
 <MudSimpleTable Dense="true" Hover="true" data-testid="extractions">
-    <thead><tr><th>Name</th><th>Provider</th><th>Mode</th><th>Writes</th><th>Threshold</th><th>Review</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Provider</th><th>Mode</th><th>Writes</th><th>@L["Min. confidence"]</th><th>Review</th><th></th></tr></thead>
     <tbody>
         @foreach (var definition in _definitions)
         {
@@ -43,16 +47,20 @@
                 <td>@definition.MinConfidence</td>
                 <td>@(definition.AutoApply ? "no, applied right away" : "yes")</td>
                 <td style="text-align:right">
-                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(definition)" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(definition.Id))" />
+                    <MudTooltip Text="@L["Edit"]"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit" OnClick="() => Edit(definition)" /></MudTooltip>
+                    <MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(definition.Id))" /></MudTooltip>
                 </td>
             </tr>
+        }
+        @if (_definitions.Count == 0)
+        {
+            <tr><td colspan="7">@L["No tagging setups yet. Create the first one below."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>
 
 <MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="extraction-editor">
-    <MudText Typo="Typo.h6">@(_id is null ? "New extraction" : "Edit extraction")</MudText>
+    <MudText Typo="Typo.h6">@L[_id is null ? "New tagging setup" : "Edit tagging setup"]</MudText>
     <MudGrid>
         <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Name" Label="Name" data-testid="extraction-name" /></MudItem>
         <MudItem xs="6" sm="4">
@@ -79,11 +87,11 @@
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.InputKind" Label="Rendition" /></MudItem>
-        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_form.MinConfidence" Label="Threshold" Min="0" Max="1" Step="0.05m" /></MudItem>
+        <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.InputKind" Label="@L["Image used (format key)"]" /></MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_form.MinConfidence" Label="@L["Minimum confidence (0 to 1)"]" Min="0" Max="1" Step="0.05m" /></MudItem>
         <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.Language" Label="Language" /></MudItem>
         <MudItem xs="6" sm="2"><MudCheckBox @bind-Value="_form.AutoApply" Label="Apply without review" /></MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.AssetTypes" Label="Asset types (comma separated, empty for all)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.AssetTypes" Label="@L["File types (comma separated, empty for all)"]" /></MudItem>
         <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Mappings" Label="Mappings (tag=list value, one per line)" Lines="3" /></MudItem>
         <MudItem xs="12"><MudTextField @bind-Value="_form.Prompt" Label="Extra instructions for the model" Lines="2" /></MudItem>
     </MudGrid>

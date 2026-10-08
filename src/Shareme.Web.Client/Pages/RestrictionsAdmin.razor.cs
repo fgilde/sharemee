@@ -37,8 +37,8 @@ public partial class RestrictionsAdmin
     {
         RestrictionKinds.HiddenProperty => "Hide property",
         RestrictionKinds.ReadOnlyProperty => "Property read only",
-        RestrictionKinds.HiddenListValue => "Hide nodes with list value",
-        _ => "Block rendition",
+        RestrictionKinds.HiddenListValue => "Hide files and folders with list value",
+        _ => "Block preview format",
     };
 
     private async Task LoadAsync()

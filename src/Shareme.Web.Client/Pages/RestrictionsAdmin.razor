@@ -5,9 +5,8 @@
 @using Shareme.Contracts.Graph
 @using Shareme.Web.Client.Graph
 
-<PageTitle>Restrictions</PageTitle>
-<MudText Typo="Typo.h4" Class="mb-2">Restrictions</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">Restrictions take something away from everyone with the role, on top of their permissions: a property (hidden or read only), files and folders with a list value (not listed, found or opened), or a rendition. They apply to the roles users hold for the whole tenant (directly or through groups), not to roles granted on single folders or workspaces.</MudText>
+<PageHeader Title="Restrictions" Description="Take something away from everyone with a role, on top of their permissions: hide a property or make it read only, hide files and folders with a certain list value, or block a preview format." />
+<MudText Typo="Typo.body2" Class="mb-4">@L["Restrictions apply to the roles users hold for the whole organisation (directly or through groups), not to roles granted on single folders or workspaces. Define the properties and list values under Metadata first."]</MudText>
 
 <MudSimpleTable Dense="true" Hover="true" data-testid="restrictions">
     <thead><tr><th>Role</th><th>Restriction</th><th>Property</th><th>Value</th><th></th></tr></thead>
@@ -16,11 +15,15 @@
         {
             <tr data-restriction="@restriction.Kind">
                 <td>@(_roles.FirstOrDefault(r => r.Id == restriction.RoleId)?.Name ?? restriction.RoleId.ToString())</td>
-                <td>@Label(restriction.Kind)</td>
+                <td>@L[Label(restriction.Kind)]</td>
                 <td>@restriction.PropertyKey</td>
                 <td>@restriction.Value</td>
-                <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(restriction.Id))" /></td>
+                <td style="text-align:right"><MudTooltip Text="@L["Delete"]"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete" OnClick="() => RunAsync(() => Api.DeleteAsync(restriction.Id))" /></MudTooltip></td>
             </tr>
+        }
+        @if (_restrictions.Count == 0)
+        {
+            <tr><td colspan="5">@L["No restrictions yet. Everyone sees what their permissions allow. Add one below."]</td></tr>
         }
     </tbody>
 </MudSimpleTable>
@@ -40,13 +43,13 @@
             <MudSelect T="string" @bind-Value="_kind" Label="Restriction">
                 @foreach (var kind in RestrictionKinds.All)
                 {
-                    <MudSelectItem Value="@kind">@Label(kind)</MudSelectItem>
+                    <MudSelectItem Value="@kind">@L[Label(kind)]</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
         <MudItem xs="6" sm="3"><MudTextField @bind-Value="_propertyKey" Label="Property key" Disabled="_kind == RestrictionKinds.BlockedRendition" /></MudItem>
         <MudItem xs="6" sm="3">
-            <MudTextField @bind-Value="_value" Label="@(_kind == RestrictionKinds.BlockedRendition ? "Rendition kind" : "List value key")"
+            <MudTextField @bind-Value="_value" Label="@(_kind == RestrictionKinds.BlockedRendition ? L["Preview format key"] : L["List value key"])"
                           Disabled="_kind is RestrictionKinds.HiddenProperty or RestrictionKinds.ReadOnlyProperty" />
         </MudItem>
     </MudGrid>
