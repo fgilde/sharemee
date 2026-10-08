@@ -11746,6 +11746,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/localization/languages/{culture}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    culture: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetLanguageEnabledRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LanguageSwitchDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/localization/translations/{culture}/translate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    culture: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TranslateMissingDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/localization/translations": {
         parameters: {
             query?: never;
@@ -12855,6 +12951,12 @@ export interface components {
             isEnabled: boolean;
             isDefault: boolean;
         };
+        LanguageSwitchDto: {
+            language: components["schemas"]["LanguageDto"];
+            /** Format: int32 */
+            translated: number | string;
+            translatorAvailable: boolean;
+        };
         LicenseAssetsRequest: {
             assetIds: string[];
         };
@@ -13699,6 +13801,9 @@ export interface components {
         SendChatMessageRequest: {
             text: string;
         };
+        SetLanguageEnabledRequest: {
+            enabled: boolean;
+        };
         SetSettingsRequest: {
             values: {
                 [key: string]: string;
@@ -13894,6 +13999,11 @@ export interface components {
             layoutProperties: null | components["schemas"]["JsonElement"];
             logoSvg: null | string;
             customCss: null | string;
+        };
+        TranslateMissingDto: {
+            /** Format: int32 */
+            translated: number | string;
+            translatorAvailable: boolean;
         };
         TranslationRowDto: {
             key: string;

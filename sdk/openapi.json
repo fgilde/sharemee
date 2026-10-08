@@ -11288,6 +11288,94 @@
         }
       }
     },
+    "/api/v1/localization/languages/{culture}/enabled": {
+      "put": {
+        "tags": [
+          "Localization"
+        ],
+        "parameters": [
+          {
+            "name": "culture",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLanguageEnabledRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LanguageSwitchDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/localization/translations/{culture}/translate": {
+      "post": {
+        "tags": [
+          "Localization"
+        ],
+        "parameters": [
+          {
+            "name": "culture",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslateMissingDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/localization/translations": {
       "put": {
         "tags": [
@@ -14259,6 +14347,30 @@
             "type": "boolean"
           },
           "isDefault": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LanguageSwitchDto": {
+        "required": [
+          "language",
+          "translated",
+          "translatorAvailable"
+        ],
+        "type": "object",
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/LanguageDto"
+          },
+          "translated": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "translatorAvailable": {
             "type": "boolean"
           }
         }
@@ -17587,6 +17699,17 @@
           }
         }
       },
+      "SetLanguageEnabledRequest": {
+        "required": [
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "SetSettingsRequest": {
         "required": [
           "values"
@@ -18378,6 +18501,26 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "TranslateMissingDto": {
+        "required": [
+          "translated",
+          "translatorAvailable"
+        ],
+        "type": "object",
+        "properties": {
+          "translated": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "translatorAvailable": {
+            "type": "boolean"
           }
         }
       },
