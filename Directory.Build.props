@@ -22,4 +22,12 @@
     <Using Include="Xunit" />
     <Using Include="Shouldly" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- SixLabors.ImageSharp 3.1.12 comes with MudBlazor.Extensions (image viewer only, not used here); the fix is 4.1.2, which needs a commercial license -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" />
+  </ItemGroup>
 </Project>
