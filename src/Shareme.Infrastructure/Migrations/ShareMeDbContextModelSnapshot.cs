@@ -112,6 +112,41 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("DatabaseBackups", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Chat.ChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FromUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid>("ToUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ToUserId", "ReadAt");
+
+                    b.HasIndex("TenantId", "FromUserId", "ToUserId", "SentAt");
+
+                    b.ToTable("ChatMessages", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Identity.Domain.PermissionGrant", b =>
                 {
                     b.Property<Guid>("Id")
