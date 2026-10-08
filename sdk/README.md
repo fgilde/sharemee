@@ -12,10 +12,10 @@ cd sdk/typescript && npm install && npm run generate && npm run build
 
 ## .NET: `Sharemee.Client`
 
-`src/Shareme.Client` – typed methods over the DTOs of `Sharemee.Contracts` (nodes, metadata, search, chunked uploads, download links, pages, news, people) plus `GetAsync`/`SendAsync` for any other endpoint. Errors raise `SharemeApiException` with status and problem code.
+`src/Shareme.Client` – typed methods over the DTOs of `Sharemee.Contracts` (nodes, metadata, search, chunked uploads, download links, pages, news, people) plus `GetAsync`/`SendAsync` for any other endpoint. Errors raise `CoworkeeApiException` (package `Coworkee.Client`) with status, problem code and validation messages.
 
 ```csharp
-var http = new HttpClient(new BearerHandler(tokenSource)) { BaseAddress = new Uri("https://sharemee.example/") };
+var http = new HttpClient(new BearerTokenHandler(ct => tokens.GetAsync(ct))) { BaseAddress = new Uri("https://sharemee.example/") };
 var client = new SharemeClient(http);
 var folder = await client.CreateFolderAsync((await client.GetRootAsync()).Id, "Campaign 2026");
 await using var file = File.OpenRead("poster.pdf");

@@ -37,7 +37,7 @@ public sealed class ClientSdkTests(ApiFixture api) : IAsyncLifetime
         var page = await client.CreatePageAsync(folder.Id, "Guide", "# Hello", Ct);
         (await client.UpdatePageAsync(page.Id, "Guide", "# Hello again", page.Version, cancellationToken: Ct)).Version.ShouldBe(page.Version + 1);
 
-        var missing = await Should.ThrowAsync<SharemeApiException>(() => client.GetNodeAsync(Guid.NewGuid(), Ct));
+        var missing = await Should.ThrowAsync<Coworkee.Client.CoworkeeApiException>(() => client.GetNodeAsync(Guid.NewGuid(), Ct));
         missing.Status.ShouldBe(HttpStatusCode.NotFound);
     }
 }

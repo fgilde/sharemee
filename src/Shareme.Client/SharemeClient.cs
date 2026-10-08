@@ -1,8 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
-using System.Text.Json;
+using Coworkee.Client;
 using Coworkee.Contracts;
 using Shareme.Contracts.Assets;
 using Shareme.Contracts.Graph;
@@ -12,22 +11,12 @@ using Shareme.Contracts.Search;
 
 namespace Shareme.Client;
 
-/// <summary>A failed API call with the problem details the API sent.</summary>
-public sealed class SharemeApiException(HttpStatusCode status, string message, string? code) : Exception(message)
-{
-    public HttpStatusCode Status { get; } = status;
-
-    public string? Code { get; } = code;
-}
-
 /// <summary>
 /// Typed client for the Sharemee API. Give it an <see cref="HttpClient"/> whose base address is the API and whose
-/// requests carry a bearer token (for example through a <see cref="DelegatingHandler"/>).
+/// requests carry a bearer token (for example through <see cref="BearerTokenHandler"/>).
 /// </summary>
-public sealed class SharemeClient(HttpClient http)
+public sealed class SharemeClient(HttpClient http) : CoworkeeApiClient(http)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
     // nodes
 
     public Task<NodeDto> GetRootAsync(CancellationToken cancellationToken = default) => GetAsync<NodeDto>("api/v1/nodes/root", cancellationToken);
@@ -88,7 +77,7 @@ public sealed class SharemeClient(HttpClient http)
             var length = await buffered.ReadAtLeastAsync(chunk, chunk.Length, throwOnEndOfStream: false, cancellationToken);
             using var part = new ByteArrayContent(chunk, 0, length);
             part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-            using var response = await http.PutAsync($"api/v1/uploads/{session.Id}/chunks/{index}", part, cancellationToken);
+            using var response = await Http.PutAsync($"api/v1/uploads/{session.Id}/chunks/{index}", part, cancellationToken);
             await EnsureAsync(response, cancellationToken);
         }
 
@@ -97,7 +86,7 @@ public sealed class SharemeClient(HttpClient http)
         {
             if (session.Error is { } error)
             {
-                throw new SharemeApiException(HttpStatusCode.UnprocessableEntity, error, "upload.failed");
+                throw new CoworkeeApiException(HttpStatusCode.UnprocessableEntity, error, "upload.failed");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
@@ -127,64 +116,6 @@ public sealed class SharemeClient(HttpClient http)
 
     public Task<PersonDto[]> FindPeopleAsync(string? search = null, int skip = 0, int take = 50, CancellationToken cancellationToken = default) =>
         GetAsync<PersonDto[]>($"api/v1/people?search={Uri.EscapeDataString(search ?? string.Empty)}&skip={skip}&take={take}", cancellationToken);
-
-    // plumbing
-
-    public async Task<T> GetAsync<T>(string path, CancellationToken cancellationToken = default)
-    {
-        using var response = await http.GetAsync(path, cancellationToken);
-        await EnsureAsync(response, cancellationToken);
-        return (await response.Content.ReadFromJsonAsync<T>(Json, cancellationToken))!;
-    }
-
-    public async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken cancellationToken = default)
-    {
-        using var response = await SendRawAsync(method, path, body, cancellationToken);
-        return (await response.Content.ReadFromJsonAsync<T>(Json, cancellationToken))!;
-    }
-
-    public async Task SendAsync(HttpMethod method, string path, object? body, CancellationToken cancellationToken = default)
-    {
-        using var response = await SendRawAsync(method, path, body, cancellationToken);
-    }
-
-    private async Task<HttpResponseMessage> SendRawAsync(HttpMethod method, string path, object? body, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body, body.GetType(), options: Json) };
-        var response = await http.SendAsync(request, cancellationToken);
-        try
-        {
-            await EnsureAsync(response, cancellationToken);
-            return response;
-        }
-        catch
-        {
-            response.Dispose();
-            throw;
-        }
-    }
-
-    private static async Task EnsureAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-    {
-        if (response.IsSuccessStatusCode)
-        {
-            return;
-        }
-
-        string? title = null;
-        string? code = null;
-        try
-        {
-            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            title = problem.RootElement.TryGetProperty("title", out var t) ? t.GetString() : null;
-            code = problem.RootElement.TryGetProperty("code", out var c) ? c.GetString() : null;
-        }
-        catch (JsonException)
-        {
-        }
-
-        throw new SharemeApiException(response.StatusCode, title ?? $"The API answered {(int)response.StatusCode}.", code);
-    }
 
     private static async Task<MemoryStream> CopyAsync(Stream content, CancellationToken cancellationToken)
     {

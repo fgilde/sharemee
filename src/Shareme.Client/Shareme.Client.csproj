@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Shareme.Contracts\Shareme.Contracts.csproj" />
+    <CoworkeePackage Include="Coworkee.Client" />
   </ItemGroup>
 </Project>
