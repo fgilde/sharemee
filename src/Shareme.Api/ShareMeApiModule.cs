@@ -9,7 +9,7 @@ using Shareme.Infrastructure;
 
 namespace Shareme.Api;
 
-[DependsOn(typeof(ShareMeDatabaseModule))]
+[DependsOn(typeof(ShareMeDatabaseModule), typeof(Coworkee.OData.CoworkeeODataModule))]
 public sealed class ShareMeApiModule : CoworkeeModule, IWebModule
 {
     public const string Audience = "shareme_api";
