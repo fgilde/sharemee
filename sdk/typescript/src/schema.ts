@@ -13413,6 +13413,7 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             readAt: null | string;
+            arguments?: null | string[];
         };
         OfferAlternativeDto: {
             /** Format: uuid */
