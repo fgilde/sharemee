@@ -13183,7 +13183,9 @@
           "postLogoutRedirectUris",
           "grantTypes",
           "scopes",
-          "managed"
+          "managed",
+          "roles",
+          "permissions"
         ],
         "type": "object",
         "properties": {
@@ -13232,6 +13234,19 @@
           },
           "managed": {
             "type": "boolean"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -13283,6 +13298,25 @@
           },
           "scopes": {
             "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "roles": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "permissions": {
+            "type": [
+              "null",
+              "array"
+            ],
             "items": {
               "type": "string"
             }
