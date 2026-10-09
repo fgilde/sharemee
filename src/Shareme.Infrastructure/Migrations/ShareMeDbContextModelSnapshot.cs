@@ -133,7 +133,8 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
+                        .HasColumnType("character varying(4000)")
+                        .HasAnnotation("Coworkee:NotAudited", true);
 
                     b.Property<Guid>("ToUserId")
                         .HasColumnType("uuid");
@@ -282,6 +283,9 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<string>("NormalizedName")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("SelectableForRegistration")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uuid");
