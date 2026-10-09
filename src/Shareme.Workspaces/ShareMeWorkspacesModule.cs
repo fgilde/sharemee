@@ -50,7 +50,6 @@ public sealed class ShareMeWorkspacesModule : CoworkeeModule, IWebModule
 
     public void ConfigureApplication(WebApplication app)
     {
-        app.UseRateLimiter();
         var workspaces = app.MapGroup("/api/v1/workspaces").WithTags("Workspaces").RequireAuthorization();
         workspaces.MapGet("/", (bool? templates, IDispatcher d, CancellationToken ct) => d.SendAsync(new GetWorkspaces(templates == true), ct).ToHttpResult());
         workspaces.MapPost("/", (CreateWorkspaceRequest body, IDispatcher d, CancellationToken ct) => d.SendAsync(new CreateWorkspace(body), ct).ToHttpResult());
