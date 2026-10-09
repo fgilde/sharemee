@@ -1,5 +1,7 @@
 using Coworkee.Client.Blazor;
+using Coworkee.Client.Blazor.Components.About;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Shareme.Web.Client.About;
 using Shareme.Web.Client.Assets;
 using Shareme.Web.Client.Graph;
 using Shareme.Web.Client.Metadata;
@@ -9,6 +11,8 @@ var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
 builder.Services.AddCoworkeeClient(baseAddress, options =>
 {
     options.AppTitle = "Sharemee";
+    options.AppDescription = "Share, find and reuse your media.";
+    options.About.Sections[options.About.Sections.IndexOf(typeof(AboutCredits))] = typeof(SharemeeHighlights);
     options.AssistantHint = "Ask for something, for example \"Create a folder Summer 2026 in Marketing\" or \"Find the brochures tagged campaign\".";
 });
 builder.Services.AddCoworkeeAppConfiguration<Shareme.Contracts.Configuration.SharemeConfiguration>(

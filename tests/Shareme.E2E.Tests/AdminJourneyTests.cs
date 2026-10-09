@@ -108,9 +108,8 @@ public sealed class AdminJourneyTests
 
             await first.GotoAsync(web + "/admin/users");
             await first.Locator("[data-testid='create']").ClickAsync(new() { Timeout = Timeout });
-            await first.Locator("input[data-testid='new-user-email']").FillAsync("eve@acme.test");
-            await first.Locator("input[data-testid='new-user-password']").FillAsync("Passw0rd!x");
-            await first.Locator("[data-testid='create-user']").ClickAsync();
+            await first.Locator(".mud-dialog input[type='email']").FillAsync("eve@acme.test");
+            await first.Locator(".mud-dialog").GetByRole(AriaRole.Button, new() { Name = "Save" }).ClickAsync();
 
             await second.Locator("[data-user='eve@acme.test']").WaitForAsync(new() { Timeout = Timeout });
 

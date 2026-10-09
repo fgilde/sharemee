@@ -1,0 +1,18 @@
+<style>
+    .sm-about-highlights { display: flex; flex-direction: column; gap: 14px; padding: 4px 6px; }
+    .sm-about-highlight { display: flex; gap: 14px; align-items: flex-start; }
+    .sm-about-highlight-icon { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 12px;
+        background: color-mix(in srgb, var(--mud-palette-primary) 14%, transparent); color: var(--mud-palette-primary); }
+</style>
+<div class="sm-about-highlights" data-testid="sharemee-about">
+    @foreach (var highlight in Highlights)
+    {
+        <div class="sm-about-highlight">
+            <div class="sm-about-highlight-icon"><MudIcon Icon="@highlight.Icon" /></div>
+            <div>
+                <MudText Typo="Typo.subtitle2">@L[highlight.Title]</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@L[highlight.Text]</MudText>
+            </div>
+        </div>
+    }
+</div>
