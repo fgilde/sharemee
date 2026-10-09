@@ -10,12 +10,12 @@
 
 <MudStack Row="true" AlignItems="AlignItems.Start" Class="mb-2">
     <div style="flex:1;position:relative">
-        <MudTextField T="string" @bind-Value="_term" Placeholder="Search names, files and metadata" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+        <MudTextField Margin="Density.Margin" T="string" @bind-Value="_term" Placeholder="Search names, files and metadata" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Immediate="true" DebounceInterval="250" OnDebounceIntervalElapsed="SuggestAsync" OnKeyDown="OnKeyDown" aria-label="Search" data-testid="search-term" />
         @if (_suggestions.Count > 0)
         {
             <MudPaper Elevation="4" Class="absolute mud-width-full" Style="z-index:10" data-testid="suggestions">
-                <MudList T="Guid" Dense="true" role="listbox" aria-label="Suggestions">
+                <MudList T="Guid" Dense="Density.Dense" role="listbox" aria-label="Suggestions">
                     @foreach (var suggestion in _suggestions)
                     {
                         <MudListItem T="Guid" Icon="@(suggestion.Semantic == "folder" ? Icons.Material.Outlined.Folder : Icons.Material.Outlined.InsertDriveFile)"
@@ -31,7 +31,7 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
     <MudSwitch T="bool" @bind-Value="_exact" Label="@L["Exact phrase"]" Color="Color.Primary" />
     <MudSwitch T="bool" @bind-Value="_allWords" Label="@L["All words"]" Color="Color.Primary" />
-    <MudSelect T="string" @bind-Value="_sort" Label="Sort" Dense="true" Style="max-width:220px">
+    <MudSelect Margin="Density.Margin" T="string" @bind-Value="_sort" Label="Sort" Dense="Density.Dense" Style="max-width:220px">
         <MudSelectItem Value="@("relevance")">Relevance</MudSelectItem>
         <MudSelectItem Value="@SearchFields.Name">Name</MudSelectItem>
         <MudSelectItem Value="@SearchFields.ModifiedAt">Last changed</MudSelectItem>
@@ -39,15 +39,15 @@
         <MudSelectItem Value="@SearchFields.Size">Largest</MudSelectItem>
     </MudSelect>
     <MudSpacer />
-    <MudSelect T="SavedSearchDto" Value="_saved" ValueChanged="ApplySaved" Label="Saved searches" Dense="true" Clearable="true" ToStringFunc="@(s => s?.Name ?? string.Empty)"
+    <MudSelect Margin="Density.Margin" T="SavedSearchDto" Value="_saved" ValueChanged="ApplySaved" Label="Saved searches" Dense="Density.Dense" Clearable="true" ToStringFunc="@(s => s?.Name ?? string.Empty)"
                Style="max-width:240px" data-testid="saved-searches">
         @foreach (var saved in _savedSearches)
         {
             <MudSelectItem T="SavedSearchDto" Value="saved">@saved.Name@(saved.IsShared ? " (shared)" : null)</MudSelectItem>
         }
     </MudSelect>
-    <MudTextField T="string" @bind-Value="_saveName" Placeholder="Name" Margin="Margin.Dense" Style="max-width:180px" data-testid="save-name" />
-    <MudCheckBox T="bool" @bind-Value="_share" Label="Share with everyone" Dense="true" Size="Size.Small" />
+    <MudTextField T="string" @bind-Value="_saveName" Placeholder="Name" Margin="Density.Margin" Style="max-width:180px" data-testid="save-name" />
+    <MudCheckBox T="bool" @bind-Value="_share" Label="Share with everyone" Dense="Density.Dense" Size="Size.Small" />
     <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.BookmarkAdd" OnClick="SaveAsync" Disabled="@string.IsNullOrWhiteSpace(_saveName)" data-testid="save-search">Save</MudButton>
     @if (_saved is { IsOwner: true })
     {
@@ -71,7 +71,7 @@
                 @foreach (var value in values)
                 {
                     <div data-facet="@field" data-value="@value.Value">
-                        <MudCheckBox T="bool" Value="IsSelected(field, value.Value)" ValueChanged="on => ToggleFacetAsync(field, value.Value, on)" Dense="true" Size="Size.Small"
+                        <MudCheckBox T="bool" Value="IsSelected(field, value.Value)" ValueChanged="on => ToggleFacetAsync(field, value.Value, on)" Dense="Density.Dense" Size="Size.Small"
                                      Label="@($"{value.Label ?? value.Value} ({value.Count})")" />
                     </div>
                 }
@@ -91,7 +91,7 @@
             {
                 <MassEditPanel Search="Request(null)" Closed="() => _massEdit = false" />
             }
-            <MudSimpleTable Dense="true" Hover="true">
+            <MudSimpleTable Dense="Density.Dense" Hover="true">
                 <thead><tr><th><span class="d-sr-only">Preview</span></th><th>Name</th><th>Type</th><th>Changed</th></tr></thead>
                 <tbody>
                     @foreach (var item in _items)

@@ -8,7 +8,7 @@
             <MudLink OnClick="() => OpenAsync(Guid.Parse(crumb.Href!))" data-testid="picker-crumb">@crumb.Text</MudLink>
         </ItemTemplate>
     </MudBreadcrumbs>
-    <MudList T="Guid" Dense="true">
+    <MudList T="Guid" Dense="Density.Dense">
         @foreach (var folder in _folders)
         {
             <MudListItem T="Guid" Icon="@Icons.Material.Outlined.Folder" OnClick="() => OpenAsync(folder.Id)">@folder.Name</MudListItem>

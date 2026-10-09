@@ -9,22 +9,22 @@
     @foreach (var row in _rows)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" data-testid="mutation">
-            <MudSelect T="string" @bind-Value="row.Key" Label="Property" Style="max-width:240px">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="row.Key" Label="Property" Style="max-width:240px">
                 @foreach (var definition in _definitions)
                 {
                     <MudSelectItem Value="@definition.Key">@definition.Name</MudSelectItem>
                 }
             </MudSelect>
-            <MudSelect T="string" @bind-Value="row.Strategy" Label="Change" Style="max-width:160px">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="row.Strategy" Label="Change" Style="max-width:160px">
                 @foreach (var strategy in Strategies)
                 {
                     <MudSelectItem Value="@strategy">@strategy</MudSelectItem>
                 }
             </MudSelect>
-            <MudTextField @bind-Value="row.Text" Label="Value" Disabled="row.Strategy == MassEditStrategies.Delete" />
+            <MudTextField Margin="Density.Margin" @bind-Value="row.Text" Label="Value" Disabled="row.Strategy == MassEditStrategies.Delete" />
             @if (Definition(row)?.Localizable == true)
             {
-                <MudSelect T="string" @bind-Value="row.Lang" Label="Language" Style="max-width:140px">
+                <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="row.Lang" Label="Language" Style="max-width:140px">
                     @foreach (var language in _languages)
                     {
                         <MudSelectItem Value="@language.Code">@language.Name</MudSelectItem>
@@ -36,7 +36,7 @@
     }
     <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.Add" OnClick="() => _rows.Add(new())" data-testid="add-mutation">Property</MudButton>
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
-        <MudCheckBox @bind-Value="_dryRun" Label="Dry run" data-testid="mass-edit-dry-run" />
+        <MudCheckBox Dense="Density.Dense" @bind-Value="_dryRun" Label="Dry run" data-testid="mass-edit-dry-run" />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartAsync" data-testid="start-mass-edit">Start</MudButton>
         <MudButton OnClick="Closed">Cancel</MudButton>
     </MudStack>

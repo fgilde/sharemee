@@ -49,10 +49,10 @@
     <MudPaper Outlined="true" Class="pa-4 mt-6">
         <MudText Typo="Typo.h6">@(_templates ? "New template" : "New workspace")</MudText>
         <MudStack Row="true" AlignItems="AlignItems.End" Wrap="Wrap.Wrap">
-            <MudTextField @bind-Value="_name" Label="Name" data-testid="workspace-name" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_name" Label="Name" data-testid="workspace-name" />
             @if (!_templates && _available.Count > 0)
             {
-                <MudSelect T="Guid?" @bind-Value="_templateId" Label="From template" Clearable="true" Style="min-width:220px" data-testid="workspace-template">
+                <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_templateId" Label="From template" Clearable="true" Style="min-width:220px" data-testid="workspace-template">
                     @foreach (var template in _available)
                     {
                         <MudSelectItem T="Guid?" Value="@template.Id">@template.Name</MudSelectItem>
@@ -61,7 +61,7 @@
             }
             @if (_templateId is null)
             {
-                <MudSelect T="string" @bind-Value="_kind" Label="@L["Kind"]" HelperText="@L[KindHelp(_kind)]" Style="min-width:260px;max-width:360px">
+                <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_kind" Label="@L["Kind"]" HelperText="@L[KindHelp(_kind)]" Style="min-width:260px;max-width:360px">
                     @foreach (var kind in WorkspaceKinds.All)
                     {
                         <MudSelectItem Value="@kind">@L[KindName(kind)]</MudSelectItem>

@@ -5,5 +5,5 @@
 {
     <RealtimeSubscription @key="id" Topic="@($"children:{id}")" OnEvent="_ => RefreshAsync(id)" />
 }
-<MudTreeView T="Guid" Items="_roots" ServerData="LoadAsync" Dense="true" Hover="true" SelectionMode="SelectionMode.SingleSelection"
+<MudTreeView T="Guid" Items="_roots" ServerData="LoadAsync" Dense="Density.Dense" Hover="true" SelectionMode="SelectionMode.SingleSelection"
              SelectedValue="SelectedId" SelectedValueChanged="Open" data-testid="folder-tree" />

@@ -3,7 +3,7 @@
 
 <RealtimeSubscription @key="WorkspaceId" Topic="@($"children:{WorkspaceId}")" OnEvent="_ => ReloadSoonAsync()" />
 <MudStack Row="true" AlignItems="AlignItems.End" Class="mb-4">
-    <MudTextField @bind-Value="_title" Label="New task" Immediate="true" OnKeyUp="@(e => e.Key == "Enter" ? AddAsync() : Task.CompletedTask)" Style="max-width:360px" data-testid="new-task" />
+    <MudTextField Margin="Density.Margin" @bind-Value="_title" Label="New task" Immediate="true" OnKeyUp="@(e => e.Key == "Enter" ? AddAsync() : Task.CompletedTask)" Style="max-width:360px" data-testid="new-task" />
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_title)" OnClick="AddAsync" data-testid="add-task">Add</MudButton>
 </MudStack>
 
@@ -53,10 +53,10 @@
 {
     <MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="task-editor">
         <MudText Typo="Typo.h6">Edit task</MudText>
-        <MudTextField @bind-Value="_editTitle" Label="Title" />
-        <MudTextField @bind-Value="_editDescription" Label="Description" Lines="4" />
-        <MudDatePicker @bind-Date="_editDue" Label="Due" Clearable="true" />
-        <MudSelect T="Guid" @bind-SelectedValues="_editAssignees" MultiSelection="true" Label="Assignees" ToStringFunc="@(id => MemberName(id))">
+        <MudTextField Margin="Density.Margin" @bind-Value="_editTitle" Label="Title" />
+        <MudTextField Margin="Density.Margin" @bind-Value="_editDescription" Label="Description" Lines="4" />
+        <MudDatePicker Margin="Density.Margin" @bind-Date="_editDue" Label="Due" Clearable="true" />
+        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid" @bind-SelectedValues="_editAssignees" MultiSelection="true" Label="Assignees" ToStringFunc="@(id => MemberName(id))">
             @foreach (var member in Members)
             {
                 <MudSelectItem T="Guid" Value="@member.UserId">@(string.IsNullOrWhiteSpace(member.Name) ? member.Email : member.Name)</MudSelectItem>

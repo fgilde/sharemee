@@ -6,10 +6,10 @@
 @using Shareme.Web.Client.Metadata
 
 <PageHeader Title="AI tagging" Description="Let an AI service suggest tags or descriptions for files and write them into a property. Review the suggestions here before they are saved." />
-<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Create the target property under Metadata (a choice list for tags). 2. Check that previews are created for files (Previews & formats). 3. Create a tagging setup below with the AI service and its key. 4. In Browse, select files and choose AI tagging, then review the suggestions here."]</MudAlert>
+<MudAlert Severity="Severity.Info" Dense="Density.Dense" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Create the target property under Metadata (a choice list for tags). 2. Check that previews are created for files (Previews & formats). 3. Create a tagging setup below with the AI service and its key. 4. In Browse, select files and choose AI tagging, then review the suggestions here."]</MudAlert>
 
 <MudText Typo="Typo.h6">Suggestions to review</MudText>
-<MudSimpleTable Dense="true" Hover="true" data-testid="suggestions">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="suggestions">
     <thead><tr><th>File</th><th>@L["Tagging setup"]</th><th>Property</th><th>Found</th><th>Writes</th><th></th></tr></thead>
     <tbody>
         @foreach (var suggestion in _suggestions)
@@ -34,7 +34,7 @@
 </MudSimpleTable>
 
 <MudText Typo="Typo.h6" Class="mt-6">@L["Tagging setups"]</MudText>
-<MudSimpleTable Dense="true" Hover="true" data-testid="extractions">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="extractions">
     <thead><tr><th>Name</th><th>Provider</th><th>Mode</th><th>Writes</th><th>@L["Min. confidence"]</th><th>Review</th><th></th></tr></thead>
     <tbody>
         @foreach (var definition in _definitions)
@@ -62,38 +62,38 @@
 <MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="extraction-editor">
     <MudText Typo="Typo.h6">@L[_id is null ? "New tagging setup" : "Edit tagging setup"]</MudText>
     <MudGrid>
-        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Name" Label="Name" data-testid="extraction-name" /></MudItem>
+        <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_form.Name" Label="Name" data-testid="extraction-name" /></MudItem>
         <MudItem xs="6" sm="4">
-            <MudSelect T="string" @bind-Value="_form.Provider" Label="Provider">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_form.Provider" Label="Provider">
                 <MudSelectItem Value="@AiProviders.OpenAi">OpenAI compatible</MudSelectItem>
                 <MudSelectItem Value="@AiProviders.Anthropic">Anthropic</MudSelectItem>
                 <MudSelectItem Value="@AiProviders.AzureVision">Azure AI Vision</MudSelectItem>
             </MudSelect>
         </MudItem>
         <MudItem xs="6" sm="4">
-            <MudSelect T="string" @bind-Value="_form.Mode" Label="Mode">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_form.Mode" Label="Mode">
                 <MudSelectItem Value="@AiModes.Tags">Tags</MudSelectItem>
                 <MudSelectItem Value="@AiModes.Description">Description</MudSelectItem>
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Endpoint" Label="Endpoint (https; OpenAI compatible: base with /v1, Anthropic: base without /v1, Azure: resource address; empty for the default)" /></MudItem>
-        <MudItem xs="6" sm="3"><MudTextField @bind-Value="_form.Model" Label="Model" /></MudItem>
-        <MudItem xs="6" sm="3"><MudTextField @bind-Value="_form.ApiKey" Label="@(_hasKey ? "API key (stored, empty keeps it)" : "API key")" InputType="InputType.Password" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_form.Endpoint" Label="Endpoint (https; OpenAI compatible: base with /v1, Anthropic: base without /v1, Azure: resource address; empty for the default)" /></MudItem>
+        <MudItem xs="6" sm="3"><MudTextField Margin="Density.Margin" @bind-Value="_form.Model" Label="Model" /></MudItem>
+        <MudItem xs="6" sm="3"><MudTextField Margin="Density.Margin" @bind-Value="_form.ApiKey" Label="@(_hasKey ? "API key (stored, empty keeps it)" : "API key")" InputType="InputType.Password" /></MudItem>
         <MudItem xs="12" sm="4">
-            <MudSelect T="string" @bind-Value="_form.TargetKey" Label="Writes property" data-testid="extraction-target">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_form.TargetKey" Label="Writes property" data-testid="extraction-target">
                 @foreach (var property in _properties)
                 {
                     <MudSelectItem Value="@property.Key">@property.Name</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.InputKind" Label="@L["Image used (format key)"]" /></MudItem>
-        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_form.MinConfidence" Label="@L["Minimum confidence (0 to 1)"]" Min="0" Max="1" Step="0.05m" /></MudItem>
-        <MudItem xs="6" sm="2"><MudTextField @bind-Value="_form.Language" Label="Language" /></MudItem>
-        <MudItem xs="6" sm="2"><MudCheckBox @bind-Value="_form.AutoApply" Label="Apply without review" /></MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.AssetTypes" Label="@L["File types (comma separated, empty for all)"]" /></MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Mappings" Label="Mappings (tag=list value, one per line)" Lines="3" /></MudItem>
-        <MudItem xs="12"><MudTextField @bind-Value="_form.Prompt" Label="Extra instructions for the model" Lines="2" /></MudItem>
+        <MudItem xs="6" sm="2"><MudTextField Margin="Density.Margin" @bind-Value="_form.InputKind" Label="@L["Image used (format key)"]" /></MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField Margin="Density.Margin" @bind-Value="_form.MinConfidence" Label="@L["Minimum confidence (0 to 1)"]" Min="0" Max="1" Step="0.05m" /></MudItem>
+        <MudItem xs="6" sm="2"><MudTextField Margin="Density.Margin" @bind-Value="_form.Language" Label="Language" /></MudItem>
+        <MudItem xs="6" sm="2"><MudCheckBox Dense="Density.Dense" @bind-Value="_form.AutoApply" Label="Apply without review" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_form.AssetTypes" Label="@L["File types (comma separated, empty for all)"]" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_form.Mappings" Label="Mappings (tag=list value, one per line)" Lines="3" /></MudItem>
+        <MudItem xs="12"><MudTextField Margin="Density.Margin" @bind-Value="_form.Prompt" Label="Extra instructions for the model" Lines="2" /></MudItem>
     </MudGrid>
     <MudStack Row="true" Class="mt-2">
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-extraction">Save</MudButton>

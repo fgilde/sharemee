@@ -9,7 +9,7 @@
 <MudTabs Elevation="0" Outlined="true">
     <MudTabPanel Text="Properties">
         <div class="pa-4">
-            <MudSimpleTable Dense="true" Hover="true">
+            <MudSimpleTable Dense="Density.Dense" Hover="true">
                 <thead><tr><th>Key</th><th>Name</th><th>Type</th><th>@L["Choice list"]</th><th>Options</th><th></th></tr></thead>
                 <tbody>
                     @foreach (var definition in _definitions)
@@ -36,10 +36,10 @@
             <MudPaper Outlined="true" Class="pa-4 mt-4">
                 <MudText Typo="Typo.h6">@(_editing is null ? "New property" : $"Edit {_form.Key}")</MudText>
                 <MudGrid Spacing="2">
-                    <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Key" Label="Key" Disabled="_editing is not null" data-testid="definition-key" /></MudItem>
-                    <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.Name" Label="Name" data-testid="definition-name" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_form.Key" Label="Key" Disabled="_editing is not null" data-testid="definition-key" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_form.Name" Label="Name" data-testid="definition-name" /></MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudSelect @bind-Value="_form.ValueType" Label="Value type" Disabled="_editing is not null">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" @bind-Value="_form.ValueType" Label="Value type" Disabled="_editing is not null">
                             @foreach (var type in PropertyValueTypes.All)
                             {
                                 <MudSelectItem Value="@type">@type</MudSelectItem>
@@ -47,14 +47,14 @@
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudSelect @bind-Value="_form.ListMode" Label="List values">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" @bind-Value="_form.ListMode" Label="List values">
                             <MudSelectItem Value="@ListModes.None">none</MudSelectItem>
                             <MudSelectItem Value="@ListModes.Single">single choice</MudSelectItem>
                             <MudSelectItem Value="@ListModes.Multi">multiple choice</MudSelectItem>
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudSelect T="Guid?" @bind-Value="_form.GroupId" Label="Group" Clearable="true">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_form.GroupId" Label="Group" Clearable="true">
                             @foreach (var group in _groups)
                             {
                                 <MudSelectItem T="Guid?" Value="@group.Id">@group.Name</MudSelectItem>
@@ -62,27 +62,27 @@
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudSelect T="string" Label="Applies to" MultiSelection="true" SelectedValues="_form.NodeTypeKeys" SelectedValuesChanged="v => _form.NodeTypeKeys = v.ToList()" HelperText="Empty = all types">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" Label="Applies to" MultiSelection="true" SelectedValues="_form.NodeTypeKeys" SelectedValuesChanged="v => _form.NodeTypeKeys = v.ToList()" HelperText="Empty = all types">
                             <MudSelectItem T="string" Value="@NodeTypeKeys.Folder">@L["folder"]</MudSelectItem>
                             <MudSelectItem T="string" Value="@NodeTypeKeys.Asset">@L["file"]</MudSelectItem>
                         </MudSelect>
                     </MudItem>
-                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Regex" Label="@L["Allowed pattern (regular expression)"]" /></MudItem>
-                    <MudItem xs="6" sm="3"><MudNumericField T="decimal?" @bind-Value="_form.Min" Label="Min" /></MudItem>
-                    <MudItem xs="6" sm="3"><MudNumericField T="decimal?" @bind-Value="_form.Max" Label="Max" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_form.Regex" Label="@L["Allowed pattern (regular expression)"]" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField Margin="Density.Margin" T="decimal?" @bind-Value="_form.Min" Label="Min" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField Margin="Density.Margin" T="decimal?" @bind-Value="_form.Max" Label="Max" /></MudItem>
                     <MudItem xs="12">
-                        <MudCheckBox @bind-Value="_form.Required" Label="Required" />
-                        <MudCheckBox @bind-Value="_form.MultiValue" Label="Multiple values" />
-                        <MudCheckBox @bind-Value="_form.Localizable" Label="Translatable" />
-                        <MudCheckBox @bind-Value="_form.HasContext" Label="@L["Different value per audience"]" />
-                        <MudCheckBox @bind-Value="_form.InheritToChildren" Label="@L["Inherit to subfolders and files"]" />
-                        <MudCheckBox @bind-Value="_form.AllowCustomValues" Label="Allow own list values" />
-                        <MudCheckBox @bind-Value="_form.IgnoreOnNewVersion" Label="Do not copy to new versions" />
-                        <MudCheckBox @bind-Value="_form.Editable" Label="Editable" />
-                        <MudCheckBox @bind-Value="_form.Facet" Label="@L["Show as search filter"]" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.Required" Label="Required" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.MultiValue" Label="Multiple values" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.Localizable" Label="Translatable" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.HasContext" Label="@L["Different value per audience"]" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.InheritToChildren" Label="@L["Inherit to subfolders and files"]" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.AllowCustomValues" Label="Allow own list values" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.IgnoreOnNewVersion" Label="Do not copy to new versions" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.Editable" Label="Editable" />
+                        <MudCheckBox Dense="Density.Dense" @bind-Value="_form.Facet" Label="@L["Show as search filter"]" />
                     </MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudSelect @bind-Value="_form.Searchable" Label="Search">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" @bind-Value="_form.Searchable" Label="Search">
                             <MudSelectItem Value="@SearchModes.None">not searchable</MudSelectItem>
                             <MudSelectItem Value="@SearchModes.Filter">@L["as filter"]</MudSelectItem>
                             <MudSelectItem Value="@SearchModes.Fulltext">full text</MudSelectItem>
@@ -104,9 +104,9 @@
                     @foreach (var value in _listValues)
                     {
                         <MudStack Row="true" AlignItems="AlignItems.Center">
-                            <MudTextField @bind-Value="value.Key" Label="Key" Margin="Margin.Dense" />
-                            <MudTextField @bind-Value="value.Name" Label="Name" Margin="Margin.Dense" />
-                            <MudCheckBox @bind-Value="value.IsActive" Label="Active" />
+                            <MudTextField @bind-Value="value.Key" Label="Key" Margin="Density.Margin" />
+                            <MudTextField @bind-Value="value.Name" Label="Name" Margin="Density.Margin" />
+                            <MudCheckBox Dense="Density.Dense" @bind-Value="value.IsActive" Label="Active" />
                             <MudTooltip Text="@L["Remove"]"><MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove" OnClick="() => _listValues.Remove(value)" /></MudTooltip>
                         </MudStack>
                     }
@@ -127,8 +127,8 @@
                 </MudStack>
             }
             <MudStack Row="true" AlignItems="AlignItems.End">
-                <MudTextField @bind-Value="_groupKey" Label="Key" />
-                <MudTextField @bind-Value="_groupName" Label="Name" />
+                <MudTextField Margin="Density.Margin" @bind-Value="_groupKey" Label="Key" />
+                <MudTextField Margin="Density.Margin" @bind-Value="_groupName" Label="Name" />
                 <MudButton OnClick="() => RunAsync(() => Api.SaveGroupAsync(null, new PropertyGroupRequest(_groupKey ?? string.Empty, _groupName ?? string.Empty, _groups.Count)))">Add</MudButton>
             </MudStack>
         </div>
@@ -148,8 +148,8 @@
                 </MudStack>
             }
             <MudStack Row="true" AlignItems="AlignItems.End">
-                <MudTextField @bind-Value="_languageCode" Label="Code (e.g. de)" />
-                <MudTextField @bind-Value="_languageName" Label="Name" />
+                <MudTextField Margin="Density.Margin" @bind-Value="_languageCode" Label="Code (e.g. de)" />
+                <MudTextField Margin="Density.Margin" @bind-Value="_languageName" Label="Name" />
                 <MudButton OnClick="() => RunAsync(() => Api.SaveLanguageAsync(new DataLanguageDto(_languageCode ?? string.Empty, _languageName ?? string.Empty, false)))">Add</MudButton>
             </MudStack>
         </div>
@@ -169,8 +169,8 @@
                 </MudStack>
             }
             <MudStack Row="true" AlignItems="AlignItems.End">
-                <MudTextField @bind-Value="_contextKey" Label="Key (e.g. eu)" />
-                <MudTextField @bind-Value="_contextName" Label="Name" />
+                <MudTextField Margin="Density.Margin" @bind-Value="_contextKey" Label="Key (e.g. eu)" />
+                <MudTextField Margin="Density.Margin" @bind-Value="_contextName" Label="Name" />
                 <MudButton OnClick="() => RunAsync(() => Api.SaveContextAsync(new UserContextDto(_contextKey ?? string.Empty, _contextName ?? string.Empty, false)))">Add</MudButton>
             </MudStack>
         </div>

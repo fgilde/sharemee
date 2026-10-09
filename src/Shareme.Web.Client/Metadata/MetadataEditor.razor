@@ -26,7 +26,7 @@ else
                 @switch (Editor(field.Definition))
                 {
                     case "list":
-                        <MudSelect T="string" Label="@field.Label" MultiSelection="@(field.Definition.ListMode == ListModes.Multi)" Clearable="true"
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" Label="@field.Label" MultiSelection="@(field.Definition.ListMode == ListModes.Multi)" Clearable="true"
                                    SelectedValues="field.ListKeys" SelectedValuesChanged="values => field.ListKeys = values.ToList()" ReadOnly="field.ReadOnly"
                                    HelperText="@field.Helper" Required="field.Mandatory">
                             @foreach (var item in field.Definition.ListValues.Where(v => v.IsActive || field.ListKeys.Contains(v.Key)))
@@ -36,24 +36,24 @@ else
                         </MudSelect>
                         @if (field.Definition.AllowCustomValues)
                         {
-                            <MudTextField T="string" @bind-Value="field.Text" Label="Other value" Margin="Margin.Dense" ReadOnly="field.ReadOnly" />
+                            <MudTextField T="string" @bind-Value="field.Text" Label="Other value" Margin="Density.Margin" ReadOnly="field.ReadOnly" />
                         }
                         break;
                     case "boolean":
-                        <MudCheckBox T="bool?" @bind-Value="field.Bool" TriState="true" Label="@field.Label" ReadOnly="field.ReadOnly" />
+                        <MudCheckBox Dense="Density.Dense" T="bool?" @bind-Value="field.Bool" TriState="true" Label="@field.Label" ReadOnly="field.ReadOnly" />
                         @if (field.Helper is { } hint)
                         {
                             <MudText Typo="Typo.caption">@hint</MudText>
                         }
                         break;
                     case "number":
-                        <MudNumericField T="decimal?" @bind-Value="field.Number" Label="@field.Label" HelperText="@field.Helper" ReadOnly="field.ReadOnly" Required="field.Mandatory" />
+                        <MudNumericField Margin="Density.Margin" T="decimal?" @bind-Value="field.Number" Label="@field.Label" HelperText="@field.Helper" ReadOnly="field.ReadOnly" Required="field.Mandatory" />
                         break;
                     case "date":
-                        <MudDatePicker Date="field.Date" DateChanged="d => field.Date = d" Label="@field.Label" HelperText="@field.Helper" ReadOnly="field.ReadOnly" Editable="true" />
+                        <MudDatePicker Margin="Density.Margin" Date="field.Date" DateChanged="d => field.Date = d" Label="@field.Label" HelperText="@field.Helper" ReadOnly="field.ReadOnly" Editable="true" />
                         break;
                     default:
-                        <MudTextField T="string" @bind-Value="field.Text" Label="@field.Label" HelperText="@field.Helper" ReadOnly="field.ReadOnly" Required="field.Mandatory"
+                        <MudTextField Margin="Density.Margin" T="string" @bind-Value="field.Text" Label="@field.Label" HelperText="@field.Helper" ReadOnly="field.ReadOnly" Required="field.Mandatory"
                                       Lines="@(field.Definition.ValueType is PropertyValueTypes.Text or PropertyValueTypes.RichText ? 3 : 1)"
                                       Placeholder="@Placeholder(field.Definition.ValueType)" />
                         break;

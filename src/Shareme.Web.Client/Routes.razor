@@ -2,7 +2,7 @@
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(CoworkeeLayout)">
             <NotAuthorized>
-                <MudAlert Severity="Severity.Warning">You need to sign in, or you lack the permission for this page.</MudAlert>
+                <MudAlert Dense="Density.Dense" Severity="Severity.Warning">You need to sign in, or you lack the permission for this page.</MudAlert>
             </NotAuthorized>
         </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />

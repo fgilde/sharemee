@@ -6,7 +6,7 @@
 
 <PageHeader Title="My purchases" Description="Licenses you have bought, with the period they are valid and how many files they cover. Buy more in the License shop." />
 
-<MudSimpleTable Dense="true" Hover="true" data-testid="purchases">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="purchases">
     <thead><tr><th>Order</th><th>License</th><th>For</th><th>From</th><th>Until</th><th>Files</th><th>Price</th></tr></thead>
     <tbody>
         @foreach (var purchase in _purchases)

@@ -8,7 +8,7 @@
 <PageHeader Title="Previews & formats" Description="Define the image sizes created from files (previews, web and print versions), their watermarks and how downloads are named." />
 
 <MudText Typo="Typo.h6">@L["Formats"]</MudText>
-<MudSimpleTable Dense="true" Hover="true" data-testid="types">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="types">
     <thead><tr><th>Key</th><th>Name</th><th>Size</th><th>Format</th><th>Mode</th><th>Watermark</th><th>@L["File types"]</th><th></th></tr></thead>
     <tbody>
         @foreach (var type in _types)
@@ -37,32 +37,32 @@
 <MudPaper Outlined="true" Class="pa-4 mt-4">
     <MudText Typo="Typo.h6">@L[_typeId is null ? "New format" : "Edit format"]</MudText>
     <MudGrid>
-        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_type.Key" Label="Key" Disabled="_typeId is not null" data-testid="type-key" /></MudItem>
-        <MudItem xs="12" sm="8"><MudTextField @bind-Value="_type.Name" Label="Name" data-testid="type-name" /></MudItem>
-        <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_type.Width" Label="Max width" Min="16" Max="8000" /></MudItem>
-        <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_type.Height" Label="Max height" Min="16" Max="8000" /></MudItem>
+        <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_type.Key" Label="Key" Disabled="_typeId is not null" data-testid="type-key" /></MudItem>
+        <MudItem xs="12" sm="8"><MudTextField Margin="Density.Margin" @bind-Value="_type.Name" Label="Name" data-testid="type-name" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField Margin="Density.Margin" @bind-Value="_type.Width" Label="Max width" Min="16" Max="8000" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField Margin="Density.Margin" @bind-Value="_type.Height" Label="Max height" Min="16" Max="8000" /></MudItem>
         <MudItem xs="6" sm="3">
-            <MudSelect T="string" @bind-Value="_type.Format" Label="Format">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_type.Format" Label="Format">
                 @foreach (var format in DerivationFormats.All)
                 {
                     <MudSelectItem Value="@format">@format</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_type.Quality" Label="Quality" Min="10" Max="100" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField Margin="Density.Margin" @bind-Value="_type.Quality" Label="Quality" Min="10" Max="100" /></MudItem>
         <MudItem xs="12" sm="6">
-            <MudSelect T="Guid?" @bind-Value="_type.WatermarkId" Label="Watermark" Clearable="true">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_type.WatermarkId" Label="Watermark" Clearable="true">
                 @foreach (var watermark in _watermarks)
                 {
                     <MudSelectItem T="Guid?" Value="@watermark.Id">@watermark.Name</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_type.AssetTypes" Label="@L["File types (comma separated, empty for all)"]" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_type.AssetTypes" Label="@L["File types (comma separated, empty for all)"]" /></MudItem>
         <MudItem xs="12">
-            <MudCheckBox @bind-Value="_type.IsDefault" Label="Render for every new file" data-testid="type-default" />
-            <MudCheckBox @bind-Value="_type.IsOnDemand" Label="Render on request" />
-            <MudCheckBox @bind-Value="_type.AllowManualUpload" Label="Allow uploading by hand" />
+            <MudCheckBox Dense="Density.Dense" @bind-Value="_type.IsDefault" Label="Render for every new file" data-testid="type-default" />
+            <MudCheckBox Dense="Density.Dense" @bind-Value="_type.IsOnDemand" Label="Render on request" />
+            <MudCheckBox Dense="Density.Dense" @bind-Value="_type.AllowManualUpload" Label="Allow uploading by hand" />
         </MudItem>
     </MudGrid>
     <MudStack Row="true" Class="mt-2">
@@ -75,7 +75,7 @@
 </MudPaper>
 
 <MudText Typo="Typo.h6" Class="mt-6">Watermarks</MudText>
-<MudSimpleTable Dense="true" Hover="true" data-testid="watermarks">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="watermarks">
     <thead><tr><th>Name</th><th>Position</th><th>Opacity</th><th>Scale</th><th>Only when</th><th>Image</th><th></th></tr></thead>
     <tbody>
         @foreach (var watermark in _watermarks)
@@ -109,19 +109,19 @@
 <MudPaper Outlined="true" Class="pa-4 mt-4">
     <MudText Typo="Typo.h6">@(_watermarkId is null ? "New watermark" : "Edit watermark")</MudText>
     <MudGrid>
-        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_watermark.Name" Label="Name" data-testid="watermark-name" /></MudItem>
+        <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_watermark.Name" Label="Name" data-testid="watermark-name" /></MudItem>
         <MudItem xs="12" sm="4">
-            <MudSelect T="string" @bind-Value="_watermark.Position" Label="Position">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_watermark.Position" Label="Position">
                 @foreach (var position in WatermarkPositions.All)
                 {
                     <MudSelectItem Value="@position">@position</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_watermark.Opacity" Label="Opacity %" Min="1" Max="100" /></MudItem>
-        <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_watermark.ScalePercent" Label="Scale %" Min="1" Max="100" /></MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_watermark.TriggerProperty" Label="Only when property (key)" /></MudItem>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_watermark.TriggerValue" Label="has value (list key, empty for true)" /></MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField Margin="Density.Margin" @bind-Value="_watermark.Opacity" Label="Opacity %" Min="1" Max="100" /></MudItem>
+        <MudItem xs="6" sm="2"><MudNumericField Margin="Density.Margin" @bind-Value="_watermark.ScalePercent" Label="Scale %" Min="1" Max="100" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_watermark.TriggerProperty" Label="Only when property (key)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_watermark.TriggerValue" Label="has value (list key, empty for true)" /></MudItem>
     </MudGrid>
     <MudStack Row="true" Class="mt-2">
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveWatermarkAsync" data-testid="save-watermark">Save</MudButton>
@@ -134,7 +134,7 @@
 
 <MudText Typo="Typo.h6" Class="mt-6">Download file names</MudText>
 <MudText Typo="Typo.body2" Class="mb-2">Tokens: @string.Join(" ", FileNamingTokens.Variables.Select(v => "{" + v + "}")) {meta:property-key}. The extension is always added; the default rule names every download.</MudText>
-<MudSimpleTable Dense="true" Hover="true" data-testid="namings">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="namings">
     <thead><tr><th>Name</th><th>Format</th><th>Casing</th><th></th><th></th></tr></thead>
     <tbody>
         @foreach (var naming in _namings)
@@ -159,17 +159,17 @@
 
 <MudPaper Outlined="true" Class="pa-4 mt-4">
     <MudGrid>
-        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_naming.Name" Label="Name" data-testid="naming-name" /></MudItem>
-        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_naming.Format" Label="Format" data-testid="naming-format" /></MudItem>
+        <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_naming.Name" Label="Name" data-testid="naming-name" /></MudItem>
+        <MudItem xs="12" sm="5"><MudTextField Margin="Density.Margin" @bind-Value="_naming.Format" Label="Format" data-testid="naming-format" /></MudItem>
         <MudItem xs="12" sm="3">
-            <MudSelect T="string" @bind-Value="_naming.Casing" Label="Casing">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_naming.Casing" Label="Casing">
                 @foreach (var casing in FileNamingCasings.All)
                 {
                     <MudSelectItem Value="@casing">@casing</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12"><MudCheckBox @bind-Value="_naming.IsDefault" Label="Default for all downloads" /></MudItem>
+        <MudItem xs="12"><MudCheckBox Dense="Density.Dense" @bind-Value="_naming.IsDefault" Label="Default for all downloads" /></MudItem>
     </MudGrid>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" OnClick="SaveNamingAsync" data-testid="save-naming">Save</MudButton>
 </MudPaper>

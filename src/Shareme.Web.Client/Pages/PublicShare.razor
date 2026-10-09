@@ -55,7 +55,7 @@ else
                     </MudStack>
                     @if (selected.AvailableKinds.Contains(DerivationKinds.Preview))
                     {
-                        <MudExFileDisplay @key="selected.AssetId" Url="@ShareUrls.File(Token, selected.AssetId, DerivationKinds.Preview)" ContentType="image/webp" FileName="@selected.Name" ShowFileName="false" />
+                        <MudExFileDisplay Dense="Density.Dense" @key="selected.AssetId" Url="@ShareUrls.File(Token, selected.AssetId, DerivationKinds.Preview)" ContentType="image/webp" FileName="@selected.Name" ShowFileName="false" />
                     }
                     <MudStack Row="true" Wrap="Wrap.Wrap" Class="mt-2">
                         @foreach (var kind in selected.AvailableKinds)

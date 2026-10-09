@@ -14,7 +14,7 @@
     }
 </PageHeader>
 
-<MudSimpleTable Dense="true" Hover="true" data-testid="runs">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="runs">
     <thead><tr><th>Started</th><th>@L["Task"]</th><th>State</th><th>Total</th><th>Done</th><th>Failed</th><th></th></tr></thead>
     <tbody>
         @foreach (var run in _overview?.Runs ?? [])

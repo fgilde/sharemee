@@ -55,7 +55,7 @@ else
                 {
                     <div class="mb-4"><UploadPanel FolderId="_workspace.Id" /></div>
                 }
-                <MudSimpleTable Dense="true" Hover="true" data-testid="items">
+                <MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="items">
                     <thead><tr><th></th><th>Name</th><th>Type</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var item in _items)
@@ -89,7 +89,7 @@ else
         </MudTabPanel>
         <MudTabPanel Text="Members">
             <div class="pa-4">
-                <MudSimpleTable Dense="true" data-testid="members">
+                <MudSimpleTable Dense="Density.Dense" data-testid="members">
                     <tbody>
                         @foreach (var member in _members)
                         {
@@ -111,8 +111,8 @@ else
                 @if (IsOwner)
                 {
                     <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-4">
-                        <MudAutocomplete T="WorkspaceMemberDto" @bind-Value="_candidate" SearchFunc="FindAsync" ToStringFunc="@(m => m is null ? null : m.Email)" Label="Add a member" DebounceInterval="300" Style="min-width:280px" data-testid="member-search" />
-                        <MudSelect T="string" @bind-Value="_role" Label="Role" Style="max-width:160px">
+                        <MudAutocomplete Margin="Density.Margin" Dense="Density.Dense" T="WorkspaceMemberDto" @bind-Value="_candidate" SearchFunc="FindAsync" ToStringFunc="@(m => m is null ? null : m.Email)" Label="Add a member" DebounceInterval="300" Style="min-width:280px" data-testid="member-search" />
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_role" Label="Role" Style="max-width:160px">
                             @foreach (var role in WorkspaceRoles.All)
                             {
                                 <MudSelectItem Value="@role">@L[Workspaces.RoleName(role)]</MudSelectItem>
@@ -133,7 +133,7 @@ else
         {
             <MudTabPanel Text="@L["Settings"]">
                 <div class="pa-4">
-                    <MudTextField @bind-Value="_name" Label="Name" />
+                    <MudTextField Margin="Density.Margin" @bind-Value="_name" Label="Name" />
                     @if (_workspace.Kind != WorkspaceKinds.Collection)
                     {
                         <MudText Typo="Typo.subtitle2" Class="mt-4">Finalise into</MudText>

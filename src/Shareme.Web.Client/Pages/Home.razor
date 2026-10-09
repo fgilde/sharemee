@@ -24,7 +24,7 @@
                 @foreach (var widget in HomeWidgets.All)
                 {
                     <MudStack Row="true" AlignItems="AlignItems.Center">
-                        <MudCheckBox T="bool" Value="_widgets.Contains(widget)" ValueChanged="on => Toggle(widget, on)" Label="@Title(widget)" />
+                        <MudCheckBox Dense="Density.Dense" T="bool" Value="_widgets.Contains(widget)" ValueChanged="on => Toggle(widget, on)" Label="@Title(widget)" />
                         @if (_widgets.Contains(widget))
                         {
                             <MudTooltip Text="@L["Move up"]"><MudIconButton Icon="@Icons.Material.Outlined.ArrowUpward" Size="Size.Small" aria-label="Move up" OnClick="() => Move(widget, -1)" /></MudTooltip>
@@ -49,7 +49,7 @@
                         @switch (widget)
                         {
                             case HomeWidgets.Search:
-                                <MudTextField T="string" @bind-Value="_term" Placeholder="Search everything" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                                <MudTextField Margin="Density.Margin" T="string" @bind-Value="_term" Placeholder="Search everything" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                                               OnKeyDown="SearchKeyAsync" Immediate="true" />
                                 break;
                             case HomeWidgets.News:

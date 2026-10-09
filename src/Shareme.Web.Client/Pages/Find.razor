@@ -5,7 +5,7 @@
 @using Shareme.Web.Client.Knowledge
 
 <PageHeader Title="Quick search" Description="Find files, pages, news and people in one go. For filters, sorting and saved searches use File search." />
-<MudTextField T="string" @bind-Value="_term" Placeholder="Search files, pages, news and people" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+<MudTextField Margin="Density.Margin" T="string" @bind-Value="_term" Placeholder="Search files, pages, news and people" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
               OnKeyDown="KeyAsync" Immediate="true" Class="mb-4" data-testid="find-term" />
 
 @if (_result is { } result)

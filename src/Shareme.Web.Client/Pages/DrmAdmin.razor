@@ -5,11 +5,11 @@
 @using Shareme.Web.Client.Drm
 
 <PageHeader Title="License management" Description="Set up the licenses people can buy for files: who owns the rights, what they cost and for whom." />
-<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Billing contacts 2. Rights owners 3. Audience groups (optional) 4. Price lists 5. Licenses with a price per rights owner 6. Add files: select them in Browse and choose Add to license."]</MudAlert>
+<MudAlert Severity="Severity.Info" Dense="Density.Dense" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Billing contacts 2. Rights owners 3. Audience groups (optional) 4. Price lists 5. Licenses with a price per rights owner 6. Add files: select them in Browse and choose Add to license."]</MudAlert>
 
 <MudTabs Outlined="true">
     <MudTabPanel Text="Licenses">
-        <MudSimpleTable Dense="true" Hover="true" data-testid="licenses">
+        <MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="licenses">
             <thead><tr><th>Name</th><th>Status</th><th>Rights</th><th>Period</th><th>Days</th><th>Files</th><th></th></tr></thead>
             <tbody>
                 @foreach (var license in _licenses)
@@ -36,14 +36,14 @@
         <MudPaper Outlined="true" Class="pa-4 mt-4">
             <MudText Typo="Typo.h6">@(_licenseId is null ? "New license" : "Edit license")</MudText>
             <MudGrid>
-                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_license.Name" Label="Name" data-testid="license-name" /></MudItem>
-                <MudItem xs="12" sm="8"><MudTextField @bind-Value="_license.Description" Label="Description" /></MudItem>
-                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_license.Rights" Label="Rights (comma separated)" /></MudItem>
-                <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="_license.From" Label="Valid from" /></MudItem>
-                <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="_license.Until" Label="Valid until" /></MudItem>
-                <MudItem xs="6" sm="2"><MudNumericField @bind-Value="_license.Days" Label="@L["Days of use per purchase"]" Min="1" /></MudItem>
+                <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_license.Name" Label="Name" data-testid="license-name" /></MudItem>
+                <MudItem xs="12" sm="8"><MudTextField Margin="Density.Margin" @bind-Value="_license.Description" Label="Description" /></MudItem>
+                <MudItem xs="12" sm="4"><MudTextField Margin="Density.Margin" @bind-Value="_license.Rights" Label="Rights (comma separated)" /></MudItem>
+                <MudItem xs="6" sm="2"><MudDatePicker Margin="Density.Margin" @bind-Date="_license.From" Label="Valid from" /></MudItem>
+                <MudItem xs="6" sm="2"><MudDatePicker Margin="Density.Margin" @bind-Date="_license.Until" Label="Valid until" /></MudItem>
+                <MudItem xs="6" sm="2"><MudNumericField Margin="Density.Margin" @bind-Value="_license.Days" Label="@L["Days of use per purchase"]" Min="1" /></MudItem>
                 <MudItem xs="6" sm="2">
-                    <MudSelect T="string" @bind-Value="_license.Status" Label="Status">
+                    <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_license.Status" Label="Status">
                         @foreach (var status in LicenseStatuses.All)
                         {
                             <MudSelectItem Value="@status">@status</MudSelectItem>
@@ -63,7 +63,7 @@
             {
                 <MudText Typo="Typo.subtitle1" Class="mt-4">@L["Prices per rights owner"]</MudText>
                 <MudText Typo="Typo.body2">@L["Price = basis × (1 + fee %) × the percentage of the price list for the audience or audience group. Files are added from the selection in Browse."]</MudText>
-                <MudSimpleTable Dense="true" data-testid="buyouts">
+                <MudSimpleTable Dense="Density.Dense" data-testid="buyouts">
                     <thead><tr><th>Rights owner</th><th>Price list</th><th>Basis</th><th>Fee</th><th>Valid</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var buyout in _buyouts)
@@ -85,7 +85,7 @@
                 </MudSimpleTable>
                 <MudGrid Class="mt-2">
                     <MudItem xs="12" sm="3">
-                        <MudSelect T="Guid?" @bind-Value="_buyout.OwnerId" Label="Rights owner">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_buyout.OwnerId" Label="Rights owner">
                             @foreach (var owner in _owners)
                             {
                                 <MudSelectItem T="Guid?" Value="owner.Id">@owner.Name</MudSelectItem>
@@ -93,16 +93,16 @@
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="12" sm="3">
-                        <MudSelect T="Guid?" @bind-Value="_buyout.PriceListId" Label="Price list">
+                        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_buyout.PriceListId" Label="Price list">
                             @foreach (var list in _priceLists)
                             {
                                 <MudSelectItem T="Guid?" Value="list.Id">@list.Name</MudSelectItem>
                             }
                         </MudSelect>
                     </MudItem>
-                    <MudItem xs="4" sm="2"><MudNumericField @bind-Value="_buyout.Basis" Label="Basis" Min="0" /></MudItem>
-                    <MudItem xs="4" sm="1"><MudTextField @bind-Value="_buyout.Currency" Label="Currency" MaxLength="3" /></MudItem>
-                    <MudItem xs="4" sm="1"><MudNumericField @bind-Value="_buyout.Fee" Label="Fee %" Min="0" /></MudItem>
+                    <MudItem xs="4" sm="2"><MudNumericField Margin="Density.Margin" @bind-Value="_buyout.Basis" Label="Basis" Min="0" /></MudItem>
+                    <MudItem xs="4" sm="1"><MudTextField Margin="Density.Margin" @bind-Value="_buyout.Currency" Label="Currency" MaxLength="3" /></MudItem>
+                    <MudItem xs="4" sm="1"><MudNumericField Margin="Density.Margin" @bind-Value="_buyout.Fee" Label="Fee %" Min="0" /></MudItem>
                     <MudItem xs="12" sm="2"><MudButton Variant="Variant.Outlined" OnClick="() => AddBuyoutAsync(licenseId)" Disabled="_buyout.OwnerId is null || _buyout.PriceListId is null">@L["Add price"]</MudButton></MudItem>
                 </MudGrid>
             }
@@ -110,7 +110,7 @@
     </MudTabPanel>
 
     <MudTabPanel Text="Rights owners">
-        <MudSimpleTable Dense="true" Hover="true">
+        <MudSimpleTable Dense="Density.Dense" Hover="true">
             <thead><tr><th>Name</th><th>Kind</th><th>Billing contact</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var owner in _owners)
@@ -130,9 +130,9 @@
             </tbody>
         </MudSimpleTable>
         <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
-            <MudTextField @bind-Value="_ownerName" Label="Name" />
-            <MudTextField @bind-Value="_ownerKind" Label="Kind" />
-            <MudSelect T="Guid?" @bind-Value="_ownerContact" Label="Billing contact" Clearable="true">
+            <MudTextField Margin="Density.Margin" @bind-Value="_ownerName" Label="Name" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_ownerKind" Label="Kind" />
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_ownerContact" Label="Billing contact" Clearable="true">
                 @foreach (var contact in _contacts)
                 {
                     <MudSelectItem T="Guid?" Value="contact.Id">@contact.Name</MudSelectItem>
@@ -143,7 +143,7 @@
     </MudTabPanel>
 
     <MudTabPanel Text="Billing contacts">
-        <MudSimpleTable Dense="true" Hover="true">
+        <MudSimpleTable Dense="Density.Dense" Hover="true">
             <thead><tr><th>Name</th><th>E-mail</th><th>IBAN</th><th></th></tr></thead>
             <tbody>
                 @foreach (var contact in _contacts)
@@ -162,15 +162,15 @@
             </tbody>
         </MudSimpleTable>
         <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
-            <MudTextField @bind-Value="_contactName" Label="Name" />
-            <MudTextField @bind-Value="_contactEmail" Label="E-mail" />
-            <MudTextField @bind-Value="_contactIban" Label="IBAN" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_contactName" Label="Name" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_contactEmail" Label="E-mail" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_contactIban" Label="IBAN" />
             <MudButton Variant="Variant.Outlined" OnClick="() => RunAsync(() => Api.SaveContactAsync(null, new BillingContactRequest(_contactName ?? string.Empty, _contactEmail ?? string.Empty, Iban: _contactIban)))">Add</MudButton>
         </MudStack>
     </MudTabPanel>
 
     <MudTabPanel Text="Price lists">
-        <MudSimpleTable Dense="true" Hover="true">
+        <MudSimpleTable Dense="Density.Dense" Hover="true">
             <thead><tr><th>Name</th><th>Percentages</th><th></th></tr></thead>
             <tbody>
                 @foreach (var list in _priceLists)
@@ -188,14 +188,14 @@
             </tbody>
         </MudSimpleTable>
         <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
-            <MudTextField @bind-Value="_priceListName" Label="Name" />
-            <MudTextField @bind-Value="_priceListEntries" Label="@L["Percentages (audience=120, group name=80; one per line)"]" Lines="3" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_priceListName" Label="Name" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_priceListEntries" Label="@L["Percentages (audience=120, group name=80; one per line)"]" Lines="3" />
             <MudButton Variant="Variant.Outlined" OnClick="AddPriceListAsync">Add</MudButton>
         </MudStack>
     </MudTabPanel>
 
     <MudTabPanel Text="@L["Audience groups"]">
-        <MudSimpleTable Dense="true" Hover="true">
+        <MudSimpleTable Dense="Density.Dense" Hover="true">
             <thead><tr><th>Name</th><th>@L["Audiences"]</th><th></th></tr></thead>
             <tbody>
                 @foreach (var group in _groups)
@@ -213,8 +213,8 @@
             </tbody>
         </MudSimpleTable>
         <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
-            <MudTextField @bind-Value="_groupName" Label="Name" />
-            <MudTextField @bind-Value="_groupContexts" Label="@L["Audience keys (comma separated)"]" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_groupName" Label="Name" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_groupContexts" Label="@L["Audience keys (comma separated)"]" />
             <MudButton Variant="Variant.Outlined" OnClick="() => RunAsync(() => Api.SaveGroupAsync(null, new ContextGroupRequest(_groupName ?? string.Empty, Split(_groupContexts))))">Add</MudButton>
         </MudStack>
     </MudTabPanel>

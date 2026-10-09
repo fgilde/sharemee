@@ -8,7 +8,7 @@
 <PageHeader Title="Restrictions" Description="Take something away from everyone with a role, on top of their permissions: hide a property or make it read only, hide files and folders with a certain list value, or block a preview format." />
 <MudText Typo="Typo.body2" Class="mb-4">@L["Restrictions apply to the roles users hold for the whole organisation (directly or through groups), not to roles granted on single folders or workspaces. Define the properties and list values under Metadata first."]</MudText>
 
-<MudSimpleTable Dense="true" Hover="true" data-testid="restrictions">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="restrictions">
     <thead><tr><th>Role</th><th>Restriction</th><th>Property</th><th>Value</th><th></th></tr></thead>
     <tbody>
         @foreach (var restriction in _restrictions)
@@ -32,7 +32,7 @@
     <MudText Typo="Typo.h6">New restriction</MudText>
     <MudGrid>
         <MudItem xs="12" sm="3">
-            <MudSelect T="Guid?" @bind-Value="_roleId" Label="Role" data-testid="restriction-role">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="_roleId" Label="Role" data-testid="restriction-role">
                 @foreach (var role in _roles)
                 {
                     <MudSelectItem T="Guid?" Value="role.Id">@role.Name</MudSelectItem>
@@ -40,16 +40,16 @@
             </MudSelect>
         </MudItem>
         <MudItem xs="12" sm="3">
-            <MudSelect T="string" @bind-Value="_kind" Label="Restriction">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_kind" Label="Restriction">
                 @foreach (var kind in RestrictionKinds.All)
                 {
                     <MudSelectItem Value="@kind">@L[Label(kind)]</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="6" sm="3"><MudTextField @bind-Value="_propertyKey" Label="Property key" Disabled="_kind == RestrictionKinds.BlockedRendition" /></MudItem>
+        <MudItem xs="6" sm="3"><MudTextField Margin="Density.Margin" @bind-Value="_propertyKey" Label="Property key" Disabled="_kind == RestrictionKinds.BlockedRendition" /></MudItem>
         <MudItem xs="6" sm="3">
-            <MudTextField @bind-Value="_value" Label="@(_kind == RestrictionKinds.BlockedRendition ? L["Preview format key"] : L["List value key"])"
+            <MudTextField Margin="Density.Margin" @bind-Value="_value" Label="@(_kind == RestrictionKinds.BlockedRendition ? L["Preview format key"] : L["List value key"])"
                           Disabled="_kind is RestrictionKinds.HiddenProperty or RestrictionKinds.ReadOnlyProperty" />
         </MudItem>
     </MudGrid>

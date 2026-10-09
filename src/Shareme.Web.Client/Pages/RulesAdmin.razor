@@ -5,9 +5,9 @@
 @using Shareme.Web.Client.Metadata
 
 <PageHeader Title="Rules" Description="Rules fill in properties automatically when files and folders are created or changed, for example a status or a year." />
-<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Create the properties under Metadata. 2. For values found by AI, set up AI tagging. 3. Create a rule below and try it with Dry run. 4. Run it on existing content at the bottom of this page."]</MudAlert>
+<MudAlert Severity="Severity.Info" Dense="Density.Dense" Class="mb-4" data-testid="setup-order">@L["Setup order: 1. Create the properties under Metadata. 2. For values found by AI, set up AI tagging. 3. Create a rule below and try it with Dry run. 4. Run it on existing content at the bottom of this page."]</MudAlert>
 
-<MudSimpleTable Dense="true" Hover="true" data-testid="rules">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="rules">
     <thead><tr><th>Name</th><th>Active</th><th>@L["Item types"]</th><th>Conditions</th><th>Writes</th><th></th></tr></thead>
     <tbody>
         @foreach (var rule in _rules)
@@ -34,10 +34,10 @@
 <MudPaper Outlined="true" Class="pa-4 mt-4" data-testid="rule-editor">
     <MudText Typo="Typo.h6">@(_ruleId is null ? "New rule" : "Edit rule")</MudText>
     <MudGrid>
-        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_name" Label="Name" data-testid="rule-name" /></MudItem>
-        <MudItem xs="12" sm="5"><MudTextField @bind-Value="_nodeTypes" Label="@L["Item types (keys from Item types, comma separated, empty for all)"]" /></MudItem>
-        <MudItem xs="6" sm="1"><MudNumericField @bind-Value="_sortIndex" Label="Order" /></MudItem>
-        <MudItem xs="6" sm="1"><MudCheckBox @bind-Value="_isActive" Label="Active" /></MudItem>
+        <MudItem xs="12" sm="5"><MudTextField Margin="Density.Margin" @bind-Value="_name" Label="Name" data-testid="rule-name" /></MudItem>
+        <MudItem xs="12" sm="5"><MudTextField Margin="Density.Margin" @bind-Value="_nodeTypes" Label="@L["Item types (keys from Item types, comma separated, empty for all)"]" /></MudItem>
+        <MudItem xs="6" sm="1"><MudNumericField Margin="Density.Margin" @bind-Value="_sortIndex" Label="Order" /></MudItem>
+        <MudItem xs="6" sm="1"><MudCheckBox Dense="Density.Dense" @bind-Value="_isActive" Label="Active" /></MudItem>
     </MudGrid>
 
     <MudText Typo="Typo.subtitle1" Class="mt-4">Conditions</MudText>
@@ -45,18 +45,18 @@
     @foreach (var condition in _conditions)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" data-testid="condition">
-            <MudSelect T="string" @bind-Value="condition.Kind" Label="Kind" Style="max-width:140px">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="condition.Kind" Label="Kind" Style="max-width:140px">
                 <MudSelectItem Value="@RuleConditionKinds.Filter">filter</MudSelectItem>
                 <MudSelectItem Value="@RuleConditionKinds.Trigger">trigger</MudSelectItem>
             </MudSelect>
-            <MudTextField @bind-Value="condition.PropertyKey" Label="Property key" Disabled="!NeedsProperty(condition.Operator)" />
-            <MudSelect T="string" @bind-Value="condition.Operator" Label="Operator" Style="max-width:200px">
+            <MudTextField Margin="Density.Margin" @bind-Value="condition.PropertyKey" Label="Property key" Disabled="!NeedsProperty(condition.Operator)" />
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="condition.Operator" Label="Operator" Style="max-width:200px">
                 @foreach (var op in RuleOperators.All.Order())
                 {
                     <MudSelectItem Value="@op">@op</MudSelectItem>
                 }
             </MudSelect>
-            <MudTextField @bind-Value="condition.Value" Label="@(condition.Operator == RuleOperators.HasRelation ? "Relation type key" : "Value")"
+            <MudTextField Margin="Density.Margin" @bind-Value="condition.Value" Label="@(condition.Operator == RuleOperators.HasRelation ? "Relation type key" : "Value")"
                           Disabled="!RuleOperators.WithValue.Contains(condition.Operator) && condition.Operator != RuleOperators.HasRelation" />
             <MudTooltip Text="@L["Remove condition"]"><MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove condition" OnClick="() => _conditions.Remove(condition)" /></MudTooltip>
         </MudStack>
@@ -68,20 +68,20 @@
     @foreach (var action in _actions)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" data-testid="action">
-            <MudSelect T="bool" @bind-Value="action.OnMatch" Label="Branch" Style="max-width:120px">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="bool" @bind-Value="action.OnMatch" Label="Branch" Style="max-width:120px">
                 <MudSelectItem Value="true">then</MudSelectItem>
                 <MudSelectItem Value="false">else</MudSelectItem>
             </MudSelect>
-            <MudSelect T="Guid?" @bind-Value="action.ExtractionId" Label="Writes" Style="max-width:200px" Clearable="true">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid?" @bind-Value="action.ExtractionId" Label="Writes" Style="max-width:200px" Clearable="true">
                 <MudSelectItem T="Guid?" Value="null">a template</MudSelectItem>
                 @foreach (var extraction in _extractions)
                 {
                     <MudSelectItem T="Guid?" Value="extraction.Id">AI: @extraction.Name</MudSelectItem>
                 }
             </MudSelect>
-            <MudTextField @bind-Value="action.PropertyKey" Label="Property key" Style="max-width:220px" Disabled="action.ExtractionId is not null" />
-            <MudTextField @bind-Value="action.Template" Label="Template" Disabled="action.ExtractionId is not null" />
-            <MudCheckBox @bind-Value="action.OnlyIfEmpty" Label="only if empty" />
+            <MudTextField Margin="Density.Margin" @bind-Value="action.PropertyKey" Label="Property key" Style="max-width:220px" Disabled="action.ExtractionId is not null" />
+            <MudTextField Margin="Density.Margin" @bind-Value="action.Template" Label="Template" Disabled="action.ExtractionId is not null" />
+            <MudCheckBox Dense="Density.Dense" @bind-Value="action.OnlyIfEmpty" Label="only if empty" />
             <MudTooltip Text="@L["Remove action"]"><MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove action" OnClick="() => _actions.Remove(action)" /></MudTooltip>
         </MudStack>
     }
@@ -98,12 +98,12 @@
     @if (_ruleId is { } ruleId)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-4">
-            <MudTextField @bind-Value="_testNode" Label="@L["Try on an item (its id from the address bar)"]" data-testid="test-node" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_testNode" Label="@L["Try on an item (its id from the address bar)"]" data-testid="test-node" />
             <MudButton Variant="Variant.Outlined" OnClick="() => TestAsync(ruleId)" data-testid="test-rule">@L["Dry run"]</MudButton>
         </MudStack>
         @if (_test is { } test)
         {
-            <MudAlert Severity="@(test.FiltersMatched ? Severity.Info : Severity.Warning)" Class="mt-2" data-testid="test-result">
+            <MudAlert Dense="Density.Dense" Severity="@(test.FiltersMatched ? Severity.Info : Severity.Warning)" Class="mt-2" data-testid="test-result">
                 @(test.FiltersMatched ? test.TriggersMatched ? "Filters and triggers hold: the \"then\" actions run." : "Filters hold, no trigger: the \"else\" actions run." : "The filters do not hold: nothing runs.")
                 @foreach (var (key, value) in test.Values)
                 {
@@ -121,10 +121,10 @@
 <MudText Typo="Typo.h6" Class="mt-6">Run rules on existing content</MudText>
 <MudText Typo="Typo.body2" Class="mb-2">@L["Rules whose triggers only react to changes, new versions or new items run live only. The first version of a file counts as a new version and a new item."]</MudText>
 <MudStack Row="true" AlignItems="AlignItems.Center">
-    <MudTextField @bind-Value="_jobFolder" Label="@L["Folder id (from the address bar), everything below it"]" data-testid="job-folder" />
+    <MudTextField Margin="Density.Margin" @bind-Value="_jobFolder" Label="@L["Folder id (from the address bar), everything below it"]" data-testid="job-folder" />
     <MudButton Variant="Variant.Outlined" OnClick="StartJobAsync" data-testid="start-job">Run active rules</MudButton>
 </MudStack>
-<MudSimpleTable Dense="true" Hover="true" Class="mt-2" data-testid="jobs">
+<MudSimpleTable Dense="Density.Dense" Hover="true" Class="mt-2" data-testid="jobs">
     <thead><tr><th>Started</th><th>State</th><th>@L["Items"]</th><th>Matched</th><th>Written</th><th>Skipped</th><th>Failed</th><th></th></tr></thead>
     <tbody>
         @foreach (var job in _jobs)

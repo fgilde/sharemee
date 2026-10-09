@@ -8,15 +8,15 @@
     <div style="height:420px">
         <MudExImageViewer Src="@AssetUrls.Derivation(Asset.Id, DerivationKinds.Preview, Asset.RenditionTag)" AllowRubberBandSelection="true" ImageAreaSelected="OnSelected" />
     </div>
-    <MudChipSet T="string" @bind-SelectedValue="_ratio" SelectionMode="SelectionMode.SingleSelection" CheckMark="true" data-testid="ratios">
+    <MudChipSet Size="Density.Size" T="string" @bind-SelectedValue="_ratio" SelectionMode="SelectionMode.SingleSelection" CheckMark="true" data-testid="ratios">
         @foreach (var (label, _) in Ratios)
         {
-            <MudChip T="string" Value="@label" Text="@label" />
+            <MudChip Size="Density.Size" T="string" Value="@label" Text="@label" />
         }
     </MudChipSet>
     <MudText Typo="Typo.caption" data-testid="crop-size">@SizeText</MudText>
     <MudStack Row="true" AlignItems="AlignItems.End">
-        <MudSelect T="string" @bind-Value="_target" Label="Use the crop for" Style="min-width:240px" data-testid="crop-target">
+        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-Value="_target" Label="Use the crop for" Style="min-width:240px" data-testid="crop-target">
             <MudSelectItem T="string" Value="@AsVariant">a new asset (variant)</MudSelectItem>
             @foreach (var type in Types)
             {
@@ -25,7 +25,7 @@
         </MudSelect>
         @if (_target == AsVariant)
         {
-            <MudTextField @bind-Value="_name" Label="Name" Placeholder="@($"{Path.GetFileNameWithoutExtension(Asset.Name)} (crop)")" data-testid="crop-name" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_name" Label="Name" Placeholder="@($"{Path.GetFileNameWithoutExtension(Asset.Name)} (crop)")" data-testid="crop-name" />
         }
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="Area is null" OnClick="ApplyAsync" data-testid="apply-crop">Crop</MudButton>
         <MudButton OnClick="OnClose">Cancel</MudButton>

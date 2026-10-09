@@ -33,10 +33,10 @@
             @if (_editing)
             {
                 <MudPaper Outlined="true" Class="pa-4" data-testid="page-editor">
-                    <MudTextField @bind-Value="_title" Label="Title" data-testid="page-edit-title" />
+                    <MudTextField Margin="Density.Margin" @bind-Value="_title" Label="Title" data-testid="page-edit-title" />
                     <MudGrid Class="mt-2">
                         <MudItem xs="12" md="6">
-                            <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="24" Variant="Variant.Outlined" Immediate="true" DebounceInterval="400"
+                            <MudTextField Margin="Density.Margin" @bind-Value="_markdown" Label="Text (Markdown)" Lines="24" Variant="Variant.Outlined" Immediate="true" DebounceInterval="400"
                                           OnDebounceIntervalElapsed="_ => PreviewAsync()" data-testid="page-edit-markdown" />
                         </MudItem>
                         <MudItem xs="12" md="6">
@@ -45,7 +45,7 @@
                             <div class="page-content" data-testid="page-preview">@((MarkupString)_preview)</div>
                         </MudItem>
                     </MudGrid>
-                    <MudTextField @bind-Value="_comment" Label="What changed (optional)" Class="mt-2" />
+                    <MudTextField Margin="Density.Margin" @bind-Value="_comment" Label="What changed (optional)" Class="mt-2" />
                     <MudStack Row="true" Class="mt-2">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-page">Save</MudButton>
                         <MudButton OnClick="() => _editing = false">Cancel</MudButton>

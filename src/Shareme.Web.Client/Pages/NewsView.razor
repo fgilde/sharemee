@@ -32,13 +32,13 @@
     @if (_editing)
     {
         <MudPaper Outlined="true" Class="pa-4">
-            <MudTextField @bind-Value="_title" Label="Title" />
-            <MudTextField @bind-Value="_markdown" Label="Text (Markdown)" Lines="14" Variant="Variant.Outlined" Class="mt-2" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_title" Label="Title" />
+            <MudTextField Margin="Density.Margin" @bind-Value="_markdown" Label="Text (Markdown)" Lines="14" Variant="Variant.Outlined" Class="mt-2" />
             <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
-                <MudTextField T="DateTime?" @bind-Value="_publish" Label="Published from" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" data-testid="news-publish" />
+                <MudTextField Margin="Density.Margin" T="DateTime?" @bind-Value="_publish" Label="Published from" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" data-testid="news-publish" />
                 <MudButton Size="Size.Small" OnClick="() => _publish = DateTime.Now">Now</MudButton>
-                <MudTextField T="DateTime?" @bind-Value="_expires" Label="Shown until (optional)" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" Clearable="true" />
-                <MudCheckBox @bind-Value="_pinned" Label="Pinned" />
+                <MudTextField Margin="Density.Margin" T="DateTime?" @bind-Value="_expires" Label="Shown until (optional)" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" Clearable="true" />
+                <MudCheckBox Dense="Density.Dense" @bind-Value="_pinned" Label="Pinned" />
             </MudStack>
             <MudStack Row="true" Class="mt-2">
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-news">Save</MudButton>

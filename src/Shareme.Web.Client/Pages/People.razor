@@ -6,7 +6,7 @@
 @using Shareme.Web.Client.Knowledge
 
 <PageHeader Title="People" Description="Find colleagues by name, department or place. Use the profile button to fill in your own profile and picture.">
-    <MudTextField T="string" @bind-Value="_search" Placeholder="Name, department, place" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+    <MudTextField Margin="Density.Margin" T="string" @bind-Value="_search" Placeholder="Name, department, place" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                   Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="_ => LoadAsync()" Style="max-width:300px" data-testid="people-search" />
     <MudTooltip Text="@L["Edit my profile"]">
         <MudToggleIconButton @bind-Toggled="_editing" Icon="@Icons.Material.Outlined.ManageAccounts" ToggledIcon="@Icons.Material.Filled.ManageAccounts" aria-label="My profile" data-testid="edit-profile" />
@@ -18,11 +18,11 @@
     <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="profile-editor">
         <MudText Typo="Typo.h6">My profile</MudText>
         <MudGrid>
-            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Department" Label="Department" /></MudItem>
-            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Position" Label="Position" /></MudItem>
-            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Phone" Label="Phone" /></MudItem>
-            <MudItem xs="12" sm="6"><MudTextField @bind-Value="_profile.Location" Label="Location" /></MudItem>
-            <MudItem xs="12"><MudTextField @bind-Value="_profile.About" Label="About me" Lines="3" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_profile.Department" Label="Department" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_profile.Position" Label="Position" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_profile.Phone" Label="Phone" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_profile.Location" Label="Location" /></MudItem>
+            <MudItem xs="12"><MudTextField Margin="Density.Margin" @bind-Value="_profile.About" Label="About me" Lines="3" /></MudItem>
         </MudGrid>
         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="save-profile">Save</MudButton>

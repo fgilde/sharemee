@@ -27,10 +27,10 @@
     {
         <MudText Typo="Typo.body2">No comments yet.</MudText>
     }
-    <MudTextField @bind-Value="_text" Label="Write a comment" Lines="3" Immediate="true" data-testid="comment-text" />
+    <MudTextField Margin="Density.Margin" @bind-Value="_text" Label="Write a comment" Lines="3" Immediate="true" data-testid="comment-text" />
     @if (Members.Count > 0)
     {
-        <MudSelect T="Guid" @bind-SelectedValues="_mentions" MultiSelection="true" Label="Mention" ToStringFunc="@(id => MemberName(id))" Clearable="true">
+        <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="Guid" @bind-SelectedValues="_mentions" MultiSelection="true" Label="Mention" ToStringFunc="@(id => MemberName(id))" Clearable="true">
             @foreach (var member in Members)
             {
                 <MudSelectItem T="Guid" Value="@member.UserId">@(string.IsNullOrWhiteSpace(member.Name) ? member.Email : member.Name)</MudSelectItem>

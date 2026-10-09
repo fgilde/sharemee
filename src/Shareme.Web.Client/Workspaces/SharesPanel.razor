@@ -2,7 +2,7 @@
 @using Shareme.Contracts.Assets
 @using Shareme.Contracts.Workspaces
 
-<MudSimpleTable Dense="true" data-testid="shares">
+<MudSimpleTable Dense="Density.Dense" data-testid="shares">
     <thead><tr><th>Name</th><th>Until</th><th>Includes</th><th>Recipients</th><th></th></tr></thead>
     <tbody>
         @foreach (var share in _shares)
@@ -29,18 +29,18 @@
 <MudPaper Outlined="true" Class="pa-4 mt-4">
     <MudText Typo="Typo.h6">Share with people outside</MudText>
     <MudGrid>
-        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_name" Label="Name" data-testid="share-name" /></MudItem>
-        <MudItem xs="12" sm="6"><MudDatePicker @bind-Date="_until" Label="Valid until" MinDate="DateTime.Today.AddDays(1)" MaxDate="DateTime.Today.AddDays(364)" /></MudItem>
-        <MudItem xs="12"><MudTextField @bind-Value="_emails" Label="E-mail addresses (comma or line separated)" Lines="2" data-testid="share-emails" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField Margin="Density.Margin" @bind-Value="_name" Label="Name" data-testid="share-name" /></MudItem>
+        <MudItem xs="12" sm="6"><MudDatePicker Margin="Density.Margin" @bind-Date="_until" Label="Valid until" MinDate="DateTime.Today.AddDays(1)" MaxDate="DateTime.Today.AddDays(364)" /></MudItem>
+        <MudItem xs="12"><MudTextField Margin="Density.Margin" @bind-Value="_emails" Label="E-mail addresses (comma or line separated)" Lines="2" data-testid="share-emails" /></MudItem>
         <MudItem xs="12" sm="6">
-            <MudSelect T="string" @bind-SelectedValues="_kinds" MultiSelection="true" Label="Renditions">
+            <MudSelect Margin="Density.Margin" Dense="Density.Dense" T="string" @bind-SelectedValues="_kinds" MultiSelection="true" Label="Renditions">
                 @foreach (var kind in Kinds)
                 {
                     <MudSelectItem T="string" Value="@kind">@kind</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" sm="6"><MudCheckBox @bind-Value="_originals" Label="Originals too (needs your download right)" /></MudItem>
+        <MudItem xs="12" sm="6"><MudCheckBox Dense="Density.Dense" @bind-Value="_originals" Label="Originals too (needs your download right)" /></MudItem>
     </MudGrid>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" Disabled="string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_emails)" OnClick="CreateAsync" data-testid="create-share">Share and send links</MudButton>
 </MudPaper>

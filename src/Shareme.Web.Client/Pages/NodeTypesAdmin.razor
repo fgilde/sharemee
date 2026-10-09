@@ -5,7 +5,7 @@
 
 <PageHeader Title="Item types" Description="The kinds of items content can be: folders, files, pages and your own types. Properties, rules, formats and AI tagging can be limited to certain types." />
 
-<MudSimpleTable Dense="true" Hover="true">
+<MudSimpleTable Dense="Density.Dense" Hover="true">
     <thead><tr><th>Key</th><th>Name</th><th>@L["Based on"]</th><th>Icon</th><th></th></tr></thead>
     <tbody>
         @foreach (var type in _types)
@@ -28,9 +28,9 @@
 <MudPaper Outlined="true" Class="pa-4 mt-4">
     <MudText Typo="Typo.h6">New custom type</MudText>
     <MudStack Row="true" AlignItems="AlignItems.End">
-        <MudTextField @bind-Value="_key" Label="Key" data-testid="type-key" />
-        <MudTextField @bind-Value="_name" Label="Name" data-testid="type-name" />
-        <MudTextField @bind-Value="_icon" Label="Icon (material name)" />
+        <MudTextField Margin="Density.Margin" @bind-Value="_key" Label="Key" data-testid="type-key" />
+        <MudTextField Margin="Density.Margin" @bind-Value="_name" Label="Name" data-testid="type-name" />
+        <MudTextField Margin="Density.Margin" @bind-Value="_icon" Label="Icon (material name)" />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAsync" data-testid="create-type">Create</MudButton>
     </MudStack>
 </MudPaper>

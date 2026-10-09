@@ -43,7 +43,7 @@ else
 
     @if (_link is not null)
     {
-        <MudAlert Severity="Severity.Info" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _link = null">
+        <MudAlert Dense="Density.Dense" Severity="Severity.Info" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _link = null">
             Link valid until @_link.ExpiresAt.ToLocalTime().ToString("t"): <MudLink Href="@_link.Url" Target="_blank" data-testid="share-link">@(new Uri(new Uri(Nav.BaseUri), _link.Url))</MudLink>
         </MudAlert>
     }
@@ -57,15 +57,15 @@ else
                 }
                 else if (CanView && _showOriginal)
                 {
-                    <MudExFileDisplay Url="@AssetUrls.View(_asset.Id)" ContentType="@_asset.CurrentVersion!.MimeType" FileName="@_asset.CurrentVersion.FileName" ShowFileName="false" data-testid="original" />
+                    <MudExFileDisplay Dense="Density.Dense" Url="@AssetUrls.View(_asset.Id)" ContentType="@_asset.CurrentVersion!.MimeType" FileName="@_asset.CurrentVersion.FileName" ShowFileName="false" data-testid="original" />
                 }
                 else if (Media is { State: DerivationStates.Ready })
                 {
-                    <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Media, _asset.RenditionTag)" ContentType="@MediaType" FileName="@_asset.Name" ShowFileName="false" />
+                    <MudExFileDisplay Dense="Density.Dense" Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Media, _asset.RenditionTag)" ContentType="@MediaType" FileName="@_asset.Name" ShowFileName="false" />
                 }
                 else if (Preview is { State: DerivationStates.Ready })
                 {
-                    <MudExFileDisplay Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Preview, _asset.RenditionTag)" ContentType="image/webp" FileName="@_asset.Name" ShowFileName="false" />
+                    <MudExFileDisplay Dense="Density.Dense" Url="@AssetUrls.Derivation(_asset.Id, DerivationKinds.Preview, _asset.RenditionTag)" ContentType="image/webp" FileName="@_asset.Name" ShowFileName="false" />
                 }
                 else
                 {
@@ -79,7 +79,7 @@ else
         <MudItem xs="12" md="5">
             @if (_asset.CurrentVersion is { } current)
             {
-                <MudSimpleTable Dense="true">
+                <MudSimpleTable Dense="Density.Dense">
                     <tbody>
                         <tr><td>File</td><td>@current.FileName</td></tr>
                         <tr><td>Type</td><td>@_asset.AssetType (@current.MimeType)</td></tr>
@@ -101,7 +101,7 @@ else
             <div class="pa-4">
                 @if (_asset.CurrentVersion?.TechnicalMetadata is { Count: > 0 } facts)
                 {
-                    <MudSimpleTable Dense="true" data-testid="technical">
+                    <MudSimpleTable Dense="Density.Dense" data-testid="technical">
                         <tbody>
                             @foreach (var (key, value) in facts.OrderBy(f => f.Key))
                             {
@@ -118,7 +118,7 @@ else
         </MudTabPanel>
         <MudTabPanel Text="@L["Formats"]">
             <div class="pa-4">
-                <MudSimpleTable Dense="true" Hover="true" data-testid="renditions">
+                <MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="renditions">
                     <thead><tr><th>@L["Format"]</th><th>State</th><th>Size</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var (kind, name, type) in RenditionRows)
@@ -154,7 +154,7 @@ else
         </MudTabPanel>
         <MudTabPanel Text="Versions">
             <div class="pa-4">
-                <MudSimpleTable Dense="true" Hover="true">
+                <MudSimpleTable Dense="Density.Dense" Hover="true">
                     <thead><tr><th>#</th><th>File</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var version in _asset.Versions)

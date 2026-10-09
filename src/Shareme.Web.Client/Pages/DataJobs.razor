@@ -12,7 +12,7 @@
     <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="data-job">
         <MudText Typo="Typo.h6">@Kind(job) @(job.DryRun ? "(dry run)" : null): @job.State</MudText>
         <MudText Typo="Typo.body2">@job.Total in total, @job.Executed @(job.DryRun ? "would change" : "changed"), @job.Skipped skipped, @job.Failed failed. @job.Error</MudText>
-        <MudSimpleTable Dense="true" Class="mt-2" data-testid="data-job-entries">
+        <MudSimpleTable Dense="Density.Dense" Class="mt-2" data-testid="data-job-entries">
             <thead><tr><th>Row</th><th>Column</th><th>@L["Item"]</th><th>Result</th><th>Message</th></tr></thead>
             <tbody>
                 @foreach (var entry in job.Entries)
@@ -34,7 +34,7 @@
     </MudPaper>
 }
 
-<MudSimpleTable Dense="true" Hover="true" data-testid="data-jobs">
+<MudSimpleTable Dense="Density.Dense" Hover="true" data-testid="data-jobs">
     <thead><tr><th>Started</th><th>@L["Task"]</th><th>State</th><th>Total</th><th>Changed</th><th>Skipped</th><th>Failed</th></tr></thead>
     <tbody>
         @foreach (var run in _jobs)

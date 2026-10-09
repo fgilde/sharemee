@@ -6,7 +6,7 @@
 @using Shareme.Web.Client.Graph
 
 <PageHeader Title="Recycle bin" Description="Deleted folders, files and pages stay here until they are deleted for good. Restore puts an item back where it was." />
-<MudSimpleTable Dense="true" Hover="true">
+<MudSimpleTable Dense="Density.Dense" Hover="true">
     <thead><tr><th>Name</th><th>Type</th><th>Deleted</th><th></th></tr></thead>
     <tbody>
         @foreach (var item in _items)

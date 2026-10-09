@@ -13,7 +13,7 @@
 
 @if (Queue.Items.Count > 0)
 {
-    <MudList T="string" Dense="true" Class="mt-2" data-testid="upload-queue">
+    <MudList T="string" Dense="Density.Dense" Class="mt-2" data-testid="upload-queue">
         @foreach (var item in Queue.Items)
         {
             <MudListItem T="string">
