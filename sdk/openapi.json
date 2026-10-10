@@ -12121,6 +12121,70 @@
         }
       }
     },
+    "/api/v1/client-entities": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/client-entities/{entitySet}/changes": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/client-entities/{entitySet}/ids": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/localization/languages": {
       "get": {
         "tags": [
@@ -12883,6 +12947,12 @@
   "components": {
     "schemas": {
       "AddEditLanguageRequest": {
+        "required": [
+          "culture",
+          "name",
+          "isEnabled",
+          "isDefault"
+        ],
         "type": "object",
         "properties": {
           "culture": {
@@ -12901,7 +12971,8 @@
       },
       "AddWorkspaceMemberRequest": {
         "required": [
-          "userId"
+          "userId",
+          "role"
         ],
         "type": "object",
         "properties": {
@@ -13148,7 +13219,8 @@
           "status",
           "currentVersion",
           "versions",
-          "derivations"
+          "derivations",
+          "canDownload"
         ],
         "type": "object",
         "properties": {
@@ -13454,7 +13526,8 @@
       "BillingContactRequest": {
         "required": [
           "name",
-          "email"
+          "email",
+          "isActive"
         ],
         "type": "object",
         "properties": {
@@ -13574,7 +13647,8 @@
           "rightsOwnerId",
           "priceListId",
           "currency",
-          "basis"
+          "basis",
+          "feePercentage"
         ],
         "type": "object",
         "properties": {
@@ -13744,7 +13818,8 @@
           "scopes",
           "managed",
           "roles",
-          "permissions"
+          "permissions",
+          "showInLauncher"
         ],
         "type": "object",
         "properties": {
@@ -13840,7 +13915,8 @@
           "redirectUris",
           "postLogoutRedirectUris",
           "grantTypes",
-          "scopes"
+          "scopes",
+          "showInLauncher"
         ],
         "type": "object",
         "properties": {
@@ -14162,7 +14238,8 @@
       "CreateNodeRequest": {
         "required": [
           "parentId",
-          "name"
+          "name",
+          "type"
         ],
         "type": "object",
         "properties": {
@@ -14215,7 +14292,9 @@
           "email",
           "password",
           "firstName",
-          "lastName"
+          "lastName",
+          "mustChangePassword",
+          "isActive"
         ],
         "type": "object",
         "properties": {
@@ -14262,7 +14341,10 @@
       },
       "CreateWorkspaceRequest": {
         "required": [
-          "name"
+          "name",
+          "kind",
+          "isTemplate",
+          "copyMetadataToAssets"
         ],
         "type": "object",
         "properties": {
@@ -14309,7 +14391,8 @@
           "left",
           "top",
           "width",
-          "height"
+          "height",
+          "isValid"
         ],
         "type": "object",
         "properties": {
@@ -14536,7 +14619,9 @@
           "kind",
           "state",
           "width",
-          "height"
+          "height",
+          "size",
+          "isManual"
         ],
         "type": "object",
         "properties": {
@@ -14674,7 +14759,12 @@
           "key",
           "name",
           "width",
-          "height"
+          "height",
+          "format",
+          "quality",
+          "isDefault",
+          "isOnDemand",
+          "allowManualUpload"
         ],
         "type": "object",
         "properties": {
@@ -14809,6 +14899,9 @@
         }
       },
       "DownloadPackageRequest": {
+        "required": [
+          "kind"
+        ],
         "type": "object",
         "properties": {
           "assetIds": {
@@ -14962,6 +15055,9 @@
         }
       },
       "ExportRequest": {
+        "required": [
+          "format"
+        ],
         "type": "object",
         "properties": {
           "nodeIds": {
@@ -14988,6 +15084,9 @@
         }
       },
       "ExtractArchiveRequest": {
+        "required": [
+          "keepFolders"
+        ],
         "type": "object",
         "properties": {
           "targetFolderId": {
@@ -15098,7 +15197,11 @@
         "required": [
           "name",
           "provider",
-          "targetKey"
+          "targetKey",
+          "mode",
+          "inputKind",
+          "minConfidence",
+          "autoApply"
         ],
         "type": "object",
         "properties": {
@@ -15316,7 +15419,8 @@
       "FileNamingPreviewRequest": {
         "required": [
           "format",
-          "assetIds"
+          "assetIds",
+          "casing"
         ],
         "type": "object",
         "properties": {
@@ -15339,7 +15443,9 @@
       "FileNamingRequest": {
         "required": [
           "name",
-          "format"
+          "format",
+          "casing",
+          "isDefault"
         ],
         "type": "object",
         "properties": {
@@ -15570,6 +15676,9 @@
         }
       },
       "HttpValidationProblemDetails": {
+        "required": [
+          "errors"
+        ],
         "type": "object",
         "properties": {
           "type": {
@@ -15972,7 +16081,9 @@
       },
       "LicenseRequest": {
         "required": [
-          "name"
+          "name",
+          "purchaseDays",
+          "status"
         ],
         "type": "object",
         "properties": {
@@ -16119,7 +16230,8 @@
       },
       "MassEditRequest": {
         "required": [
-          "mutations"
+          "mutations",
+          "dryRun"
         ],
         "type": "object",
         "properties": {
@@ -16314,7 +16426,8 @@
         "required": [
           "parentId",
           "title",
-          "markdown"
+          "markdown",
+          "pinned"
         ],
         "type": "object",
         "properties": {
@@ -16635,6 +16748,10 @@
         }
       },
       "OfferSearchRequest": {
+        "required": [
+          "skip",
+          "take"
+        ],
         "type": "object",
         "properties": {
           "term": {
@@ -17533,7 +17650,8 @@
       },
       "PriceListRequest": {
         "required": [
-          "name"
+          "name",
+          "isActive"
         ],
         "type": "object",
         "properties": {
@@ -17572,7 +17690,8 @@
           "email",
           "firstName",
           "lastName",
-          "phoneNumber"
+          "phoneNumber",
+          "hasPassword"
         ],
         "type": "object",
         "properties": {
@@ -17767,7 +17886,19 @@
       "PropertyDefinitionRequest": {
         "required": [
           "key",
-          "name"
+          "name",
+          "valueType",
+          "listMode",
+          "allowCustomValues",
+          "multiValue",
+          "localizable",
+          "hasContext",
+          "editable",
+          "searchable",
+          "facet",
+          "ignoreOnNewVersion",
+          "inheritToChildren",
+          "sortIndex"
         ],
         "type": "object",
         "properties": {
@@ -17896,7 +18027,8 @@
       "PropertyGroupRequest": {
         "required": [
           "key",
-          "name"
+          "name",
+          "sortIndex"
         ],
         "type": "object",
         "properties": {
@@ -18045,7 +18177,8 @@
       },
       "PropertySetItem": {
         "required": [
-          "definitionKey"
+          "definitionKey",
+          "fillMode"
         ],
         "type": "object",
         "properties": {
@@ -18543,7 +18676,8 @@
       },
       "RightsOwnerRequest": {
         "required": [
-          "name"
+          "name",
+          "isActive"
         ],
         "type": "object",
         "properties": {
@@ -18580,7 +18714,8 @@
           "id",
           "name",
           "description",
-          "isSystem"
+          "isSystem",
+          "selectableForRegistration"
         ],
         "type": "object",
         "properties": {
@@ -18625,7 +18760,8 @@
       "RoleRequest": {
         "required": [
           "name",
-          "description"
+          "description",
+          "selectableForRegistration"
         ],
         "type": "object",
         "properties": {
@@ -18647,7 +18783,9 @@
       "RuleAction": {
         "required": [
           "propertyKey",
-          "template"
+          "template",
+          "onMatch",
+          "onlyIfEmpty"
         ],
         "type": "object",
         "properties": {
@@ -18890,7 +19028,9 @@
         "required": [
           "name",
           "conditions",
-          "actions"
+          "actions",
+          "isActive",
+          "sortIndex"
         ],
         "type": "object",
         "properties": {
@@ -19013,7 +19153,8 @@
       "SaveSearchRequest": {
         "required": [
           "name",
-          "request"
+          "request",
+          "shared"
         ],
         "type": "object",
         "properties": {
@@ -19035,7 +19176,8 @@
           "name",
           "displayName",
           "description",
-          "resources"
+          "resources",
+          "builtIn"
         ],
         "type": "object",
         "properties": {
@@ -19246,7 +19388,8 @@
       },
       "SearchSortDto": {
         "required": [
-          "field"
+          "field",
+          "descending"
         ],
         "type": "object",
         "properties": {
@@ -19655,7 +19798,8 @@
         "required": [
           "name",
           "validUntil",
-          "recipientEmails"
+          "recipientEmails",
+          "allowOriginals"
         ],
         "type": "object",
         "properties": {
@@ -19774,7 +19918,10 @@
       },
       "StateRequest": {
         "required": [
-          "name"
+          "name",
+          "isDefault",
+          "isDone",
+          "ownersOnly"
         ],
         "type": "object",
         "properties": {
@@ -19827,7 +19974,8 @@
       },
       "SuggestRequest": {
         "required": [
-          "prefix"
+          "prefix",
+          "size"
         ],
         "type": "object",
         "properties": {
@@ -20029,7 +20177,8 @@
           "layoutProperties",
           "logoSvg",
           "customCss",
-          "revision"
+          "revision",
+          "isPublished"
         ],
         "type": "object",
         "properties": {
@@ -20108,7 +20257,8 @@
           "typography",
           "layoutProperties",
           "logoSvg",
-          "customCss"
+          "customCss",
+          "isPublished"
         ],
         "type": "object",
         "properties": {
@@ -20350,7 +20500,8 @@
       },
       "UpdateWorkspaceRequest": {
         "required": [
-          "name"
+          "name",
+          "copyMetadataToAssets"
         ],
         "type": "object",
         "properties": {
@@ -20540,7 +20691,10 @@
           "lockedUntil",
           "lastLoginAt",
           "roles",
-          "groups"
+          "groups",
+          "mustChangePassword",
+          "hasPassword",
+          "hasAvatar"
         ],
         "type": "object",
         "properties": {
@@ -20779,7 +20933,10 @@
       },
       "WatermarkRequest": {
         "required": [
-          "name"
+          "name",
+          "position",
+          "opacity",
+          "scalePercent"
         ],
         "type": "object",
         "properties": {
@@ -20835,7 +20992,9 @@
           "finalizedAt",
           "createdAt",
           "itemCount",
-          "myRole"
+          "myRole",
+          "canManage",
+          "canFinalize"
         ],
         "type": "object",
         "properties": {
