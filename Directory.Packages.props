@@ -51,7 +51,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.1" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
