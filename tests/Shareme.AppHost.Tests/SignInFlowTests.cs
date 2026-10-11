@@ -104,7 +104,7 @@ public sealed partial class SignInFlowTests
             }
         }
 
-        (await browser.GetFromJsonAsync<JsonElement>("/api/v1/themes/current", ct)).GetProperty("name").GetString().ShouldBe("Coworkee");
+        (await browser.GetFromJsonAsync<JsonElement>("/api/v1/themes/current", ct)).GetProperty("name").GetString().ShouldBe("Ocean");
         var palette = JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["Primary"] = "#123456" });
         var themeId = await SendJsonAsync(browser, HttpMethod.Post, "/api/v1/themes", new { name = "Brand", paletteLight = palette, paletteDark = palette }, ct);
         await SendJsonAsync(browser, HttpMethod.Put, $"/api/v1/themes/{themeId}", new { name = "Brand 2", paletteLight = palette, paletteDark = palette }, ct);
