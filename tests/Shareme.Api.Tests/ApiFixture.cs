@@ -10,7 +10,7 @@ using Shareme.Infrastructure;
 
 namespace Shareme.Api.Tests;
 
-public sealed class ApiFixture : PostgresFixture
+public sealed class ApiFixture : DatabaseFixture
 {
     public const string SetupToken = "shareme-test-token";
 
@@ -78,7 +78,7 @@ public sealed class ElasticContainer : IAsyncDisposable
     public ValueTask DisposeAsync() => _container.DisposeAsync();
 }
 
-public sealed class ApiFactory(PostgresFixture postgres) : PostgresWebApplicationFactory<Program>(postgres, ShareMeInfrastructureModule.ConnectionStringName)
+public sealed class ApiFactory(DatabaseFixture postgres) : DatabaseWebApplicationFactory<Program>(postgres, ShareMeInfrastructureModule.ConnectionStringName)
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
