@@ -10,6 +10,11 @@ builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 
 builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
 
 var app = builder.Build();
+if (app.Environment.IsDevelopment())
+{
+    // the debug proxy of WebAssembly: Visual Studio and VS Code attach to the browser through /_framework/debug
+    app.UseWebAssemblyDebugging();
+}
 
 // Blazor WebAssembly needs wasm-unsafe-eval, BlazorJS (MudBlazor.Extensions) evaluates script strings (unsafe-eval), MudBlazor
 // positions with inline styles; previews use blob URLs; the browser talks only to this host (the BFF forwards the API and hub)
