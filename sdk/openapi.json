@@ -4356,6 +4356,45 @@
         }
       }
     },
+    "/api/v1/themes/loading-screen": {
+      "get": {
+        "tags": [
+          "Themes"
+        ],
+        "parameters": [
+          {
+            "name": "themeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoadingScreenDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/themes/built-in": {
       "get": {
         "tags": [
@@ -17931,6 +17970,42 @@
               "type": "string",
               "format": "uuid"
             }
+          }
+        }
+      },
+      "LoadingScreenBackground": {
+        "enum": [
+          "Animated",
+          "SignInMedia",
+          "Plain"
+        ]
+      },
+      "LoadingScreenDto": {
+        "required": [
+          "theme",
+          "background",
+          "mediaUrl"
+        ],
+        "type": "object",
+        "properties": {
+          "theme": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ThemeDto"
+              }
+            ]
+          },
+          "background": {
+            "$ref": "#/components/schemas/LoadingScreenBackground"
+          },
+          "mediaUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

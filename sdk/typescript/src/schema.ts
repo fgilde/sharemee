@@ -4655,6 +4655,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/themes/loading-screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    themeId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LoadingScreenDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/themes/built-in": {
         parameters: {
             query?: never;
@@ -16046,6 +16092,13 @@ export interface components {
         };
         LinkAssetsRequest: {
             assetIds: string[];
+        };
+        /** @enum {unknown} */
+        LoadingScreenBackground: "Animated" | "SignInMedia" | "Plain";
+        LoadingScreenDto: {
+            theme: null | components["schemas"]["ThemeDto"];
+            background: components["schemas"]["LoadingScreenBackground"];
+            mediaUrl: null | string;
         };
         LockUserRequest: {
             /** Format: date-time */
