@@ -3453,7 +3453,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ServiceDto"][];
+                        "application/json": components["schemas"]["ServiceDirectoryResult"];
                     };
                 };
                 /** @description Bad Request */
@@ -3512,8 +3512,82 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateMailTemplateRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/templates/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -3706,6 +3780,54 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/connection/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MailConnectionTestRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MailConnectionTestDto"];
+                    };
                 };
                 /** @description Bad Request */
                 400: {
@@ -4234,6 +4356,94 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/themes/keycloak": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KeycloakThemeStatusDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/themes/keycloak/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KeycloakThemeStatusDto"];
+                    };
                 };
                 /** @description Bad Request */
                 400: {
@@ -14534,6 +14744,7 @@ export interface components {
             changedKeys: string[];
             locked?: null | string[];
             hidden?: null | string[];
+            protected?: null | string[];
         };
         ArchiveExtractionDto: {
             /** Format: uuid */
@@ -14811,6 +15022,14 @@ export interface components {
             type: string;
             /** Format: uuid */
             toNodeId: string;
+        };
+        CreateMailTemplateRequest: {
+            name: string;
+            displayName: string;
+            description: null | string;
+            /** @default false */
+            global: boolean;
+            copyFrom?: null | string;
         };
         CreateNodeRequest: {
             /** Format: uuid */
@@ -15224,6 +15443,13 @@ export interface components {
             link: string;
         };
         JsonElement: unknown;
+        KeycloakThemeStatusDto: {
+            configured: boolean;
+            themeName: null | string;
+            /** Format: date-time */
+            writtenAt: null | string;
+            error: null | string;
+        };
         LanguageDto: {
             /** Format: uuid */
             id: null | string;
@@ -15302,6 +15528,16 @@ export interface components {
             /** Format: date-time */
             until: null | string;
         };
+        MailConnectionTestDto: {
+            success: boolean;
+            error: null | string;
+        };
+        MailConnectionTestRequest: {
+            values: {
+                [key: string]: string;
+            };
+            cleared?: null | string[];
+        };
         MailTemplateDto: {
             name: string;
             culture: string;
@@ -15310,12 +15546,21 @@ export interface components {
             defaultSubject: string;
             defaultBody: string;
             isOverridden: boolean;
+            variables: components["schemas"]["MailVariableDto"][];
         };
         MailTemplateSummaryDto: {
             name: string;
             displayName: string;
             cultures: string[];
             overriddenCultures: string[];
+            isCustom: boolean;
+            description: null | string;
+        };
+        MailVariableDto: {
+            name: string;
+            type: string;
+            sample: null | string;
+            isList: boolean;
         };
         MassEditRequest: {
             mutations: components["schemas"]["PropertyMutation"][];
@@ -15628,6 +15873,16 @@ export interface components {
             createdBy: null | string;
             /** Format: date-time */
             createdAt: string;
+        };
+        PasswordRules: {
+            /** Format: int32 */
+            requiredLength: number | string;
+            /** Format: int32 */
+            requiredUniqueChars: number | string;
+            requireDigit: boolean;
+            requireLowercase: boolean;
+            requireUppercase: boolean;
+            requireNonAlphanumeric: boolean;
         };
         PermissionDto: {
             name: string;
@@ -16130,14 +16385,21 @@ export interface components {
         SendChatMessageRequest: {
             text: string;
         };
+        ServiceDirectoryResult: {
+            services: components["schemas"]["ServiceDto"][];
+            unavailableSources: string[];
+        };
         ServiceDto: {
             name: string;
             title: string;
             url: string;
             health: components["schemas"]["ServiceHealth"];
+            /** @default app */
+            source: string;
+            urls?: null | string[];
         };
         /** @enum {unknown} */
-        ServiceHealth: "Healthy" | "Unhealthy" | "Unreachable";
+        ServiceHealth: "Healthy" | "Unhealthy" | "Unreachable" | "Unknown";
         SetActiveRoleRequest: {
             /** Format: uuid */
             roleId: null | string;
@@ -16157,6 +16419,10 @@ export interface components {
                 [key: string]: string;
             };
         };
+        SettingCondition: {
+            setting: string;
+            values: string[];
+        };
         SettingDefinitionDto: {
             name: string;
             displayName: string;
@@ -16165,16 +16431,18 @@ export interface components {
             defaultValue: null | string;
             scopes: components["schemas"]["SettingScope"][];
             choices: null | string[];
+            enabledWhen?: null | components["schemas"]["SettingCondition"];
         };
         SettingGroupDto: {
             name: string;
             displayName: string;
             settings: components["schemas"]["SettingDefinitionDto"][];
+            page?: null | string;
         };
         /** @enum {unknown} */
         SettingScope: "Global" | "Tenant" | "User";
         /** @enum {unknown} */
-        SettingType: "String" | "Text" | "Bool" | "Int" | "Secret" | "Choice";
+        SettingType: "String" | "Text" | "Bool" | "Int" | "Secret" | "Choice" | "Language";
         SettingValueDto: {
             name: string;
             value: null | string;
@@ -16200,6 +16468,7 @@ export interface components {
         };
         SetupStatusDto: {
             isInitialized: boolean;
+            passwordRules?: null | components["schemas"]["PasswordRules"];
         };
         SetUserEmailRequest: {
             email: string;
@@ -16338,7 +16607,7 @@ export interface components {
             paletteDark: components["schemas"]["JsonElement"];
             typography: null | components["schemas"]["JsonElement"];
             layoutProperties: null | components["schemas"]["JsonElement"];
-            logoSvg: null | string;
+            logo: null | string;
             customCss: null | string;
             /** Format: int32 */
             revision: number | string;
@@ -16353,7 +16622,7 @@ export interface components {
             paletteDark: components["schemas"]["JsonElement"];
             typography: null | components["schemas"]["JsonElement"];
             layoutProperties: null | components["schemas"]["JsonElement"];
-            logoSvg: null | string;
+            logo: null | string;
             customCss: null | string;
             shadows?: unknown;
             options?: unknown;

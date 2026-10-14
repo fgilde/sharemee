@@ -965,6 +965,51 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("Translations", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Mailing.CustomMailTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset?>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModifiedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Name"), false);
+
+                    b.ToTable("CustomMailTemplates", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Mailing.MailTemplateOverride", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1244,7 +1289,7 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<string>("LayoutProperties")
                         .HasColumnType("jsonb");
 
-                    b.Property<string>("LogoSvg")
+                    b.Property<string>("Logo")
                         .HasColumnType("text");
 
                     b.Property<DateTimeOffset?>("ModifiedAt")

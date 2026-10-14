@@ -3126,10 +3126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ServiceDto"
-                  }
+                  "$ref": "#/components/schemas/ServiceDirectoryResult"
                 }
               }
             }
@@ -3165,6 +3162,68 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMailTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mail/templates/{name}": {
+      "delete": {
+        "tags": [
+          "Mail"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
           },
           "400": {
             "description": "Bad Request",
@@ -3395,6 +3454,45 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mail/connection/test": {
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailConnectionTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailConnectionTestDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3965,6 +4063,64 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/themes/keycloak": {
+      "get": {
+        "tags": [
+          "Themes"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakThemeStatusDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/themes/keycloak/apply": {
+      "post": {
+        "tags": [
+          "Themes"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakThemeStatusDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -14167,6 +14323,15 @@
             "items": {
               "type": "string"
             }
+          },
+          "protected": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -15292,6 +15457,39 @@
           "toNodeId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "CreateMailTemplateRequest": {
+        "required": [
+          "name",
+          "displayName",
+          "description",
+          "global"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "global": {
+            "type": "boolean",
+            "default": false
+          },
+          "copyFrom": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -16900,6 +17098,39 @@
         }
       },
       "JsonElement": {},
+      "KeycloakThemeStatusDto": {
+        "required": [
+          "configured",
+          "themeName",
+          "writtenAt",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "themeName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "writtenAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "LanguageDto": {
         "required": [
           "id",
@@ -17224,6 +17455,47 @@
           }
         }
       },
+      "MailConnectionTestDto": {
+        "required": [
+          "success",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MailConnectionTestRequest": {
+        "required": [
+          "values"
+        ],
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "cleared": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "MailTemplateDto": {
         "required": [
           "name",
@@ -17232,7 +17504,8 @@
           "body",
           "defaultSubject",
           "defaultBody",
-          "isOverridden"
+          "isOverridden",
+          "variables"
         ],
         "type": "object",
         "properties": {
@@ -17256,6 +17529,12 @@
           },
           "isOverridden": {
             "type": "boolean"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MailVariableDto"
+            }
           }
         }
       },
@@ -17264,7 +17543,9 @@
           "name",
           "displayName",
           "cultures",
-          "overriddenCultures"
+          "overriddenCultures",
+          "isCustom",
+          "description"
         ],
         "type": "object",
         "properties": {
@@ -17285,6 +17566,41 @@
             "items": {
               "type": "string"
             }
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MailVariableDto": {
+        "required": [
+          "name",
+          "type",
+          "sample",
+          "isList"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "sample": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isList": {
+            "type": "boolean"
           }
         }
       },
@@ -18519,6 +18835,47 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PasswordRules": {
+        "required": [
+          "requiredLength",
+          "requiredUniqueChars",
+          "requireDigit",
+          "requireLowercase",
+          "requireUppercase",
+          "requireNonAlphanumeric"
+        ],
+        "type": "object",
+        "properties": {
+          "requiredLength": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "requiredUniqueChars": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "requireDigit": {
+            "type": "boolean"
+          },
+          "requireLowercase": {
+            "type": "boolean"
+          },
+          "requireUppercase": {
+            "type": "boolean"
+          },
+          "requireNonAlphanumeric": {
+            "type": "boolean"
           }
         }
       },
@@ -20526,12 +20883,34 @@
           }
         }
       },
+      "ServiceDirectoryResult": {
+        "required": [
+          "services",
+          "unavailableSources"
+        ],
+        "type": "object",
+        "properties": {
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceDto"
+            }
+          },
+          "unavailableSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ServiceDto": {
         "required": [
           "name",
           "title",
           "url",
-          "health"
+          "health",
+          "source"
         ],
         "type": "object",
         "properties": {
@@ -20546,6 +20925,19 @@
           },
           "health": {
             "$ref": "#/components/schemas/ServiceHealth"
+          },
+          "source": {
+            "type": "string",
+            "default": "app"
+          },
+          "urls": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -20553,7 +20945,8 @@
         "enum": [
           "Healthy",
           "Unhealthy",
-          "Unreachable"
+          "Unreachable",
+          "Unknown"
         ]
       },
       "SetActiveRoleRequest": {
@@ -20625,6 +21018,24 @@
           }
         }
       },
+      "SettingCondition": {
+        "required": [
+          "setting",
+          "values"
+        ],
+        "type": "object",
+        "properties": {
+          "setting": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "SettingDefinitionDto": {
         "required": [
           "name",
@@ -20672,6 +21083,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "enabledWhen": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SettingCondition"
+              }
+            ]
           }
         }
       },
@@ -20694,6 +21115,12 @@
             "items": {
               "$ref": "#/components/schemas/SettingDefinitionDto"
             }
+          },
+          "page": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -20711,7 +21138,8 @@
           "Bool",
           "Int",
           "Secret",
-          "Choice"
+          "Choice",
+          "Language"
         ]
       },
       "SettingValueDto": {
@@ -20812,6 +21240,16 @@
         "properties": {
           "isInitialized": {
             "type": "boolean"
+          },
+          "passwordRules": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PasswordRules"
+              }
+            ]
           }
         }
       },
@@ -21303,7 +21741,7 @@
           "paletteDark",
           "typography",
           "layoutProperties",
-          "logoSvg",
+          "logo",
           "customCss",
           "revision",
           "isPublished"
@@ -21349,7 +21787,7 @@
               }
             ]
           },
-          "logoSvg": {
+          "logo": {
             "type": [
               "null",
               "string"
@@ -21384,7 +21822,7 @@
           "paletteDark",
           "typography",
           "layoutProperties",
-          "logoSvg",
+          "logo",
           "customCss",
           "isPublished"
         ],
@@ -21419,7 +21857,7 @@
               }
             ]
           },
-          "logoSvg": {
+          "logo": {
             "type": [
               "null",
               "string"
