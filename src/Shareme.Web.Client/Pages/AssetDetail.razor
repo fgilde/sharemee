@@ -50,7 +50,7 @@ else
 
     <MudGrid>
         <MudItem xs="12" md="7">
-            <MudPaper Outlined="true" Class="pa-2" Style="min-height:320px" data-testid="preview">
+            <MudPaper Outlined="true" Class="pa-2" Style="@(_cropping ? "min-height:320px" : "height:480px")" data-testid="preview">
                 @if (_cropping)
                 {
                     <CropEditor Asset="_asset" Types="CropTypes" OnClose="() => _cropping = false" />
