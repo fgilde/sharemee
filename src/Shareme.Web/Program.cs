@@ -22,10 +22,15 @@ const string ContentSecurityPolicy =
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
     + "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; worker-src 'self' blob:; "
     + "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'";
+
+// Visual Studio's browser link and hot reload talk to their own localhost ports during development
+var policy = app.Environment.IsDevelopment()
+    ? ContentSecurityPolicy.Replace("connect-src 'self'", "connect-src 'self' http://localhost:* ws://localhost:* wss://localhost:*", StringComparison.Ordinal)
+    : ContentSecurityPolicy;
 app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;
-    headers.ContentSecurityPolicy = ContentSecurityPolicy;
+    headers.ContentSecurityPolicy = policy;
     headers.XContentTypeOptions = "nosniff";
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     await next();
