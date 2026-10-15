@@ -17984,7 +17984,8 @@
         "required": [
           "theme",
           "background",
-          "mediaUrl"
+          "mediaUrl",
+          "signedIn"
         ],
         "type": "object",
         "properties": {
@@ -18006,6 +18007,10 @@
               "null",
               "string"
             ]
+          },
+          "signedIn": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
