@@ -19,6 +19,7 @@ try
     if (builder.Configuration.GetValue("Shareme:DemoUsers", false))
     {
         await host.Services.SeedCoworkeeIdentityAsync();
+        await DemoUserTopUp.RunAsync(scope.ServiceProvider);
     }
 
     return 0;
