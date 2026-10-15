@@ -61,6 +61,16 @@ public sealed class BrowseTests : BunitContext
     }
 
     [Fact]
+    public void The_folder_tree_shows_the_entry_points()
+    {
+        _api.GetEntryPointsAsync(Arg.Any<CancellationToken>()).Returns([Node(_root, "Root", null)]);
+
+        var page = Render<Browse>(p => p.Add(b => b.Id, _folder));
+
+        page.WaitForAssertion(() => page.Find("[data-testid='folder-tree']").TextContent.ShouldContain("Root"));
+    }
+
+    [Fact]
     public void Shows_the_breadcrumb_and_the_children()
     {
         var page = Render<Browse>(p => p.Add(b => b.Id, _folder));

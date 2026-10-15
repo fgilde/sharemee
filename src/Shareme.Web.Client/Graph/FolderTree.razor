@@ -6,4 +6,8 @@
     <RealtimeSubscription @key="id" Topic="@($"children:{id}")" OnEvent="_ => RefreshAsync(id)" />
 }
 <MudTreeView T="Guid" Items="_roots" ServerData="LoadAsync" Dense="Density.Dense" Hover="true" SelectionMode="SelectionMode.SingleSelection"
-             SelectedValue="SelectedId" SelectedValueChanged="Open" data-testid="folder-tree" />
+             SelectedValue="SelectedId" SelectedValueChanged="Open" data-testid="folder-tree">
+    <ItemTemplate>
+        <MudTreeViewItem T="Guid" Value="context.Value" Text="@context.Text" Icon="@context.Icon" Items="context.Children" CanExpand="context.Expandable" @bind-Expanded="context.Expanded" />
+    </ItemTemplate>
+</MudTreeView>
