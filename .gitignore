@@ -510,3 +510,6 @@ artifacts/
 *.local.json
 
 .data/
+
+# written by the app host at start (Keycloak login theme)
+**/.coworkee/
