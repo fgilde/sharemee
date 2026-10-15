@@ -16,6 +16,8 @@ dotnet run --project src/Shareme.AppHost
 dotnet test --solution Shareme.slnx
 ```
 
+Sign in with the users in [LOGIN.md](LOGIN.md).
+
 Add `-p:CoworkeeReferenceMode=Project` to build against the Coworkee sources instead of the local packages.
 
 Built by [gilde.org](https://gilde.org)

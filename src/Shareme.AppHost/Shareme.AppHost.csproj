@@ -7,6 +7,7 @@
   <ItemGroup>
     <CoworkeePackage Include="Coworkee.Aspire" />
     <ProjectReference Include="..\Shareme.Migrations\Shareme.Migrations.csproj" />
+    <Compile Include="..\Shareme.Migrations\DemoUsers.cs" Link="DemoUsers.cs" />
     <ProjectReference Include="..\Shareme.Api\Shareme.Api.csproj" />
     <ProjectReference Include="..\Shareme.Processing.Host\Shareme.Processing.Host.csproj" />
     <ProjectReference Include="..\Shareme.Auth\Shareme.Auth.csproj" />

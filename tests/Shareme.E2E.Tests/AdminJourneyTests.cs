@@ -30,7 +30,7 @@ public sealed class AdminJourneyTests
     {
         var ct = TestContext.Current.CancellationToken;
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Shareme_AppHost>(
-            [$"--{CoworkeeAppExtensions.EphemeralSetting}=true", $"--Coworkee:SetupToken={SetupToken}"], ct);
+            [$"--{CoworkeeAppExtensions.EphemeralSetting}=true", $"--Coworkee:SetupToken={SetupToken}", "--Shareme:DemoUsers=false"], ct);
         await using var app = await appHost.BuildAsync(ct);
         await app.StartAsync(ct);
         foreach (var resource in new[] { "shareme-web", "shareme-auth", "shareme-api" })
