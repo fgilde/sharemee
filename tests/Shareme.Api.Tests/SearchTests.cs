@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Coworkee.Contracts.Identity;
+using Coworkee.Contracts.Search;
 using Coworkee.Testing;
 using Shareme.Contracts.Graph;
 using Shareme.Contracts.Metadata;
@@ -191,6 +192,22 @@ public sealed class SearchTests(ApiFixture api) : IAsyncLifetime
         current.State.ShouldBe("completed", current.Error);
         current.Indexed.ShouldBeGreaterThan(0);
         (await SearchAsync(Admin, new SearchRequest("reindexed"))).Items.Single().Id.ShouldBe(folder);
+    }
+
+    [Fact]
+    public async Task The_global_search_finds_nodes_the_user_may_read_and_links_to_them()
+    {
+        var open = await FolderAsync("Global open");
+        var secret = await FolderAsync("Global secret");
+        var plan = await FolderAsync("Lighthouse plan", open);
+        await FolderAsync("Lighthouse budget", secret);
+        var (bob, _, _) = await ReaderAsync(open);
+        await EventuallyAsync(bob, new SearchRequest("lighthouse"), r => r.Total == 1);
+
+        var result = await bob.GetFromJsonAsync<GlobalSearchResult>("/api/v1/search?q=content:lighthouse", Ct);
+
+        var hit = result!.Hits.ShouldHaveSingleItem();
+        (hit.Provider, hit.Title, hit.Url, hit.Icon).ShouldBe(("content", "Lighthouse plan", $"/browse/{plan}", "Folder"));
     }
 
     private async Task<SearchResponse> SearchAsync(HttpClient client, SearchRequest request)

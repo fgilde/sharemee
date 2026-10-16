@@ -1,4 +1,5 @@
 using Coworkee.Application.Authorization;
+using Coworkee.Application.GlobalSearch;
 using Coworkee.Application.Messaging;
 using Coworkee.AspNetCore;
 using Coworkee.AspNetCore.Http;
@@ -28,6 +29,7 @@ public sealed class ShareMeSearchModule : CoworkeeModule, IWebModule
         services.AddScoped<NodeDocuments>();
         services.AddScoped<NodeIndexer>();
         services.AddScoped<INodePurgeListener, SearchPurgeListener>();
+        services.AddGlobalSearchProvider<NodeSearchProvider>();
     }
 
     public void ConfigureApplication(WebApplication app)

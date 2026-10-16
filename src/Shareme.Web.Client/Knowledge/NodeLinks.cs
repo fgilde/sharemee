@@ -5,15 +5,7 @@ namespace Shareme.Web.Client.Knowledge;
 /// <summary>Where a node opens and which icon it shows, by its semantic.</summary>
 public static class NodeLinks
 {
-    public static string For(NodeDto node) => node.Semantic switch
-    {
-        "asset" => $"/assets/{node.Id}",
-        "page" => $"/pages/{node.Id}",
-        "news" => $"/news/{node.Id}",
-        "workspace" => $"/workspaces/{node.Id}",
-        "task" => $"/workspaces/{node.ParentId}",
-        _ => $"/browse/{node.Id}",
-    };
+    public static string For(NodeDto node) => NodeRoutes.For(node);
 
     public static string Icon(string semantic) => semantic switch
     {
