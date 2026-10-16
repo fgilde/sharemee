@@ -18,7 +18,7 @@ namespace Shareme.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -1274,6 +1274,177 @@ namespace Shareme.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("NotificationDigests", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Notifications.Push.PushSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Auth")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Device")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("P256dh")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Endpoint")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PushSubscriptions", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.OData.Transfer.DataTransferJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Created")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedIds")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("DryRun")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("EntitySet")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Failed")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("Input")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("Processed")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Result")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ResultContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ResultFileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<string>("Settings")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Updated")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "UserId", "CreatedAt");
+
+                    b.ToTable("DataTransferJobs", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.OData.Transfer.ImportProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Columns")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Culture")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("EntitySet")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("KeyField")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "EntitySet", "Name")
+                        .IsUnique();
+
+                    b.ToTable("ImportProfiles", "cw");
                 });
 
             modelBuilder.Entity("Coworkee.Settings.ConfigurationEntry", b =>

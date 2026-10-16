@@ -5,6 +5,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 var app = builder.AddCoworkeeApp("shareme", options =>
 {
     options.DisplayName = "Sharemee";
+    // Web Push for the notifications: the VAPID key pair is made at the first start and kept in the user secrets
+    options.UsePush();
     options.UseKeycloak(keycloak => keycloak.Users.AddRange(DemoUsers.All.Select(u =>
         new KeycloakUser(u.Email, u.FirstName, u.LastName) { Password = u.Password, Roles = u.IsAdmin ? ["Administrator", .. u.Roles ?? []] : u.Roles ?? [] })));
 });

@@ -3144,6 +3144,35 @@
         }
       }
     },
+    "/api/v1/system/status": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mail/templates": {
       "get": {
         "tags": [
@@ -3268,6 +3297,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MailTemplateDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "culture",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMailTemplateLanguageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailTemplateLanguageAddedDto"
                 }
               }
             }
@@ -4327,6 +4411,205 @@
         }
       }
     },
+    "/api/v1/history/{entitySet}/deleted": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedRecordDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/{entitySet}/{id}": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityHistoryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/{entitySet}/{id}/preview": {
+      "post": {
+        "tags": [
+          "History"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityHistoryRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityHistoryPreviewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/{entitySet}/{id}/restore": {
+      "post": {
+        "tags": [
+          "History"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityHistoryRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/themes/current": {
       "get": {
         "tags": [
@@ -4939,6 +5222,105 @@
         }
       }
     },
+    "/api/v1/notifications/push": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Notifications"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDeviceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/push/{id}": {
+      "delete": {
+        "tags": [
+          "Notifications"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/data/{entitySet}/export": {
       "get": {
         "tags": [
@@ -4957,6 +5339,16 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataTransferJobDto"
+                }
+              }
+            }
           }
         }
       }
@@ -4994,6 +5386,511 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportTargetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/imports": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImportTargetDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/{entitySet}/import/file": {
+      "post": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "$ref": "#/components/schemas/IFormFile"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/data/imports/{id}/sheet": {
+      "post": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportParseOptions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportSheetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/imports/{id}/preview": {
+      "post": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreviewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/imports/{id}/start": {
+      "post": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataTransferJobDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/imports/{id}/undo": {
+      "post": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataTransferJobDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/{entitySet}/import/profiles": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImportProfileDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveImportProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportProfileDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/import-profiles/{id}": {
+      "delete": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/jobs": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "entitySet",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DataTransferJobDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/jobs/{id}": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataTransferJobDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data/jobs/{id}/file": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -14261,6 +15158,22 @@
           }
         }
       },
+      "AddMailTemplateLanguageRequest": {
+        "required": [
+          "from",
+          "translate"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "translate": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
       "AddWorkspaceMemberRequest": {
         "required": [
           "userId",
@@ -16394,6 +17307,137 @@
           }
         }
       },
+      "DataTransferJobDto": {
+        "required": [
+          "id",
+          "kind",
+          "entitySet",
+          "status",
+          "dryRun",
+          "total",
+          "processed",
+          "created",
+          "updated",
+          "failed",
+          "fileName",
+          "resultFileName",
+          "message",
+          "createdAt",
+          "finishedAt",
+          "canUndo",
+          "isFinished"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataTransferKind"
+          },
+          "entitySet": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataTransferStatus"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "processed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "created": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "updated": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "fileName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "resultFileName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "message": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "canUndo": {
+            "type": "boolean"
+          },
+          "isFinished": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DataTransferKind": {
+        "enum": [
+          "Import",
+          "Export"
+        ]
+      },
+      "DataTransferStatus": {
+        "enum": [
+          "Draft",
+          "Queued",
+          "Running",
+          "Completed",
+          "Failed",
+          "Undone"
+        ]
+      },
       "DeleteAccountRequest": {
         "required": [
           "email"
@@ -16402,6 +17446,36 @@
         "properties": {
           "email": {
             "type": "string"
+          }
+        }
+      },
+      "DeletedRecordDto": {
+        "required": [
+          "entityId",
+          "title",
+          "deletedAt",
+          "deletedByName"
+        ],
+        "type": "object",
+        "properties": {
+          "entityId": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletedByName": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -16778,6 +17852,175 @@
               "string"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "EntityHistoryChangeDto": {
+        "required": [
+          "property",
+          "oldValue",
+          "newValue",
+          "oldText",
+          "newText",
+          "restorable"
+        ],
+        "type": "object",
+        "properties": {
+          "property": {
+            "type": "string"
+          },
+          "oldValue": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "newValue": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "oldText": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "newText": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "restorable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EntityHistoryDto": {
+        "required": [
+          "canRestore",
+          "isDeleted",
+          "entries"
+        ],
+        "type": "object",
+        "properties": {
+          "canRestore": {
+            "type": "boolean"
+          },
+          "isDeleted": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityHistoryEntryDto"
+            }
+          }
+        }
+      },
+      "EntityHistoryEntryDto": {
+        "required": [
+          "id",
+          "action",
+          "actorId",
+          "actorName",
+          "occurredAt",
+          "changes"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string"
+          },
+          "actorId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "actorName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityHistoryChangeDto"
+            }
+          }
+        }
+      },
+      "EntityHistoryFieldDto": {
+        "required": [
+          "property",
+          "currentText",
+          "restoredText"
+        ],
+        "type": "object",
+        "properties": {
+          "property": {
+            "type": "string"
+          },
+          "currentText": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "restoredText": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "EntityHistoryPreviewDto": {
+        "required": [
+          "undeletes",
+          "fields"
+        ],
+        "type": "object",
+        "properties": {
+          "undeletes": {
+            "type": "boolean"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityHistoryFieldDto"
+            }
+          }
+        }
+      },
+      "EntityHistoryRestoreRequest": {
+        "required": [
+          "entryId"
+        ],
+        "type": "object",
+        "properties": {
+          "entryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "property": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -17535,6 +18778,387 @@
         "type": "string",
         "format": "binary"
       },
+      "ImportColumnDto": {
+        "required": [
+          "index",
+          "header",
+          "samples",
+          "suggestedField"
+        ],
+        "type": "object",
+        "properties": {
+          "index": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "header": {
+            "type": "string"
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "suggestedField": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ImportFieldDto": {
+        "required": [
+          "name",
+          "label",
+          "type",
+          "required",
+          "keyOnly"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "choices": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "lookupSet": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "keyOnly": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ImportMode": {
+        "enum": [
+          "Create",
+          "Update",
+          "Upsert"
+        ],
+        "default": "Create"
+      },
+      "ImportParseOptions": {
+        "type": "object",
+        "properties": {
+          "delimiter": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "encoding": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "hasHeader": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "ImportPreviewDto": {
+        "required": [
+          "total",
+          "checked",
+          "valid",
+          "creates",
+          "updates",
+          "rows",
+          "invalid"
+        ],
+        "type": "object",
+        "properties": {
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "checked": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "valid": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "creates": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "updates": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportPreviewRowDto"
+            }
+          },
+          "invalid": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportPreviewRowDto"
+            }
+          }
+        }
+      },
+      "ImportPreviewRowDto": {
+        "required": [
+          "row",
+          "action",
+          "values",
+          "errors"
+        ],
+        "type": "object",
+        "properties": {
+          "row": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "action": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ImportProfileDto": {
+        "required": [
+          "id",
+          "entitySet",
+          "name",
+          "columns",
+          "mode",
+          "keyField",
+          "culture"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entitySet": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ImportMode"
+          },
+          "keyField": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "culture": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ImportSettings": {
+        "required": [
+          "columns",
+          "mode",
+          "dryRun"
+        ],
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ImportMode"
+          },
+          "keyField": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "culture": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parse": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ImportParseOptions"
+              }
+            ]
+          },
+          "dryRun": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ImportSheetDto": {
+        "required": [
+          "jobId",
+          "fileName",
+          "rowCount",
+          "delimiter",
+          "encoding",
+          "hasHeader",
+          "columns"
+        ],
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "rowCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "delimiter": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "encoding": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "hasHeader": {
+            "type": "boolean"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportColumnDto"
+            }
+          }
+        }
+      },
+      "ImportTargetDto": {
+        "required": [
+          "entitySet",
+          "fields",
+          "canUpdate",
+          "canUndo",
+          "keyFields"
+        ],
+        "type": "object",
+        "properties": {
+          "entitySet": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportFieldDto"
+            }
+          },
+          "canUpdate": {
+            "type": "boolean"
+          },
+          "canUndo": {
+            "type": "boolean"
+          },
+          "keyFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "InheritanceRequest": {
         "required": [
           "interrupt"
@@ -18226,6 +19850,25 @@
           }
         }
       },
+      "MailTemplateLanguageAddedDto": {
+        "required": [
+          "culture",
+          "from",
+          "translated"
+        ],
+        "type": "object",
+        "properties": {
+          "culture": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "translated": {
+            "type": "boolean"
+          }
+        }
+      },
       "MailTemplateSummaryDto": {
         "required": [
           "name",
@@ -18263,6 +19906,15 @@
               "null",
               "string"
             ]
+          },
+          "defaultCultures": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -20595,6 +22247,80 @@
           }
         }
       },
+      "PushDeviceDto": {
+        "required": [
+          "id",
+          "endpoint",
+          "device",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "device": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PushSettingsDto": {
+        "required": [
+          "publicKey",
+          "devices"
+        ],
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PushDeviceDto"
+            }
+          }
+        }
+      },
+      "PushSubscriptionRequest": {
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth"
+        ],
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "p256dh": {
+            "type": "string"
+          },
+          "auth": {
+            "type": "string"
+          },
+          "device": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "RecipientListDto": {
         "required": [
           "id",
@@ -21461,6 +23187,42 @@
           },
           "isShared": {
             "type": "boolean"
+          }
+        }
+      },
+      "SaveImportProfileRequest": {
+        "required": [
+          "name",
+          "columns",
+          "mode",
+          "keyField",
+          "culture"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ImportMode"
+          },
+          "keyField": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "culture": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -22486,6 +24248,142 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "SystemStatusDto": {
+        "required": [
+          "at",
+          "sections"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemStatusSection"
+            }
+          }
+        }
+      },
+      "SystemStatusEntry": {
+        "required": [
+          "label",
+          "value",
+          "level"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/SystemStatusLevel"
+          },
+          "arguments": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SystemStatusLevel": {
+        "enum": [
+          "Info",
+          "Ok",
+          "Warning",
+          "Error"
+        ],
+        "default": "Info"
+      },
+      "SystemStatusProblem": {
+        "required": [
+          "title",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "SystemStatusSection": {
+        "required": [
+          "key",
+          "title",
+          "entries",
+          "order",
+          "externalLink"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemStatusEntry"
+            }
+          },
+          "problems": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SystemStatusProblem"
+            }
+          },
+          "order": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 0
+          },
+          "link": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalLink": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -23635,6 +25533,9 @@
       "name": "Services"
     },
     {
+      "name": "System"
+    },
+    {
       "name": "Mail"
     },
     {
@@ -23642,6 +25543,9 @@
     },
     {
       "name": "Versions"
+    },
+    {
+      "name": "History"
     },
     {
       "name": "Themes"
@@ -23708,9 +25612,6 @@
     },
     {
       "name": "Chat"
-    },
-    {
-      "name": "System"
     }
   ]
 }
