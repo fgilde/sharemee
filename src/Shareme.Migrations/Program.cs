@@ -9,9 +9,9 @@ builder.AddServiceDefaults();
 builder.Services.AddCoworkeeModules<ShareMeDatabaseModule>(builder.Configuration);
 // the app host turns the demo users off for tests that walk through the setup wizard; a deployment gets its first administrator
 // from the deploy parameters, without them it is set up in the browser with the setup token
-var demoUsers = builder.Environment.IsDevelopment() && builder.Configuration.GetValue("Shareme:DemoUsers", false);
 var admin = InitialAdmin.From(builder.Configuration);
-builder.Services.AddCoworkeeIdentitySeed(demoUsers || admin is null ? DemoSeed.Configure : options => DemoSeed.ConfigureDeployment(options, admin));
+var demoUsers = admin is null && builder.Configuration.GetValue("Shareme:DemoUsers", false);
+builder.Services.AddCoworkeeIdentitySeed(admin is null ? DemoSeed.Configure : options => DemoSeed.ConfigureDeployment(options, admin));
 using var host = builder.Build();
 
 await using var scope = host.Services.CreateAsyncScope();
