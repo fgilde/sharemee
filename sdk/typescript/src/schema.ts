@@ -4737,6 +4737,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EntityHistorySetDto"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/{entitySet}/deleted": {
         parameters: {
             query?: never;
@@ -16959,15 +17003,29 @@ export interface components {
             property: string;
             currentText: null | string;
             restoredText: null | string;
+            /** @default false */
+            changedLater: boolean;
         };
         EntityHistoryPreviewDto: {
             undeletes: boolean;
             fields: components["schemas"]["EntityHistoryFieldDto"][];
         };
+        /**
+         * @default After
+         * @enum {unknown}
+         */
+        EntityHistoryRestoreMode: "After" | "Before" | "Undo";
         EntityHistoryRestoreRequest: {
             /** Format: uuid */
             entryId: string;
             property?: null | string;
+            mode: components["schemas"]["EntityHistoryRestoreMode"];
+        };
+        EntityHistorySetDto: {
+            entityType: string;
+            entitySet: string;
+            canRestore: boolean;
+            softDelete: boolean;
         };
         EntityVersionDetailDto: {
             /** Format: int32 */
