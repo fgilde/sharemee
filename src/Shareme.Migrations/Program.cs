@@ -5,6 +5,8 @@ using Shareme.Infrastructure;
 using Shareme.Migrations;
 
 var builder = Host.CreateApplicationBuilder(args);
+// the app host runs the migrations as Development since lib 0.0.1.31; the OData controllers of the modules cannot be validated without a web host
+builder.ConfigureContainer(new DefaultServiceProviderFactory());
 builder.AddServiceDefaults();
 builder.Services.AddCoworkeeModules<ShareMeDatabaseModule>(builder.Configuration);
 // the app host turns the demo users off for tests that walk through the setup wizard; a deployment gets its first administrator

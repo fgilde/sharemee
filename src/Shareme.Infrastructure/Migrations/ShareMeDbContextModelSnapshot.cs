@@ -184,17 +184,158 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("DatabaseBackups", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Chat.ChatAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BlobKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasAnnotation("Coworkee:NotAudited", true);
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId");
+
+                    b.HasIndex("ConversationId", "UploadedBy");
+
+                    b.ToTable("ChatAttachments", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Chat.ChatConversation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DirectKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("IsGroup")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("LastMessageAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasAnnotation("Coworkee:NotAudited", true);
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasAnnotation("Coworkee:NotAudited", true);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "DirectKey")
+                        .IsUnique();
+
+                    b.ToTable("ChatConversations", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Chat.ChatMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsOwner")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasAnnotation("Coworkee:NotAudited", true);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId", "UserId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "UserId");
+
+                    b.ToTable("ChatMembers", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Chat.ChatMessage", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("FromUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Html")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)")
+                        .HasAnnotation("Coworkee:NotAudited", true);
+
                     b.Property<DateTimeOffset?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasAnnotation("Coworkee:NotAudited", true);
+
+                    b.Property<Guid?>("ReplyToId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("SentAt")
                         .HasColumnType("timestamp with time zone");
@@ -208,16 +349,46 @@ namespace Shareme.Infrastructure.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasAnnotation("Coworkee:NotAudited", true);
 
-                    b.Property<Guid>("ToUserId")
+                    b.Property<Guid?>("ToUserId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "ToUserId", "ReadAt");
+                    b.HasIndex("ConversationId", "SentAt");
 
                     b.HasIndex("TenantId", "FromUserId", "ToUserId", "SentAt");
 
                     b.ToTable("ChatMessages", "cw");
+                });
+
+            modelBuilder.Entity("Coworkee.Chat.ChatReaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Emoji")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId", "UserId", "Emoji")
+                        .IsUnique();
+
+                    b.ToTable("ChatReactions", "cw");
+
+                    b.HasAnnotation("Coworkee:NotAudited", true);
                 });
 
             modelBuilder.Entity("Coworkee.Identity.ApiKeys.ApiKey", b =>
