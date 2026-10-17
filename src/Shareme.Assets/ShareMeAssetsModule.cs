@@ -52,7 +52,7 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             var result = await d.SendAsync(new DownloadAsset(id, version), ct);
             return result.IsSuccess ? File(response, result.Value) : result.Error!.ToProblem();
         });
-        assets.MapGet("/{id:guid}/view", async (Guid id, int? version, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        var view = async (Guid id, int? version, HttpResponse response, IDispatcher d, CancellationToken ct) =>
         {
             var result = await d.SendAsync(new DownloadAsset(id, version, Inline: true), ct);
             if (!result.IsSuccess)
@@ -63,8 +63,9 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             // shown in the app's origin: nothing in it may run or load anything
             response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'";
             return File(response, result.Value, inline: true);
-        });
-        assets.MapGet("/{id:guid}/derivations/{kind}", async (Guid id, string kind, int? version, string? v, bool? download, HttpResponse response, IDispatcher d, CancellationToken ct) =>
+        };
+        assets.MapGet("/{id:guid}/view", view);
+        var derivation = async (Guid id, string kind, int? version, string? v, bool? download, HttpResponse response, IDispatcher d, CancellationToken ct) =>
         {
             var result = await d.SendAsync(new GetDerivation(id, kind, version), ct);
             if (!result.IsSuccess)
@@ -80,7 +81,12 @@ public sealed class ShareMeAssetsModule : CoworkeeModule, IWebModule
             }
 
             return file;
-        });
+        };
+        assets.MapGet("/{id:guid}/derivations/{kind}", derivation);
+
+        // the file viewer asks with HEAD for type and size first
+        assets.MapMethods("/{id:guid}/view", [HttpMethods.Head], view).ExcludeFromDescription();
+        assets.MapMethods("/{id:guid}/derivations/{kind}", [HttpMethods.Head], derivation).ExcludeFromDescription();
         assets.MapPost("/{id:guid}/derivations/{kind}", (Guid id, string kind, IDispatcher d, CancellationToken ct) => d.SendAsync(new RequestDerivation(id, kind), ct).ToHttpResult());
         assets.MapPut("/{id:guid}/derivations/{kind}", (Guid id, string kind, HttpRequest request, IDispatcher d, CancellationToken ct) =>
             d.SendAsync(new UploadDerivation(id, kind, request.Body), ct).ToHttpResult())

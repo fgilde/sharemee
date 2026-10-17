@@ -498,6 +498,9 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
         view.Content.Headers.ContentDisposition.ShouldBeNull();
         view.Headers.GetValues("Content-Security-Policy").Single().ShouldStartWith("sandbox");
         view.Headers.GetValues("X-Content-Type-Options").Single().ShouldBe("nosniff");
+        using var head = await Admin.SendAsync(new HttpRequestMessage(HttpMethod.Head, $"/api/v1/assets/{pdf.AssetId}/view"), Ct);
+        head.StatusCode.ShouldBe(HttpStatusCode.OK);
+        head.Content.Headers.ContentType!.MediaType.ShouldBe("application/pdf");
         (await Admin.GetAsync($"/api/v1/assets/{archive.AssetId}/view", Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await reader.GetAsync($"/api/v1/assets/{pdf.AssetId}/view", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await Admin.GetFromJsonAsync<AssetDto>($"/api/v1/assets/{pdf.AssetId}", Ct))!.CanDownload.ShouldBeTrue();

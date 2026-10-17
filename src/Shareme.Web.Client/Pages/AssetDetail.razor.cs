@@ -153,4 +153,6 @@ public partial class AssetDetail
         < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} MB",
         _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} GB",
     };
+
+    private string Absolute(string url) => Nav.ToAbsoluteUri(url).AbsoluteUri;
 }
