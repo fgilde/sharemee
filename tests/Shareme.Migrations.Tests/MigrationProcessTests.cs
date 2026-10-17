@@ -13,6 +13,7 @@ public sealed class MigrationProcessTests
             {
                 ["ConnectionStrings__shareme"] = "Host=127.0.0.1;Port=1;Database=none;Username=none;Password=none;Timeout=2",
                 ["DOTNET_ENVIRONMENT"] = "Production",
+                ["Migrations__Attempts"] = "1",
             },
         };
 

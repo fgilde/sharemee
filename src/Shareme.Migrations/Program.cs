@@ -1,44 +1,17 @@
 using Coworkee.Core.Modularity;
 using Coworkee.Identity.Setup;
-using Microsoft.EntityFrameworkCore;
 using Shareme.Infrastructure;
 using Shareme.Migrations;
 
 var builder = Host.CreateApplicationBuilder(args);
-// the app host runs the migrations as Development since lib 0.0.1.31; the OData controllers of the modules cannot be validated without a web host
-builder.ConfigureContainer(new DefaultServiceProviderFactory());
 builder.AddServiceDefaults();
 builder.Services.AddCoworkeeModules<ShareMeDatabaseModule>(builder.Configuration);
-// the app host turns the demo users off for tests that walk through the setup wizard; a deployment gets its first administrator
-// from the deploy parameters, without them it is set up in the browser with the setup token
-var admin = InitialAdmin.From(builder.Configuration);
-var demoUsers = admin is null && builder.Configuration.GetValue("Shareme:DemoUsers", false);
-builder.Services.AddCoworkeeIdentitySeed(admin is null ? DemoSeed.Configure : options => DemoSeed.ConfigureDeployment(options, admin));
+builder.AddCoworkeeMigrations<ShareMeDbContext>(options =>
+{
+    // the app host turns the demo users off for tests that walk through the setup wizard
+    options.DevelopmentUsers = builder.Configuration.GetValue("Shareme:DemoUsers", false);
+    options.DevelopmentSeed = DemoSeed.Configure;
+    options.DeploymentSeed = DemoSeed.ConfigureDeployment;
+});
 using var host = builder.Build();
-
-await using var scope = host.Services.CreateAsyncScope();
-try
-{
-    await scope.ServiceProvider.GetRequiredService<ShareMeDbContext>().Database.MigrateAsync();
-
-    if (demoUsers)
-    {
-        await host.Services.SeedCoworkeeIdentityAsync();
-        // a database set up earlier gets the users and roles added to DemoUsers.cs since, and their passwords again
-        await host.Services.SyncDevelopmentUsersAsync();
-    }
-    else if (admin is not null)
-    {
-        await host.Services.SeedCoworkeeIdentityAsync();
-    }
-
-    // the Keycloak of a deployment gets the clients and the administrator of the app host
-    await scope.ServiceProvider.ReconcileKeycloakRealmAsync();
-
-    return 0;
-}
-catch (Exception exception)
-{
-    scope.ServiceProvider.GetRequiredService<ILogger<Program>>().LogCritical(exception, "Database migration or seed failed");
-    return 1;
-}
+return await host.RunCoworkeeMigrationsAsync();

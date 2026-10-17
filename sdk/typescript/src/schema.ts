@@ -16834,6 +16834,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/attachments/{id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/messages/{id}": {
         parameters: {
             query?: never;
@@ -17324,6 +17359,7 @@ export interface components {
             /** Format: int64 */
             size: number | string;
             isImage: boolean;
+            hasThumbnail: boolean;
         };
         ChatContactDto: {
             /** Format: uuid */
@@ -17789,6 +17825,8 @@ export interface components {
         EntityHistoryPreviewDto: {
             undeletes: boolean;
             fields: components["schemas"]["EntityHistoryFieldDto"][];
+            /** @default  */
+            version: string;
         };
         /**
          * @default After
@@ -17800,6 +17838,7 @@ export interface components {
             entryId: string;
             property?: null | string;
             mode: components["schemas"]["EntityHistoryRestoreMode"];
+            version?: null | string;
         };
         EntityHistorySetDto: {
             entityType: string;

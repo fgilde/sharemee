@@ -15822,6 +15822,29 @@
         }
       }
     },
+    "/api/v1/chat/attachments/{id}/thumbnail": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/chat/messages/{id}": {
       "get": {
         "tags": [
@@ -17247,7 +17270,8 @@
           "name",
           "contentType",
           "size",
-          "isImage"
+          "isImage",
+          "hasThumbnail"
         ],
         "type": "object",
         "properties": {
@@ -17270,6 +17294,9 @@
             "format": "int64"
           },
           "isImage": {
+            "type": "boolean"
+          },
+          "hasThumbnail": {
             "type": "boolean"
           }
         }
@@ -19152,7 +19179,8 @@
       "EntityHistoryPreviewDto": {
         "required": [
           "undeletes",
-          "fields"
+          "fields",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -19164,6 +19192,10 @@
             "items": {
               "$ref": "#/components/schemas/EntityHistoryFieldDto"
             }
+          },
+          "version": {
+            "type": "string",
+            "default": ""
           }
         }
       },
@@ -19194,6 +19226,12 @@
           },
           "mode": {
             "$ref": "#/components/schemas/EntityHistoryRestoreMode"
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

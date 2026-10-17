@@ -8,6 +8,7 @@ using Coworkee.Contracts.Identity;
 
 namespace Shareme.AppHost.Tests;
 
+[Collection("AppHost")]
 public sealed partial class SignInFlowTests
 {
     private const string SetupToken = "e2e-setup-token";

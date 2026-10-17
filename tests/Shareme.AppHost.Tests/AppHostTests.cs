@@ -5,6 +5,11 @@ using Aspire.Hosting.Testing;
 
 namespace Shareme.AppHost.Tests;
 
+// every test starts the whole app with its databases and services; one at a time keeps the memory in bounds
+[CollectionDefinition("AppHost", DisableParallelization = true)]
+public sealed class AppHostCollection;
+
+[Collection("AppHost")]
 public sealed class AppHostTests
 {
     [Fact]
