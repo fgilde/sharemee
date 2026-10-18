@@ -22,6 +22,7 @@
     <CoworkeePackage Include="Coworkee.Theming" />
     <CoworkeePackage Include="Coworkee.Localization" />
     <CoworkeePackage Include="Coworkee.Backup" />
+    <CoworkeePackage Include="Coworkee.Retention" />
     <CoworkeePackage Include="Coworkee.Chat" />
     <CoworkeePackage Include="Coworkee.Realtime" />
     <CoworkeePackage Include="Coworkee.Notifications" />
