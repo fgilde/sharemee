@@ -1353,6 +1353,36 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("OutgoingMails", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.Mailing.OutgoingMailAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid>("MailId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MailId");
+
+                    b.ToTable("OutgoingMailAttachments", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.Mailing.RecipientList", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5385,6 +5415,15 @@ namespace Shareme.Infrastructure.Migrations
                         });
 
                     b.Navigation("Changes");
+                });
+
+            modelBuilder.Entity("Coworkee.Mailing.OutgoingMailAttachment", b =>
+                {
+                    b.HasOne("Coworkee.Mailing.OutgoingMail", null)
+                        .WithMany()
+                        .HasForeignKey("MailId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Coworkee.Theming.TenantTheme", b =>
