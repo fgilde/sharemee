@@ -4,7 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Coworkee.Core" Version="$(CoworkeeVersion)" />
-    <PackageVersion Include="Nextended.CodeGen" Version="10.1.47" />
+    <PackageVersion Include="Nextended.CodeGen" Version="10.1.48" />
     <PackageVersion Include="Coworkee.Domain" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Application" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Infrastructure" Version="$(CoworkeeVersion)" />
@@ -52,7 +52,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.4" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
