@@ -1129,6 +1129,46 @@
         }
       }
     },
+    "/api/v1/identity/users/{id}/impersonation": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationTicketDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/identity/users/{id}/permissions": {
       "get": {
         "tags": [
@@ -1864,6 +1904,153 @@
         }
       }
     },
+    "/api/v1/identity/groups/children": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "parentId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupNodeDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/groups/tree": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupNodeDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/groups/mine": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MyGroupDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/groups/mine/selection": {
+      "put": {
+        "tags": [
+          "Identity"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/identity/groups/{id}": {
       "put": {
         "tags": [
@@ -1938,6 +2125,49 @@
         }
       }
     },
+    "/api/v1/identity/groups/{id}/parent": {
+      "put": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/identity/groups/{id}/members": {
       "put": {
         "tags": [
@@ -1959,6 +2189,135 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/IdListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/groups/{id}/members/add": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/groups/{id}/members/remove": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/groups/{id}/members/move": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveMembersRequest"
               }
             }
           },
@@ -4307,6 +4666,14 @@
               ],
               "format": "int32",
               "default": 25
+            }
+          },
+          {
+            "name": "ImpersonatorId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -17203,6 +17570,13 @@
             "items": {
               "$ref": "#/components/schemas/AuditChangeDto"
             }
+          },
+          "impersonatorId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -20245,6 +20619,72 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "parentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "code": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GroupNodeDto": {
+        "required": [
+          "id",
+          "parentId",
+          "code",
+          "name",
+          "description",
+          "childCount",
+          "memberCount"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "childCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "memberCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -20279,6 +20719,13 @@
               "null",
               "string"
             ]
+          },
+          "parentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -20440,6 +20887,17 @@
       "IFormFile": {
         "type": "string",
         "format": "binary"
+      },
+      "ImpersonationTicketDto": {
+        "required": [
+          "ticket"
+        ],
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string"
+          }
+        }
       },
       "ImportColumnDto": {
         "required": [
@@ -21711,6 +22169,33 @@
           }
         }
       },
+      "MoveGroupRequest": {
+        "required": [
+          "parentId"
+        ],
+        "type": "object",
+        "properties": {
+          "parentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "MoveMembersRequest": {
+        "required": [
+          "toId"
+        ],
+        "type": "object",
+        "properties": {
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "MoveNodeRequest": {
         "required": [
           "targetParentId"
@@ -21750,6 +22235,42 @@
               "string"
             ],
             "format": "uint32"
+          }
+        }
+      },
+      "MyGroupDto": {
+        "required": [
+          "id",
+          "parentId",
+          "code",
+          "name",
+          "isMember",
+          "selected"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isMember": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "boolean"
           }
         }
       },
