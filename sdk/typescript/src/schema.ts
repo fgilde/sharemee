@@ -3765,6 +3765,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/head-script": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HeadScriptDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetHeadScriptRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/global": {
         parameters: {
             query?: never;
@@ -7899,6 +7973,7 @@ export interface paths {
             parameters: {
                 query?: {
                     since?: string;
+                    skip?: number | string;
                 };
                 header?: never;
                 path: {
@@ -19211,6 +19286,7 @@ export interface components {
             roleIds?: null | string[];
             /** @default true */
             isActive: boolean;
+            groupIds?: null | string[];
         };
         CreateWorkspaceRequest: {
             name: string;
@@ -19747,6 +19823,10 @@ export interface components {
             description: null | string;
             /** Format: uuid */
             parentId?: null | string;
+        };
+        HeadScriptDto: {
+            enabled: boolean;
+            value: string;
         };
         HighlightRange: {
             /** Format: int32 */
@@ -21108,6 +21188,10 @@ export interface components {
         };
         SetAvatarRequest: {
             dataUrl: null | string;
+        };
+        SetHeadScriptRequest: {
+            enabled: boolean;
+            value: null | string;
         };
         SetLanguageEnabledRequest: {
             enabled: boolean;
