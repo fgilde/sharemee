@@ -1410,6 +1410,9 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("QueuedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("SendingSince")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("SentAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1439,6 +1442,8 @@ namespace Shareme.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CampaignId");
+
+                    b.HasIndex("Status");
 
                     b.HasIndex("TenantId", "QueuedAt");
 
@@ -1754,6 +1759,33 @@ namespace Shareme.Infrastructure.Migrations
                     b.ToTable("PushSubscriptions", "cw");
                 });
 
+            modelBuilder.Entity("Coworkee.OData.ClientEntities.ClientEntityTouch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("TouchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntityType", "TouchedAt");
+
+                    b.ToTable("ClientEntityTouches", "cw");
+                });
+
             modelBuilder.Entity("Coworkee.OData.Transfer.DataTransferJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1794,6 +1826,9 @@ namespace Shareme.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("MailOwner")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Message")
                         .HasMaxLength(2000)
