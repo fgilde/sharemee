@@ -34,20 +34,13 @@ jobs:
         with:
           path: shareme
 
-      - uses: actions/checkout@v4
-        with:
-          repository: fgilde/CoworkeeLib
-          ref: main
-          path: coworkee
-          token: ${{ secrets.COWORKEE_REPO_TOKEN }}
-
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: shareme/global.json
 
-      - name: Pack Coworkee into the local feed
-        shell: pwsh
-        run: ./coworkee/build/pack-local.ps1
+      # Coworkee comes from nuget.org (the version Directory.Packages.props pins); nuget.config's local feed for packs of the library stays empty here
+      - name: Empty local Coworkee feed
+        run: mkdir -p coworkee/artifacts/nuget
 
       - name: Install rendering tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg ghostscript libimage-exiftool-perl libreoffice-writer-nogui blender
