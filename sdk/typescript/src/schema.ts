@@ -1995,6 +1995,202 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/identity/permissions/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CustomPermissionDto"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateCustomPermissionRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/identity/permissions/custom/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateCustomPermissionRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/identity/permissions/custom/{name}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CustomPermissionUsageDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/identity/permissions/grants/{providerType}/{providerKey}": {
         parameters: {
             query?: never;
@@ -6133,6 +6329,80 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/realtime/watches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RealtimeWatchDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/realtime/watches/{entityType}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    entityType: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetRealtimeWatchRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -18768,8 +19038,19 @@ export interface components {
             /** @default collaborator */
             role: string;
         };
+        AiClientActionCall: {
+            callId: string;
+            name: string;
+            arguments: string;
+        };
+        AiClientActionDto: {
+            name: string;
+            description: string;
+            parameters?: unknown;
+        };
         AiConfirmRequest: {
             approve: boolean;
+            ui?: null | components["schemas"]["AiUiContext"];
         };
         AiConnectionDraft: {
             provider: string;
@@ -18830,6 +19111,7 @@ export interface components {
         };
         AiSendRequest: {
             text: string;
+            ui?: null | components["schemas"]["AiUiContext"];
         };
         AiSessionDetailDto: {
             /** Format: uuid */
@@ -18857,6 +19139,7 @@ export interface components {
             text?: null | string;
             toolCall?: null | components["schemas"]["AiToolCallDto"];
             message?: null | components["schemas"]["AiMessageDto"];
+            action?: null | components["schemas"]["AiClientActionCall"];
         };
         AiToolCallDto: {
             /** Format: uuid */
@@ -18875,6 +19158,24 @@ export interface components {
             output?: null | string;
             /** Format: uuid */
             apiKeyId?: null | string;
+        };
+        AiUiContext: {
+            pages?: null | components["schemas"]["AiUiPage"][];
+            current?: null | components["schemas"]["AiUiPage"];
+            themes?: null | string[];
+            theme?: null | string;
+            mode?: null | string;
+            languages?: null | string[];
+            language?: null | string;
+            /** @default false */
+            rightToLeft: boolean;
+            actions?: null | components["schemas"]["AiClientActionDto"][];
+        };
+        AiUiPage: {
+            title: string;
+            href: string;
+            group?: null | string;
+            description?: null | string;
         };
         ApiKeyDto: {
             /** Format: uuid */
@@ -19244,6 +19545,12 @@ export interface components {
             name: string;
             memberIds: string[];
         };
+        CreateCustomPermissionRequest: {
+            name: string;
+            displayName: string;
+            description: null | string;
+            group: null | string;
+        };
         CreatedApiKeyDto: {
             key: components["schemas"]["ApiKeyDto"];
             secret: string;
@@ -19321,6 +19628,17 @@ export interface components {
         CropVariantRequest: {
             area: components["schemas"]["CropArea"];
             name?: null | string;
+        };
+        CustomPermissionDto: {
+            name: string;
+            displayName: string;
+            description: null | string;
+            group: string;
+        };
+        CustomPermissionUsageDto: {
+            roles: string[];
+            groups: string[];
+            users: string[];
         };
         DataExportProgress: {
             phase: string;
@@ -20804,6 +21122,12 @@ export interface components {
             auth: string;
             device?: null | string;
         };
+        RealtimeWatchDto: {
+            entityType: string;
+            enabled: boolean;
+            interval: string;
+            canManage: boolean;
+        };
         RecipientListDto: {
             /** Format: uuid */
             id: string;
@@ -21200,6 +21524,9 @@ export interface components {
             password: string;
             mustChangePassword: boolean;
         };
+        SetRealtimeWatchRequest: {
+            enabled: boolean;
+        };
         SetSettingsRequest: {
             values: {
                 [key: string]: string;
@@ -21467,6 +21794,11 @@ export interface components {
         UnreadCountDto: {
             /** Format: int32 */
             count: number | string;
+        };
+        UpdateCustomPermissionRequest: {
+            displayName: string;
+            description: null | string;
+            group: null | string;
         };
         UpdateNodeRequest: {
             name: string;

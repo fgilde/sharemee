@@ -1782,6 +1782,179 @@
         }
       }
     },
+    "/api/v1/identity/permissions/custom": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomPermissionDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomPermissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/permissions/custom/{name}": {
+      "put": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomPermissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/identity/permissions/custom/{name}/usage": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomPermissionUsageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/identity/permissions/grants/{providerType}/{providerKey}": {
       "get": {
         "tags": [
@@ -5693,6 +5866,60 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/realtime/watches": {
+      "get": {
+        "tags": [
+          "Realtime"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RealtimeWatchDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/realtime/watches/{entityType}": {
+      "put": {
+        "tags": [
+          "Realtime"
+        ],
+        "parameters": [
+          {
+            "name": "entityType",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRealtimeWatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
@@ -17686,6 +17913,41 @@
           }
         }
       },
+      "AiClientActionCall": {
+        "required": [
+          "callId",
+          "name",
+          "arguments"
+        ],
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "string"
+          }
+        }
+      },
+      "AiClientActionDto": {
+        "required": [
+          "name",
+          "description"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "parameters": {}
+        }
+      },
       "AiConfirmRequest": {
         "required": [
           "approve"
@@ -17694,6 +17956,16 @@
         "properties": {
           "approve": {
             "type": "boolean"
+          },
+          "ui": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AiUiContext"
+              }
+            ]
           }
         }
       },
@@ -17952,6 +18224,16 @@
         "properties": {
           "text": {
             "type": "string"
+          },
+          "ui": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AiUiContext"
+              }
+            ]
           }
         }
       },
@@ -18063,6 +18345,16 @@
                 "$ref": "#/components/schemas/AiMessageDto"
               }
             ]
+          },
+          "action": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AiClientActionCall"
+              }
+            ]
           }
         }
       },
@@ -18133,6 +18425,106 @@
               "string"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "AiUiContext": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AiUiPage"
+            }
+          },
+          "current": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AiUiPage"
+              }
+            ]
+          },
+          "themes": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "theme": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "languages": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "language": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rightToLeft": {
+            "type": "boolean",
+            "default": false
+          },
+          "actions": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AiClientActionDto"
+            }
+          }
+        }
+      },
+      "AiUiPage": {
+        "required": [
+          "title",
+          "href"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -19652,6 +20044,35 @@
           }
         }
       },
+      "CreateCustomPermissionRequest": {
+        "required": [
+          "name",
+          "displayName",
+          "description",
+          "group"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "CreatedApiKeyDto": {
         "required": [
           "key",
@@ -19950,6 +20371,60 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "CustomPermissionDto": {
+        "required": [
+          "name",
+          "displayName",
+          "description",
+          "group"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "group": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomPermissionUsageDto": {
+        "required": [
+          "roles",
+          "groups",
+          "users"
+        ],
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -25981,6 +26456,30 @@
           }
         }
       },
+      "RealtimeWatchDto": {
+        "required": [
+          "entityType",
+          "enabled",
+          "interval",
+          "canManage"
+        ],
+        "type": "object",
+        "properties": {
+          "entityType": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval": {
+            "pattern": "^-?(\\d\u002B\\.)?\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?$",
+            "type": "string"
+          },
+          "canManage": {
+            "type": "boolean"
+          }
+        }
+      },
       "RecipientListDto": {
         "required": [
           "id",
@@ -27590,6 +28089,17 @@
           }
         }
       },
+      "SetRealtimeWatchRequest": {
+        "required": [
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "SetSettingsRequest": {
         "required": [
           "values"
@@ -28664,6 +29174,31 @@
               "string"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "UpdateCustomPermissionRequest": {
+        "required": [
+          "displayName",
+          "description",
+          "group"
+        ],
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
