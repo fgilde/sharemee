@@ -15,6 +15,8 @@ builder.Services.AddCoworkeeClient(baseAddress, options =>
     options.About.Sections[options.About.Sections.IndexOf(typeof(AboutCredits))] = typeof(SharemeeHighlights);
     options.AssistantHint = "Ask for something, for example \"Create a folder Summer 2026 in Marketing\" or \"Find the brochures tagged campaign\".";
 });
+builder.Services.AddCoworkeeTheme<Shareme.Web.Client.Theming.SharemeTheme, Shareme.Web.Client.ObjectEdit.SharemeThemeEditMeta>();
+builder.Services.AddSingleton<Coworkee.Client.Blazor.Dialogs.DialogOptionsContributor, Shareme.Web.Client.SharemeDialogOptions>();
 builder.Services.AddCoworkeeAppConfiguration<Shareme.Contracts.Configuration.SharemeConfiguration>(
     Shareme.Contracts.Configuration.SharemeConfiguration.Section, Shareme.Contracts.Configuration.SharemeConfiguration.Title);
 builder.Services.AddHttpClient<ISharemeApi, SharemeApi>(client =>
