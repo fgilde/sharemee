@@ -113,12 +113,13 @@ public sealed class AdminJourneyTests
 
             await second.Locator("[data-user='eve@acme.test']").WaitForAsync(new() { Timeout = Timeout });
 
-            // roles change one at a time through Roles… of the row's menu (Coworkee 0.0.1.74), the column only shows them
+            // roles change one at a time through Roles… of the row's menu, the column only shows them
             await first.Locator("[data-testid='user-actions-eve@acme.test'] button").First.ClickAsync(new() { Timeout = Timeout });
             await first.Locator("[data-testid='user-roles-eve@acme.test']").ClickAsync(new() { Timeout = Timeout });
-            await first.Locator("[data-testid='user-roles-add']").ClickAsync(new() { Timeout = Timeout });
-            await first.Locator("[data-testid='user-roles-picker']").GetByText("Editors", new() { Exact = true }).ClickAsync(new() { Timeout = Timeout });
-            await Assertions.Expect(first.Locator("[data-testid='user-roles-table']")).ToContainTextAsync("Editors", new() { Timeout = Timeout });
+            // the dialog is the checklist of all roles itself: tick Editors
+            var editors = first.Locator("[data-testid='user-roles-list']").GetByRole(AriaRole.Checkbox, new() { Name = "Editors", Exact = true });
+            await editors.CheckAsync(new() { Timeout = Timeout });
+            await Assertions.Expect(editors).ToBeCheckedAsync(new() { Timeout = Timeout });
             await first.Keyboard.PressAsync("Escape");
 
             await Assertions.Expect(second.Locator("[data-roles='eve@acme.test']")).ToContainTextAsync("Editors", new() { Timeout = Timeout });
