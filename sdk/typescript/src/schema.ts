@@ -1429,6 +1429,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/identity/users/{id}/permissions/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UserPermissionsDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/identity/users/{id}/roles": {
         parameters: {
             query?: never;
@@ -1472,6 +1518,80 @@ export interface paths {
         };
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/identity/users/{id}/roles/{roleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    roleId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    roleId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -2317,6 +2437,82 @@ export interface paths {
         };
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/identity/permissions/grants/{providerType}/{providerKey}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    providerType: components["schemas"]["PermissionProviderType"];
+                    providerKey: string;
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    providerType: components["schemas"]["PermissionProviderType"];
+                    providerKey: string;
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -8947,6 +9143,43 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["GlobalSearchProviderDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: string[];
+                        };
                     };
                 };
             };
@@ -20636,10 +20869,19 @@ export interface components {
             thumbnail?: null | string;
             icon?: null | string;
         };
+        GlobalSearchLocalDto: {
+            entitySet: string;
+            fields: string[];
+            titleField: string;
+            subtitleField?: null | string;
+            url?: null | string;
+            page?: null | string;
+        };
         GlobalSearchProviderDto: {
             name: string;
             group: string;
             icon: null | string;
+            local?: null | components["schemas"]["GlobalSearchLocalDto"];
         };
         /** @enum {unknown} */
         GlobalSearchProviderState: "Done" | "TimedOut" | "Failed";
@@ -21413,6 +21655,17 @@ export interface components {
         };
         /** @enum {unknown} */
         PermissionProviderType: "Role" | "User" | "Group";
+        PermissionSourceDto: {
+            kind: components["schemas"]["PermissionSourceKind"];
+            /** Format: uuid */
+            id?: null | string;
+            name?: null | string;
+            /** Format: uuid */
+            groupId?: null | string;
+            groupName?: null | string;
+        };
+        /** @enum {unknown} */
+        PermissionSourceKind: "Direct" | "Role" | "Group" | "Computed";
         PersonDto: {
             /** Format: uuid */
             userId: string;
@@ -22528,6 +22781,14 @@ export interface components {
             loginProvider: string;
             providerKey: string;
             displayName: null | string;
+        };
+        UserPermissionDto: {
+            name: string;
+            sources: components["schemas"]["PermissionSourceDto"][];
+        };
+        UserPermissionsDto: {
+            granted: string[];
+            permissions: components["schemas"]["UserPermissionDto"][];
         };
         UserSessionDto: {
             /** Format: uuid */
