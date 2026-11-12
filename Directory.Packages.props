@@ -1,10 +1,10 @@
 <Project>
   <PropertyGroup>
-    <CoworkeeVersion>0.0.1.79</CoworkeeVersion>
+    <CoworkeeVersion>0.0.1.80</CoworkeeVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Coworkee.Core" Version="$(CoworkeeVersion)" />
-    <PackageVersion Include="Nextended.CodeGen" Version="10.1.55" />
+    <PackageVersion Include="Nextended.CodeGen" Version="10.1.59" />
     <PackageVersion Include="Coworkee.Domain" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Application" Version="$(CoworkeeVersion)" />
     <PackageVersion Include="Coworkee.Infrastructure" Version="$(CoworkeeVersion)" />
