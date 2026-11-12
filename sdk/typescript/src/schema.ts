@@ -22727,6 +22727,7 @@ export interface components {
             id: string;
             name: string;
             avatarVersion: null | string;
+            gravatarHash?: null | string;
         };
         UserContextDto: {
             key: string;
