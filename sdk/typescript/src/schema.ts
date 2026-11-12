@@ -17844,6 +17844,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/sessions/{id}/client-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AiClientResult"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/sessions/{id}/messages": {
         parameters: {
             query?: never;
@@ -19829,6 +19868,10 @@ export interface components {
             description: string;
             parameters?: unknown;
         };
+        AiClientResult: {
+            callId: string;
+            output: null | string;
+        };
         AiConfirmRequest: {
             approve: boolean;
             ui?: null | components["schemas"]["AiUiContext"];
@@ -19951,6 +19994,7 @@ export interface components {
             /** @default false */
             rightToLeft: boolean;
             actions?: null | components["schemas"]["AiClientActionDto"][];
+            localSets?: null | string[];
         };
         AiUiPage: {
             title: string;
