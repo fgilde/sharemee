@@ -321,11 +321,12 @@ public sealed class AssetTests(ApiFixture api) : IAsyncLifetime
             picture.Composite(right, 400, 0);
         }
         var image = await UploadAsync(Admin, "halves.png", picture.ToByteArray(ImageMagick.MagickFormat.Png), folder);
+        // processing writes the asset too (the thumbnail's tag); metadata goes in once it is done, not racing it (409 from the asset's concurrency token)
+        await DerivationsAsync(image.AssetId);
         (await Admin.PutAsJsonAsync($"/api/v1/nodes/{image.AssetId}/metadata", new Dictionary<string, List<MetadataValue>>
         {
             ["caption"] = [new(V: JsonSerializer.SerializeToElement("Two halves"))],
         }, Ct)).EnsureSuccessStatusCode();
-        await DerivationsAsync(image.AssetId);
         var reader = await UserWithFolderRoleAsync(folder, NodePermissions.Read);
 
         (await Admin.PutAsJsonAsync($"/api/v1/assets/{image.AssetId}/derivations/square/crop", new CropArea(0.5, 0, 0.6, 1), Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
