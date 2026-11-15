@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <CoworkeeVersion>0.0.1.90</CoworkeeVersion>
+    <CoworkeeVersion>0.0.1.91</CoworkeeVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Coworkee.Core" Version="$(CoworkeeVersion)" />
