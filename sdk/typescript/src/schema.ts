@@ -8937,6 +8937,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/client-entities/admin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClientEntityAdminSetDto"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/client-entities/{entitySet}/changes": {
         parameters: {
             query?: never;
@@ -20288,6 +20332,40 @@ export interface components {
             /** @default false */
             showInLauncher: boolean;
         };
+        ClientEntityAdminSetDto: {
+            entitySet: string;
+            entityType: string;
+            copy: null | components["schemas"]["ClientEntityCopy"];
+            /** Format: int32 */
+            maxRows: number | string;
+            /** Format: int32 */
+            batchSize: number | string;
+            /** Format: int32 */
+            parallelPages: number | string;
+            refreshInterval: string;
+            defaultMode: components["schemas"]["ClientEntityDefaultMode"];
+            sources: {
+                [key: string]: components["schemas"]["ClientEntitySettingSource"];
+            };
+            override: null | components["schemas"]["ClientEntitySetOverride"];
+        };
+        /** @enum {unknown} */
+        ClientEntityCopy: "Off" | "Memory" | "Sqlite" | null;
+        /** @enum {unknown} */
+        ClientEntityDefaultMode: "Client" | "Server";
+        ClientEntitySetOverride: {
+            copy?: null | components["schemas"]["ClientEntityCopy"];
+            /** Format: int32 */
+            maxRows?: null | number | string;
+            /** Format: int32 */
+            batchSize?: null | number | string;
+            /** Format: int32 */
+            parallelPages?: null | number | string;
+            refreshInterval?: null | string;
+            defaultMode?: null | components["schemas"]["ClientEntityDefaultMode"];
+        };
+        /** @enum {unknown} */
+        ClientEntitySettingSource: "Default" | "Attribute" | "Code" | "Service" | "Override";
         ClientEntitySnapshotColumn: {
             name: string;
             kind: string;
@@ -22397,9 +22475,10 @@ export interface components {
             /** @default app */
             source: string;
             urls?: null | string[];
+            description?: null | string;
         };
         /** @enum {unknown} */
-        ServiceHealth: "Healthy" | "Unhealthy" | "Unreachable" | "Unknown";
+        ServiceHealth: "Healthy" | "Unhealthy" | "Unreachable" | "Unknown" | "Degraded";
         SessionLimitRequest: {
             /** Format: int32 */
             maxSessions: null | number | string;

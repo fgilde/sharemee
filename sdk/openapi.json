@@ -8221,6 +8221,38 @@
         }
       }
     },
+    "/api/v1/client-entities/admin": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClientEntityAdminSetDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/client-entities/{entitySet}/changes": {
       "get": {
         "tags": [
@@ -20453,6 +20485,168 @@
           }
         }
       },
+      "ClientEntityAdminSetDto": {
+        "required": [
+          "entitySet",
+          "entityType",
+          "copy",
+          "maxRows",
+          "batchSize",
+          "parallelPages",
+          "refreshInterval",
+          "defaultMode",
+          "sources",
+          "override"
+        ],
+        "type": "object",
+        "properties": {
+          "entitySet": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "copy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientEntityCopy"
+              }
+            ]
+          },
+          "maxRows": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "batchSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parallelPages": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "refreshInterval": {
+            "pattern": "^-?(\\d\u002B\\.)?\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?$",
+            "type": "string"
+          },
+          "defaultMode": {
+            "$ref": "#/components/schemas/ClientEntityDefaultMode"
+          },
+          "sources": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ClientEntitySettingSource"
+            }
+          },
+          "override": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientEntitySetOverride"
+              }
+            ]
+          }
+        }
+      },
+      "ClientEntityCopy": {
+        "enum": [
+          "Off",
+          "Memory",
+          "Sqlite",
+          null
+        ]
+      },
+      "ClientEntityDefaultMode": {
+        "enum": [
+          "Client",
+          "Server"
+        ]
+      },
+      "ClientEntitySetOverride": {
+        "type": "object",
+        "properties": {
+          "copy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientEntityCopy"
+              }
+            ]
+          },
+          "maxRows": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "batchSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parallelPages": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "refreshInterval": {
+            "pattern": "^-?(\\d\u002B\\.)?\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?$",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "defaultMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientEntityDefaultMode"
+              }
+            ]
+          }
+        }
+      },
+      "ClientEntitySettingSource": {
+        "enum": [
+          "Default",
+          "Attribute",
+          "Code",
+          "Service",
+          "Override"
+        ]
+      },
       "ClientEntitySnapshotColumn": {
         "required": [
           "name",
@@ -29085,6 +29279,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -29093,7 +29293,8 @@
           "Healthy",
           "Unhealthy",
           "Unreachable",
-          "Unknown"
+          "Unknown",
+          "Degraded"
         ]
       },
       "SessionLimitRequest": {
