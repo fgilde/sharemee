@@ -4706,6 +4706,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/client-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClientValueDto"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetClientValueRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: {
+                    key?: string;
+                    scope?: components["schemas"]["ClientValueScope"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/client-values/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string[];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/client-values/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    key?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClientValueDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/configuration": {
         parameters: {
             query?: never;
@@ -7129,6 +7322,7 @@ export interface paths {
                     type?: string;
                     category?: string;
                     done?: boolean;
+                    oldestFirst?: boolean;
                     Page?: number | string;
                     PageSize?: number | string;
                     Search?: string;
@@ -9106,6 +9300,8 @@ export interface paths {
                     q?: string;
                     types?: string;
                     limit?: number | string;
+                    skip?: number | string;
+                    totals?: boolean;
                 };
                 header?: never;
                 path?: never;
@@ -9249,6 +9445,8 @@ export interface paths {
                     q?: string;
                     types?: string;
                     limit?: number | string;
+                    skip?: number | string;
+                    totals?: boolean;
                 };
                 header?: never;
                 path?: never;
@@ -20397,6 +20595,16 @@ export interface components {
             id: string;
             clientSecret: null | string;
         };
+        ClientValueDto: {
+            key: string;
+            value: null | string;
+            isUserValue: boolean;
+        };
+        /**
+         * @default User
+         * @enum {unknown}
+         */
+        ClientValueScope: "User" | "Global";
         CommentDto: {
             /** Format: uuid */
             id: string;
@@ -20976,6 +21184,8 @@ export interface components {
             provider: string;
             hit?: null | components["schemas"]["GlobalSearchHit"];
             state?: null | components["schemas"]["GlobalSearchProviderState"];
+            /** Format: int64 */
+            total?: null | number | string;
         };
         GlobalSearchHit: {
             provider: string;
@@ -21013,6 +21223,8 @@ export interface components {
             state: components["schemas"]["GlobalSearchProviderState"];
             /** Format: int32 */
             count: number | string;
+            /** Format: int64 */
+            total?: null | number | string;
         };
         GlobalSearchResult: {
             hits: components["schemas"]["GlobalSearchHit"][];
@@ -22489,6 +22701,11 @@ export interface components {
         };
         SetAvatarRequest: {
             dataUrl: null | string;
+        };
+        SetClientValueRequest: {
+            key: string;
+            value: string;
+            scope: components["schemas"]["ClientValueScope"];
         };
         SetHeadScriptRequest: {
             enabled: boolean;
