@@ -1162,6 +1162,10 @@ namespace Shareme.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uuid");
 
