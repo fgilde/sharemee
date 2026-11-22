@@ -5563,7 +5563,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    index?: number | string;
+                };
                 header?: never;
                 path: {
                     name: string;
@@ -21777,6 +21779,7 @@ export interface components {
             variables: components["schemas"]["MailVariableDto"][];
             isCustom: boolean;
             sampleModel?: null | string;
+            sendModel?: null | string;
         };
         MailTemplateLanguageAddedDto: {
             culture: string;
@@ -21789,6 +21792,7 @@ export interface components {
             /** Format: int32 */
             excluded: number | string;
             mail: null | components["schemas"]["RenderedMailDto"];
+            recipient?: null | string;
         };
         MailTemplateSummaryDto: {
             name: string;
